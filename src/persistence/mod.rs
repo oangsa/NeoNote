@@ -28,6 +28,13 @@ impl AppDataPaths {
         paths
     }
 
+    #[cfg(test)]
+    pub(crate) fn from_root(root: PathBuf) -> Self {
+        let paths = Self { root };
+        paths.ensure_dirs();
+        paths
+    }
+
     pub fn root(&self) -> &Path {
         &self.root
     }

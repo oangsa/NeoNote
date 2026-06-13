@@ -14,6 +14,7 @@ pub struct AppController {
     themes: ThemeStore,
     documents: Vec<NoteDocument>,
     active_document: usize,
+    theme_panel_open: bool,
     last_message: String,
 }
 
@@ -36,7 +37,19 @@ pub struct AppSnapshot {
     pub message: String,
     pub has_document: bool,
     pub editor_font_family: String,
+    pub theme_panel_open: bool,
+    pub theme_items: Vec<ThemeItemSnapshot>,
     pub theme: ThemeSnapshot,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ThemeItemSnapshot {
+    pub index: i32,
+    pub name: String,
+    pub variant: String,
+    pub author: String,
+    pub is_active: bool,
+    pub is_preview: bool,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -89,6 +102,10 @@ impl Default for ThemeSnapshot {
 impl AppController {
     pub fn new() -> Self {
         let paths = AppDataPaths::new();
+        Self::with_paths(paths)
+    }
+
+    fn with_paths(paths: AppDataPaths) -> Self {
         let mut config = AppConfig::load_or_default(&paths);
         migrate_old_default_theme(&paths, &mut config);
         let session = SessionState::load_or_default(&paths);
@@ -103,6 +120,7 @@ impl AppController {
             themes,
             documents: vec![NoteDocument::default()],
             active_document: 0,
+            theme_panel_open: false,
             last_message: String::new(),
         }
     }
@@ -175,7 +193,47 @@ impl AppController {
     }
 
     pub fn open_theme_panel(&mut self) {
-        self.last_message = "Theme panel migration to Slint is next.".to_string();
+        self.theme_panel_open = true;
+        self.themes.clear_preview();
+        self.last_message = "Choose a theme.".to_string();
+    }
+
+    pub fn preview_theme(&mut self, index: i32) {
+        let Ok(index) = usize::try_from(index) else {
+            return;
+        };
+
+        self.themes.preview(index);
+        self.last_message = self
+            .themes
+            .active_theme()
+            .map(|theme| format!("Previewing {}.", theme.name))
+            .unwrap_or_default();
+    }
+
+    pub fn apply_theme(&mut self, index: i32) {
+        let Ok(index) = usize::try_from(index) else {
+            return;
+        };
+
+        let Some(slug) = self.themes.commit(index).map(|theme| theme.slug()) else {
+            return;
+        };
+
+        self.config.active_theme = Some(slug);
+        match self.config.save(&self.paths) {
+            Ok(()) => self.last_message = "Theme applied.".to_string(),
+            Err(error) => {
+                self.last_message = format!("Theme applied but config was not saved: {error}")
+            }
+        }
+        self.theme_panel_open = false;
+    }
+
+    pub fn close_theme_panel(&mut self) {
+        self.themes.clear_preview();
+        self.theme_panel_open = false;
+        self.last_message = "Theme selection canceled.".to_string();
     }
 
     pub fn open_settings_panel(&mut self) {
@@ -263,7 +321,11 @@ impl AppController {
             mode_text,
             message: self.last_message.clone(),
             has_document: note.is_open(),
-            editor_font_family: crate::platform::fonts::select_editor_font(&self.config.font_family),
+            editor_font_family: crate::platform::fonts::select_editor_font(
+                &self.config.font_family,
+            ),
+            theme_panel_open: self.theme_panel_open,
+            theme_items: self.theme_items(),
             theme,
         }
     }
@@ -367,6 +429,22 @@ impl AppController {
             "REPLACE" => theme.vim_modes.replace.clone(),
             _ => theme.colors.accent_primary.clone(),
         }
+    }
+
+    fn theme_items(&self) -> Vec<ThemeItemSnapshot> {
+        self.themes
+            .all()
+            .iter()
+            .enumerate()
+            .map(|(index, theme)| ThemeItemSnapshot {
+                index: index as i32,
+                name: theme.name.clone(),
+                variant: format!("{:?}", theme.variant).to_lowercase(),
+                author: theme.author.clone(),
+                is_active: self.themes.is_active(index),
+                is_preview: self.themes.is_preview(index),
+            })
+            .collect()
     }
 
     fn active_note(&self) -> &NoteDocument {
@@ -619,9 +697,7 @@ mod tests {
         let mut controller = AppController::new();
         controller.new_file();
         controller.handle_editor_key("i");
-        for key in [
-            "a", "b", "c", "return", "return", "d", "e", "f", "escape",
-        ] {
+        for key in ["a", "b", "c", "return", "return", "d", "e", "f", "escape"] {
             controller.handle_editor_key(key);
         }
 
@@ -686,5 +762,95 @@ mod tests {
         assert_eq!(snapshot.editor_lines[0].cursor_prefix, "");
         assert_eq!(snapshot.editor_lines[0].cursor_cell, "d");
         assert_eq!(snapshot.editor_lines[0].cursor_suffix, "awdwad");
+    }
+
+    #[test]
+    fn theme_items_include_current_active_theme() {
+        let (_root, controller) = test_controller();
+
+        let snapshot = controller.snapshot();
+        assert!(!snapshot.theme_items.is_empty());
+        assert!(snapshot.theme_items.iter().any(|item| item.is_active));
+    }
+
+    #[test]
+    fn theme_preview_changes_snapshot_without_persisting_config() {
+        let (root, mut controller) = test_controller();
+        let preview_index = first_inactive_theme_index(&controller);
+        let committed_background = controller.snapshot().theme.background;
+
+        controller.open_theme_panel();
+        controller.preview_theme(preview_index as i32);
+
+        let snapshot = controller.snapshot();
+        assert_ne!(snapshot.theme.background, committed_background);
+        assert!(snapshot.theme_items[preview_index].is_preview);
+        assert!(!root.join("config.json").exists());
+    }
+
+    #[test]
+    fn theme_panel_close_clears_preview_and_restores_committed_theme() {
+        let (_root, mut controller) = test_controller();
+        let preview_index = first_inactive_theme_index(&controller);
+        let committed_background = controller.snapshot().theme.background;
+
+        controller.open_theme_panel();
+        controller.preview_theme(preview_index as i32);
+        assert_ne!(controller.snapshot().theme.background, committed_background);
+
+        controller.close_theme_panel();
+
+        let snapshot = controller.snapshot();
+        assert_eq!(snapshot.theme.background, committed_background);
+        assert!(!snapshot.theme_panel_open);
+        assert!(snapshot.theme_items.iter().all(|item| !item.is_preview));
+    }
+
+    #[test]
+    fn theme_apply_commits_active_theme_and_updates_config_value() {
+        let (_root, mut controller) = test_controller();
+        let apply_index = first_inactive_theme_index(&controller);
+        let expected_slug = controller.themes.all()[apply_index].slug();
+        let paths = controller.paths.clone();
+
+        controller.open_theme_panel();
+        controller.preview_theme(apply_index as i32);
+        controller.apply_theme(apply_index as i32);
+
+        let snapshot = controller.snapshot();
+        let saved_config = AppConfig::load_or_default(&paths);
+        assert!(!snapshot.theme_panel_open);
+        assert_eq!(
+            controller.themes.active_slug().as_deref(),
+            Some(expected_slug.as_str())
+        );
+        assert_eq!(
+            saved_config.active_theme.as_deref(),
+            Some(expected_slug.as_str())
+        );
+        assert!(snapshot.theme_items[apply_index].is_active);
+        assert!(snapshot.theme_items.iter().all(|item| !item.is_preview));
+    }
+
+    fn test_controller() -> (PathBuf, AppController) {
+        let root = std::env::temp_dir().join(format!(
+            "neonote-controller-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_nanos())
+                .unwrap_or_default()
+        ));
+        let paths = AppDataPaths::from_root(root.clone());
+        (root, AppController::with_paths(paths))
+    }
+
+    fn first_inactive_theme_index(controller: &AppController) -> usize {
+        controller
+            .themes
+            .all()
+            .iter()
+            .enumerate()
+            .find_map(|(index, _)| (!controller.themes.is_active(index)).then_some(index))
+            .expect("built-in themes should include an inactive theme")
     }
 }

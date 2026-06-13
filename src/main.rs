@@ -90,6 +90,37 @@ fn install_callbacks(window: &AppWindow, controller: Rc<RefCell<AppController>>)
     });
 
     let weak_window = window.as_weak();
+    let controller_for_theme_preview = Rc::clone(&controller);
+    window.on_theme_preview(move |index| {
+        controller_for_theme_preview
+            .borrow_mut()
+            .preview_theme(index);
+        if let Some(window) = weak_window.upgrade() {
+            apply_snapshot(&window, &controller_for_theme_preview.borrow().snapshot());
+        }
+    });
+
+    let weak_window = window.as_weak();
+    let controller_for_theme_apply = Rc::clone(&controller);
+    window.on_theme_apply(move |index| {
+        controller_for_theme_apply.borrow_mut().apply_theme(index);
+        if let Some(window) = weak_window.upgrade() {
+            apply_snapshot(&window, &controller_for_theme_apply.borrow().snapshot());
+            window.invoke_focus_editor();
+        }
+    });
+
+    let weak_window = window.as_weak();
+    let controller_for_theme_close = Rc::clone(&controller);
+    window.on_theme_panel_close(move || {
+        controller_for_theme_close.borrow_mut().close_theme_panel();
+        if let Some(window) = weak_window.upgrade() {
+            apply_snapshot(&window, &controller_for_theme_close.borrow().snapshot());
+            window.invoke_focus_editor();
+        }
+    });
+
+    let weak_window = window.as_weak();
     let controller_for_settings = Rc::clone(&controller);
     window.on_open_settings_panel(move || {
         controller_for_settings.borrow_mut().open_settings_panel();
@@ -125,6 +156,24 @@ fn apply_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
     window.set_theme_warning(brush_from_hex(&snapshot.theme.warning));
     window.set_theme_error(brush_from_hex(&snapshot.theme.error));
     window.set_theme_cursor(brush_from_hex(&snapshot.theme.cursor));
+    window.set_show_theme_panel(snapshot.theme_panel_open);
+    window.set_theme_items(
+        Rc::new(VecModel::from(
+            snapshot
+                .theme_items
+                .iter()
+                .map(|item| ThemeItem {
+                    index: item.index,
+                    name: SharedString::from(item.name.as_str()),
+                    variant: SharedString::from(item.variant.as_str()),
+                    author: SharedString::from(item.author.as_str()),
+                    is_active: item.is_active,
+                    is_preview: item.is_preview,
+                })
+                .collect::<Vec<_>>(),
+        ))
+        .into(),
+    );
 }
 
 fn apply_editor_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {

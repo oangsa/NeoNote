@@ -39,6 +39,15 @@ export struct EditorLine {
     cursor-block: bool,
 }
 
+export struct ThemeItem {
+    index: int,
+    name: string,
+    variant: string,
+    author: string,
+    is-active: bool,
+    is-preview: bool,
+}
+
 export component AppWindow inherits Window {
     title: "NeoNote";
     width: 1280px;
@@ -64,6 +73,8 @@ export component AppWindow inherits Window {
     in property <string> editor-font-family: "Consolas";
     in property <string> message: "";
     in property <bool> has-document: false;
+    in property <bool> show-theme-panel: false;
+    in property <[ThemeItem]> theme-items;
     in property <brush> theme-background: #0f1117;
     in property <brush> theme-background-alt: #161922;
     in property <brush> theme-surface: #1d2430;
@@ -85,6 +96,9 @@ export component AppWindow inherits Window {
     callback previous-document();
     callback next-document();
     callback open-theme-panel();
+    callback theme-preview(int);
+    callback theme-apply(int);
+    callback theme-panel-close();
     callback open-settings-panel();
     callback editor-key(string);
 
@@ -423,6 +437,147 @@ export component AppWindow inherits Window {
                     color: root.theme-text-muted;
                     font-size: 12px;
                     vertical-alignment: center;
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        x: 0px;
+        y: 0px;
+        width: 100%;
+        height: 100%;
+        visible: root.show-theme-panel;
+        background: root.theme-background.with_alpha(0.68);
+
+        TouchArea {
+            width: 100%;
+            height: 100%;
+            clicked => {
+                root.theme-panel-close();
+            }
+        }
+
+        Rectangle {
+            width: min(parent.width - 48px, 560px);
+            height: min(parent.height - 80px, 520px);
+            x: (parent.width - self.width) / 2;
+            y: 56px;
+            border-width: 1px;
+            border-color: root.theme-border;
+            border-radius: 6px;
+            background: root.theme-surface;
+
+            VerticalLayout {
+                padding: 16px;
+                spacing: 12px;
+
+                HorizontalLayout {
+                    height: 32px;
+                    spacing: 8px;
+
+                    Text {
+                        text: "Themes";
+                        color: root.theme-text;
+                        font-size: 18px;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+
+                    CommandButton {
+                        text: "Cancel";
+                        background-color: root.theme-background-alt;
+                        hover-color: root.theme-border;
+                        command-border-color: root.theme-border;
+                        text-color: root.theme-text-muted;
+                        clicked => { root.theme-panel-close(); }
+                    }
+                }
+
+                Rectangle {
+                    height: 1px;
+                    background: root.theme-border;
+                }
+
+                VerticalLayout {
+                    spacing: 6px;
+                    horizontal-stretch: 1;
+                    vertical-stretch: 1;
+
+                    for item in root.theme-items: Rectangle {
+                        height: 56px;
+                        border-radius: 4px;
+                        border-width: item.is-preview ? 1px : 0px;
+                        border-color: root.theme-accent-primary;
+                        background: item.is-preview ? root.theme-background-alt : (item.is-active ? root.theme-background-alt.with_alpha(0.72) : root.theme-background);
+
+                        TouchArea {
+                            width: 100%;
+                            height: 100%;
+                            clicked => {
+                                root.theme-preview(item.index);
+                            }
+                        }
+
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            padding-right: 10px;
+                            spacing: 10px;
+
+                            Rectangle {
+                                width: 4px;
+                                height: 34px;
+                                border-radius: 2px;
+                                background: item.is-preview ? root.theme-accent-primary : (item.is-active ? root.theme-success : root.theme-border);
+                            }
+
+                            VerticalLayout {
+                                spacing: 2px;
+                                horizontal-stretch: 1;
+
+                                Text {
+                                    text: item.name;
+                                    color: root.theme-text;
+                                    font-size: 14px;
+                                    font-weight: item.is-active ? 700 : 500;
+                                    vertical-alignment: center;
+                                }
+
+                                Text {
+                                    text: item.variant + "  |  " + item.author;
+                                    color: root.theme-text-muted;
+                                    font-size: 12px;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            Text {
+                                text: item.is-preview ? "Preview" : (item.is-active ? "Active" : "");
+                                color: item.is-active ? root.theme-success : root.theme-accent-primary;
+                                font-size: 12px;
+                                vertical-alignment: center;
+                            }
+
+                            CommandButton {
+                                text: "Preview";
+                                background-color: root.theme-background-alt;
+                                hover-color: root.theme-border;
+                                command-border-color: root.theme-border;
+                                text-color: root.theme-text-muted;
+                                clicked => { root.theme-preview(item.index); }
+                            }
+
+                            CommandButton {
+                                text: "Apply";
+                                background-color: item.is-active ? root.theme-background-alt : root.theme-accent-primary;
+                                hover-color: root.theme-border;
+                                command-border-color: item.is-active ? root.theme-border : root.theme-accent-primary;
+                                text-color: item.is-active ? root.theme-text-muted : root.theme-background;
+                                clicked => { root.theme-apply(item.index); }
+                            }
+                        }
+                    }
                 }
             }
         }

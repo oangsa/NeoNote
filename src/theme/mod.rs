@@ -75,6 +75,10 @@ impl ThemeStore {
         self.active_index == Some(index)
     }
 
+    pub fn is_preview(&self, index: usize) -> bool {
+        self.preview_index == Some(index)
+    }
+
     pub fn preview(&mut self, index: usize) {
         if index < self.themes.len() {
             self.preview_index = Some(index);
