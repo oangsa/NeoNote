@@ -46,6 +46,8 @@ pub struct EditorLineSnapshot {
     pub is_cursor_line: bool,
     pub cursor_column: i32,
     pub cursor_prefix: String,
+    pub cursor_cell: String,
+    pub cursor_suffix: String,
     pub cursor_block: bool,
 }
 
@@ -479,6 +481,7 @@ fn editor_lines(note: &NoteDocument) -> Vec<EditorLineSnapshot> {
     let cursor_line = note.cursor_line();
     let cursor_column = note.display_cursor_col() as i32;
     let cursor_block = note.mode() == VimMode::Normal;
+    let cursor = cursor_snapshot(note);
 
     content_lines(note)
         .into_iter()
@@ -488,9 +491,17 @@ fn editor_lines(note: &NoteDocument) -> Vec<EditorLineSnapshot> {
             is_cursor_line: index == cursor_line,
             cursor_column,
             cursor_prefix: if index == cursor_line {
-                text.chars()
-                    .take(note.display_cursor_col())
-                    .collect::<String>()
+                cursor.prefix.clone()
+            } else {
+                String::new()
+            },
+            cursor_cell: if index == cursor_line {
+                cursor.cell.clone()
+            } else {
+                String::new()
+            },
+            cursor_suffix: if index == cursor_line {
+                cursor.suffix.clone()
             } else {
                 String::new()
             },
@@ -582,6 +593,8 @@ mod tests {
                     is_cursor_line: false,
                     cursor_column: 2,
                     cursor_prefix: String::new(),
+                    cursor_cell: String::new(),
+                    cursor_suffix: String::new(),
                     cursor_block: true,
                 },
                 EditorLineSnapshot {
@@ -590,6 +603,8 @@ mod tests {
                     is_cursor_line: true,
                     cursor_column: 2,
                     cursor_prefix: "tw".to_string(),
+                    cursor_cell: "o".to_string(),
+                    cursor_suffix: String::new(),
                     cursor_block: true,
                 },
             ]
@@ -645,6 +660,8 @@ mod tests {
         assert_eq!(snapshot.editor_lines[0].text, "abc");
         assert_eq!(snapshot.editor_lines[0].cursor_column, 3);
         assert_eq!(snapshot.editor_lines[0].cursor_prefix, "abc");
+        assert_eq!(snapshot.editor_lines[0].cursor_cell, " ");
+        assert_eq!(snapshot.editor_lines[0].cursor_suffix, "");
         assert!(!snapshot.editor_lines[0].cursor_block);
     }
 
@@ -660,10 +677,14 @@ mod tests {
         let snapshot = controller.snapshot();
         assert_eq!(snapshot.editor_lines[0].cursor_column, 6);
         assert_eq!(snapshot.editor_lines[0].cursor_prefix, "dawdwa");
+        assert_eq!(snapshot.editor_lines[0].cursor_cell, "d");
+        assert_eq!(snapshot.editor_lines[0].cursor_suffix, "");
 
         controller.handle_editor_key("0");
         let snapshot = controller.snapshot();
         assert_eq!(snapshot.editor_lines[0].cursor_column, 0);
         assert_eq!(snapshot.editor_lines[0].cursor_prefix, "");
+        assert_eq!(snapshot.editor_lines[0].cursor_cell, "d");
+        assert_eq!(snapshot.editor_lines[0].cursor_suffix, "awdwad");
     }
 }

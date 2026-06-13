@@ -34,6 +34,8 @@ export struct EditorLine {
     is-cursor-line: bool,
     cursor-column: int,
     cursor-prefix: string,
+    cursor-cell: string,
+    cursor-suffix: string,
     cursor-block: bool,
 }
 
@@ -348,26 +350,58 @@ export component AppWindow inherits Window {
                                 font-size: root.editor-font-size;
                                 vertical-alignment: center;
                                 wrap: no-wrap;
+                                visible: !line.is-cursor-line;
                             }
 
-                            prefix-measure := Text {
+                            HorizontalLayout {
                                 x: 58px + root.editor-left-padding;
                                 y: 0px;
+                                width: parent.width - 58px - (root.editor-left-padding * 2);
                                 height: root.editor-line-height;
-                                text: line.cursor-prefix;
-                                color: transparent;
-                                font-family: root.editor-font-family;
-                                font-size: root.editor-font-size;
-                                vertical-alignment: center;
-                                wrap: no-wrap;
-                            }
+                                spacing: 0px;
+                                padding-left: 0px;
+                                padding-right: 0px;
+                                padding-top: 0px;
+                                padding-bottom: 0px;
+                                visible: line.is-cursor-line;
 
-                            cursor-cell := Rectangle {
-                                x: 58px + root.editor-left-padding + prefix-measure.preferred-width;
-                                y: 0px;
-                                width: line.is-cursor-line ? (line.cursor-block ? max(cell-measure.preferred-width, 2px) : 2px) : 0px;
-                                height: root.editor-line-height;
-                                background: line.cursor-block ? root.theme-cursor.with_alpha(0.50) : root.mode-color;
+                                Text {
+                                    text: line.cursor-prefix;
+                                    color: root.theme-text;
+                                    font-family: root.editor-font-family;
+                                    font-size: root.editor-font-size;
+                                    vertical-alignment: center;
+                                    wrap: no-wrap;
+                                }
+
+                                Rectangle {
+                                    height: root.editor-line-height;
+                                    width: line.cursor-block ? max(max(cursor-cell-text.preferred-width, cell-measure.preferred-width), 2px) : 2px;
+                                    background: line.cursor-block ? root.theme-cursor.with_alpha(0.72) : root.mode-color;
+
+                                    cursor-cell-text := Text {
+                                        x: 0px;
+                                        y: 0px;
+                                        width: parent.width;
+                                        height: parent.height;
+                                        text: line.cursor-block ? line.cursor-cell : "";
+                                        color: root.theme-background;
+                                        font-family: root.editor-font-family;
+                                        font-size: root.editor-font-size;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        wrap: no-wrap;
+                                    }
+                                }
+
+                                Text {
+                                    text: line.cursor-suffix;
+                                    color: root.theme-text;
+                                    font-family: root.editor-font-family;
+                                    font-size: root.editor-font-size;
+                                    vertical-alignment: center;
+                                    wrap: no-wrap;
+                                }
                             }
                         }
                     }

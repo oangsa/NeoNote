@@ -141,6 +141,8 @@ fn apply_editor_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
                     is_cursor_line: line.is_cursor_line,
                     cursor_column: line.cursor_column,
                     cursor_prefix: SharedString::from(line.cursor_prefix.as_str()),
+                    cursor_cell: SharedString::from(line.cursor_cell.as_str()),
+                    cursor_suffix: SharedString::from(line.cursor_suffix.as_str()),
                     cursor_block: line.cursor_block,
                 })
                 .collect::<Vec<_>>(),
