@@ -28,3 +28,18 @@ Rules:
 - Route Slint callbacks into narrow Rust controller methods.
 - Do not let a Slint text input widget own the core Vim caret; render the editor from Rust-owned buffer/cursor state.
 - Expose theme colors through a single Slint-facing theme state instead of scattering hardcoded colors.
+
+Build pattern validated in this repo:
+
+- Add `slint` as a runtime dependency and `slint-build` as a build dependency.
+- Compile the root `.slint` file from `build.rs` with `slint_build::compile("ui/app-window.slint")`.
+- Include generated Rust bindings with `slint::include_modules!()` in `src/main.rs`.
+- Use `ComponentHandle::as_weak()` inside callbacks so closures can update the window after controller mutations without ownership cycles.
+
+Theme binding pattern validated in this repo:
+
+- Use Slint `in property <brush>` fields for resolved palette tokens.
+- Keep the active theme in `ThemeStore`; expose a compact Rust snapshot for Slint.
+- Convert theme JSON hex strings to `slint::Brush` in the Rust bridge with `Color::from_rgb_u8`.
+- Avoid naming custom component properties the same as inherited Slint properties such as `border-color`.
+- Do not set `x` or `y` on children owned by a `HorizontalLayout` or `VerticalLayout`; the layout owns those coordinates.

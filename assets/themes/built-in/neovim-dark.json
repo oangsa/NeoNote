@@ -1,0 +1,26 @@
+{
+  "name": "NeoVim Dark",
+  "variant": "dark",
+  "author": "NeoNote",
+  "colors": {
+    "background": "#0f1117",
+    "background_alt": "#161922",
+    "surface": "#1d2430",
+    "border": "#303848",
+    "text": "#d7dae0",
+    "text_muted": "#7f8490",
+    "accent_primary": "#7aa2f7",
+    "accent_secondary": "#c678dd",
+    "success": "#98c379",
+    "warning": "#e5c07b",
+    "error": "#e06c75",
+    "cursor": "#d7dae0"
+  },
+  "vim_modes": {
+    "normal": "#61afef",
+    "insert": "#98c379",
+    "visual": "#c678dd",
+    "command": "#e5c07b",
+    "replace": "#e06c75"
+  }
+}

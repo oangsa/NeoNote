@@ -1,0 +1,402 @@
+component CommandButton inherits Rectangle {
+    in property <string> text;
+    in property <brush> background-color;
+    in property <brush> hover-color;
+    in property <brush> command-border-color;
+    in property <brush> text-color;
+    callback clicked();
+
+    height: 30px;
+    min-width: 64px;
+    border-radius: 4px;
+    border-width: 1px;
+    border-color: root.command-border-color;
+    background: touch.has-hover ? root.hover-color : root.background-color;
+
+    Text {
+        text: root.text;
+        color: root.text-color;
+        font-size: 13px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component AppWindow inherits Window {
+    title: "NeoNote";
+    width: 1280px;
+    height: 800px;
+
+    in property <string> file-title: "Untitled";
+    in property <string> file-path: "";
+    in property <string> document-text: "";
+    in property <string> line-numbers: "1";
+    in property <string> document-tabs: "";
+    in property <string> status-text: "No note open";
+    in property <string> status-right: "";
+    in property <string> mode-text: "NORMAL";
+    in property <int> cursor-line: 0;
+    in property <int> cursor-column: 0;
+    in property <string> cursor-prefix: "";
+    in property <string> cursor-cell: " ";
+    in property <string> cursor-suffix: "";
+    in property <bool> cursor-block: true;
+    in property <length> editor-left-padding: 14px;
+    in property <length> editor-line-height: 17px;
+    in property <length> editor-font-size: 14px;
+    in property <string> editor-font-family: "Consolas";
+    in property <string> message: "";
+    in property <bool> has-document: false;
+    in property <brush> theme-background: #0f1117;
+    in property <brush> theme-background-alt: #161922;
+    in property <brush> theme-surface: #1d2430;
+    in property <brush> theme-border: #303848;
+    in property <brush> theme-text: #d7dae0;
+    in property <brush> theme-text-muted: #7f8490;
+    in property <brush> theme-accent-primary: #7aa2f7;
+    in property <brush> theme-accent-secondary: #bb9af7;
+    in property <brush> theme-success: #9ece6a;
+    in property <brush> theme-warning: #e0af68;
+    in property <brush> theme-error: #f7768e;
+    in property <brush> theme-cursor: #c0caf5;
+    in property <brush> mode-color: #7aa2f7;
+
+    callback new-file();
+    callback open-file();
+    callback save-file();
+    callback save-as-file();
+    callback previous-document();
+    callback next-document();
+    callback open-theme-panel();
+    callback open-settings-panel();
+    callback editor-key(string);
+
+    public function focus-editor() {
+        editor-focus.focus();
+    }
+
+    background: root.theme-background;
+
+    VerticalLayout {
+        spacing: 0px;
+
+        Rectangle {
+            height: 38px;
+            background: root.theme-background-alt;
+            border-width: 0px;
+
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 10px;
+                spacing: 8px;
+
+                Rectangle {
+                    width: 4px;
+                    height: 20px;
+                    border-radius: 2px;
+                    background: root.mode-color;
+                }
+
+                Text {
+                    text: "NeoNote";
+                    color: root.theme-text;
+                    font-size: 16px;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                }
+
+                Rectangle {
+                    width: 1px;
+                    background: root.theme-border;
+                }
+
+                Text {
+                    text: root.has-document ? root.file-title : "[No Name]";
+                    color: root.theme-text-muted;
+                    font-size: 14px;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+
+                CommandButton {
+                    text: "Prev";
+                    background-color: root.theme-background-alt;
+                    hover-color: root.theme-border;
+                    command-border-color: root.theme-border;
+                    text-color: root.theme-text-muted;
+                    clicked => { root.previous-document(); }
+                }
+
+                CommandButton {
+                    text: "Next";
+                    background-color: root.theme-background-alt;
+                    hover-color: root.theme-border;
+                    command-border-color: root.theme-border;
+                    text-color: root.theme-text-muted;
+                    clicked => { root.next-document(); }
+                }
+
+                CommandButton {
+                    text: "New";
+                    background-color: root.theme-surface;
+                    hover-color: root.theme-border;
+                    command-border-color: root.theme-border;
+                    text-color: root.theme-text;
+                    clicked => { root.new-file(); }
+                }
+
+                CommandButton {
+                    text: "Open";
+                    background-color: root.theme-surface;
+                    hover-color: root.theme-border;
+                    command-border-color: root.theme-border;
+                    text-color: root.theme-text;
+                    clicked => { root.open-file(); }
+                }
+
+                CommandButton {
+                    text: "Save";
+                    background-color: root.theme-surface;
+                    hover-color: root.theme-border;
+                    command-border-color: root.theme-border;
+                    text-color: root.theme-text;
+                    clicked => { root.save-file(); }
+                }
+
+                CommandButton {
+                    text: "Save As";
+                    background-color: root.theme-surface;
+                    hover-color: root.theme-border;
+                    command-border-color: root.theme-border;
+                    text-color: root.theme-text;
+                    clicked => { root.save-as-file(); }
+                }
+
+                CommandButton {
+                    text: "Themes";
+                    background-color: root.theme-surface;
+                    hover-color: root.theme-border;
+                    command-border-color: root.theme-border;
+                    text-color: root.theme-text;
+                    clicked => { root.open-theme-panel(); }
+                }
+
+                CommandButton {
+                    text: "Settings";
+                    background-color: root.theme-surface;
+                    hover-color: root.theme-border;
+                    command-border-color: root.theme-border;
+                    text-color: root.theme-text;
+                    clicked => { root.open-settings-panel(); }
+                }
+            }
+        }
+
+        Rectangle {
+            height: 28px;
+            background: root.theme-surface;
+            border-color: root.theme-border;
+            border-width: 0px;
+
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 10px;
+
+                Text {
+                    text: root.has-document ? root.document-tabs : "New .txt note";
+                    color: root.theme-text-muted;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+
+                Text {
+                    text: root.message;
+                    color: root.message == "" ? root.theme-text-muted : root.theme-success;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        Rectangle {
+            background: root.theme-background;
+            horizontal-stretch: 1;
+            vertical-stretch: 1;
+
+            editor-focus := FocusScope {
+                width: 100%;
+                height: 100%;
+
+                key-pressed(event) => {
+                    if (event.text == Key.Escape) {
+                        root.editor-key("escape");
+                    } else if (event.text == Key.Return) {
+                        root.editor-key("return");
+                    } else if (event.text == Key.Backspace) {
+                        root.editor-key("backspace");
+                    } else if (event.text == Key.Delete) {
+                        root.editor-key("delete");
+                    } else if (event.text == Key.LeftArrow) {
+                        root.editor-key("left");
+                    } else if (event.text == Key.RightArrow) {
+                        root.editor-key("right");
+                    } else if (event.text == Key.UpArrow) {
+                        root.editor-key("up");
+                    } else if (event.text == Key.DownArrow) {
+                        root.editor-key("down");
+                    } else {
+                        root.editor-key(event.text);
+                    }
+
+                    return accept;
+                }
+
+                HorizontalLayout {
+                    padding-top: 14px;
+                    padding-bottom: 14px;
+                    padding-left: 0px;
+                    padding-right: 0px;
+                    spacing: 0px;
+
+                    Rectangle {
+                        width: 58px;
+                        background: root.theme-background-alt;
+                        border-color: root.theme-border;
+                        border-width: 0px;
+
+                        Text {
+                            x: 0px;
+                            y: 0px;
+                            width: parent.width - 10px;
+                            height: parent.height;
+                            text: root.has-document ? root.line-numbers : "~";
+                            color: root.theme-text-muted;
+                            font-family: root.editor-font-family;
+                            font-size: 14px;
+                            horizontal-alignment: right;
+                        }
+                    }
+
+                    Rectangle {
+                        background: root.theme-background;
+                        horizontal-stretch: 1;
+
+                        Text {
+                            x: root.editor-left-padding;
+                            y: 0px;
+                            width: parent.width - (root.editor-left-padding * 2);
+                            height: parent.height;
+                            text: root.has-document ? root.document-text : "New File\nOpen File";
+                            color: root.has-document ? root.theme-text : root.theme-text-muted;
+                            font-family: root.editor-font-family;
+                            font-size: root.editor-font-size;
+                            wrap: no-wrap;
+                        }
+
+                        line-measure-single := Text {
+                            x: 0px;
+                            y: 0px;
+                            text: "M";
+                            color: transparent;
+                            font-family: root.editor-font-family;
+                            font-size: root.editor-font-size;
+                            wrap: no-wrap;
+                        }
+
+                        line-measure-double := Text {
+                            x: 0px;
+                            y: 0px;
+                            text: "M\nM";
+                            color: transparent;
+                            font-family: root.editor-font-family;
+                            font-size: root.editor-font-size;
+                            wrap: no-wrap;
+                        }
+
+                        active-line := Rectangle {
+                            x: root.editor-left-padding;
+                            y: root.cursor-line * (line-measure-double.preferred-height - line-measure-single.preferred-height);
+                            width: parent.width - (root.editor-left-padding * 2);
+                            height: line-measure-double.preferred-height - line-measure-single.preferred-height;
+                            background: transparent;
+
+                            prefix-measure := Text {
+                                x: 0px;
+                                y: 0px;
+                                height: parent.height;
+                                text: root.has-document ? "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM" : "";
+                                color: transparent;
+                                font-family: root.editor-font-family;
+                                font-size: root.editor-font-size;
+                                wrap: no-wrap;
+                            }
+
+                            Rectangle {
+                                x: (prefix-measure.preferred-width / 64) * root.cursor-column;
+                                y: 0px;
+                                height: parent.height;
+                                width: root.has-document ? (root.cursor-block ? max(prefix-measure.preferred-width / 64, 2px) : 2px) : 0px;
+                                background: root.cursor-block ? root.theme-cursor.with_alpha(0.55) : root.mode-color;
+                            }
+                        }
+                    }
+                }
+
+                TouchArea {
+                    width: 100%;
+                    height: 100%;
+                    clicked => {
+                        editor-focus.focus();
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            height: 26px;
+            background: root.theme-background-alt;
+
+            HorizontalLayout {
+                spacing: 0px;
+
+                Rectangle {
+                    width: 108px;
+                    background: root.mode-color;
+
+                    Text {
+                        text: root.mode-text;
+                        color: root.theme-background;
+                        font-size: 12px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                Text {
+                    text: root.status-text;
+                    color: root.theme-text-muted;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    horizontal-alignment: left;
+                }
+
+                Text {
+                    text: root.status-right;
+                    color: root.theme-text-muted;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}

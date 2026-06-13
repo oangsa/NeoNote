@@ -4,43 +4,85 @@ use crate::{
     notes::{NoteDocument, VimMode},
     persistence::{AppConfig, AppDataPaths, RecentFiles, SessionState},
     theme::ThemeStore,
-    ui::{
-        launcher::{LauncherAction, LauncherView},
-        settings_panel::SettingsPanel,
-        statusbar::StatusBar,
-        theme_panel::{ThemePanel, ThemePanelAction},
-        titlebar::{TitleBar, TitleBarAction},
-        toast::ToastStack,
-    },
 };
 
-pub struct NeoNoteApp {
+pub struct AppController {
     paths: AppDataPaths,
     config: AppConfig,
     session: SessionState,
     recent_files: RecentFiles,
     themes: ThemeStore,
-    note: NoteDocument,
-    titlebar: TitleBar,
-    statusbar: StatusBar,
-    launcher: LauncherView,
-    theme_panel: ThemePanel,
-    settings_panel: SettingsPanel,
-    toasts: ToastStack,
-    focus_editor: bool,
+    documents: Vec<NoteDocument>,
+    active_document: usize,
+    last_message: String,
 }
 
-impl NeoNoteApp {
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+#[derive(Clone, Debug, Default)]
+pub struct AppSnapshot {
+    pub file_title: String,
+    pub file_path: String,
+    pub document_text: String,
+    pub line_numbers: String,
+    pub document_tabs: String,
+    pub status_text: String,
+    pub status_right: String,
+    pub mode_text: String,
+    pub mode_color: String,
+    pub cursor_line: i32,
+    pub cursor_column: i32,
+    pub cursor_prefix: String,
+    pub cursor_cell: String,
+    pub cursor_suffix: String,
+    pub cursor_block: bool,
+    pub message: String,
+    pub has_document: bool,
+    pub editor_font_family: String,
+    pub theme: ThemeSnapshot,
+}
+
+#[derive(Clone, Debug)]
+pub struct ThemeSnapshot {
+    pub background: String,
+    pub background_alt: String,
+    pub surface: String,
+    pub border: String,
+    pub text: String,
+    pub text_muted: String,
+    pub accent_primary: String,
+    pub accent_secondary: String,
+    pub success: String,
+    pub warning: String,
+    pub error: String,
+    pub cursor: String,
+}
+
+impl Default for ThemeSnapshot {
+    fn default() -> Self {
+        Self {
+            background: "#0f1117".to_string(),
+            background_alt: "#161922".to_string(),
+            surface: "#1d2430".to_string(),
+            border: "#303848".to_string(),
+            text: "#d7dae0".to_string(),
+            text_muted: "#7f8490".to_string(),
+            accent_primary: "#7aa2f7".to_string(),
+            accent_secondary: "#bb9af7".to_string(),
+            success: "#9ece6a".to_string(),
+            warning: "#e0af68".to_string(),
+            error: "#f7768e".to_string(),
+            cursor: "#c0caf5".to_string(),
+        }
+    }
+}
+
+impl AppController {
+    pub fn new() -> Self {
         let paths = AppDataPaths::new();
-        let config = AppConfig::load_or_default(&paths);
+        let mut config = AppConfig::load_or_default(&paths);
+        migrate_old_default_theme(&paths, &mut config);
         let session = SessionState::load_or_default(&paths);
         let recent_files = RecentFiles::load_or_default(&paths);
         let themes = ThemeStore::load(&paths, config.active_theme.as_deref());
-
-        if let Some(theme) = themes.active_theme() {
-            cc.egui_ctx.set_visuals(theme.to_visuals());
-        }
 
         Self {
             paths,
@@ -48,78 +90,228 @@ impl NeoNoteApp {
             session,
             recent_files,
             themes,
-            note: NoteDocument::default(),
-            titlebar: TitleBar::default(),
-            statusbar: StatusBar::default(),
-            launcher: LauncherView,
-            theme_panel: ThemePanel::default(),
-            settings_panel: SettingsPanel::default(),
-            toasts: ToastStack::default(),
-            focus_editor: false,
+            documents: vec![NoteDocument::default()],
+            active_document: 0,
+            last_message: String::new(),
         }
     }
 
-    fn new_note(&mut self) {
-        if self.note.dirty() {
-            self.toasts.push("Save the current note before creating a new one.");
-            return;
+    pub fn new_file(&mut self) {
+        let mut note = NoteDocument::default();
+        note.new_blank();
+        if self.documents.len() == 1 && !self.active_note().is_open() {
+            self.documents[0] = note;
+            self.active_document = 0;
+        } else {
+            self.documents.push(note);
+            self.active_document = self.documents.len().saturating_sub(1);
         }
-        self.note.new_blank();
-        self.focus_editor = true;
+        self.last_message = "New note ready.".to_string();
     }
 
-    fn open_note_dialog(&mut self) {
-        if self.note.dirty() {
-            self.toasts.push("Save the current note before opening another file.");
-            return;
-        }
-
-        if let Some(path) = rfd::FileDialog::new()
+    pub fn open_file_dialog(&mut self) {
+        if let Some(paths) = rfd::FileDialog::new()
             .add_filter("Text", &["txt"])
             .add_filter("Markdown", &["md", "markdown"])
             .set_file_name("note.txt")
-            .pick_file()
+            .pick_files()
         {
-            self.open_path(path);
-        }
-    }
-
-    fn open_path(&mut self, path: PathBuf) {
-        match self.note.open(&path) {
-            Ok(()) => {
-                self.remember_recent(path);
-                self.focus_editor = true;
+            for path in paths {
+                self.open_path(path);
             }
-            Err(error) => self.toasts.push(format!("Could not open note: {error}")),
         }
     }
 
-    fn save_note(&mut self) {
-        if self.note.path_string().is_some() {
-            match self.note.save() {
+    pub fn save(&mut self) {
+        if !self.active_note().is_open() {
+            self.new_file();
+        }
+
+        if self.active_note().path_string().is_some() {
+            match self.active_note_mut().save() {
                 Ok(()) => {
-                    if let Some(path) = self.note.path_string() {
+                    if let Some(path) = self.active_note().path_string() {
                         self.remember_recent(PathBuf::from(path));
                     }
+                    self.last_message = "Saved.".to_string();
                 }
-                Err(error) => self.toasts.push(format!("Could not save note: {error}")),
+                Err(error) => self.last_message = format!("Could not save note: {error}"),
             }
         } else {
-            self.save_note_as();
+            self.save_as();
         }
     }
 
-    fn save_note_as(&mut self) {
+    pub fn save_as(&mut self) {
+        if !self.active_note().is_open() {
+            self.active_note_mut().new_blank();
+        }
+
         if let Some(path) = rfd::FileDialog::new()
             .add_filter("Text", &["txt"])
             .add_filter("Markdown", &["md"])
             .set_file_name("note.txt")
             .save_file()
         {
-            match self.note.save_as(&path) {
-                Ok(()) => self.remember_recent(path),
-                Err(error) => self.toasts.push(format!("Could not save note: {error}")),
+            match self.active_note_mut().save_as(&path) {
+                Ok(()) => {
+                    self.remember_recent(path);
+                    self.last_message = "Saved.".to_string();
+                }
+                Err(error) => self.last_message = format!("Could not save note: {error}"),
             }
+        }
+    }
+
+    pub fn open_theme_panel(&mut self) {
+        self.last_message = "Theme panel migration to Slint is next.".to_string();
+    }
+
+    pub fn open_settings_panel(&mut self) {
+        self.last_message = "Settings panel migration to Slint is next.".to_string();
+    }
+
+    pub fn handle_editor_key(&mut self, key: &str) {
+        if !self.active_note().is_open() {
+            return;
+        }
+
+        match self.active_note().mode() {
+            VimMode::Normal => self.handle_normal_editor_key(key),
+            VimMode::Insert => self.handle_insert_editor_key(key),
+        }
+    }
+
+    pub fn previous_document(&mut self) {
+        if self.documents.is_empty() {
+            return;
+        }
+
+        self.active_document = if self.active_document == 0 {
+            self.documents.len().saturating_sub(1)
+        } else {
+            self.active_document - 1
+        };
+        self.last_message = format!("Switched to {}.", self.active_note().title());
+    }
+
+    pub fn next_document(&mut self) {
+        if self.documents.is_empty() {
+            return;
+        }
+
+        self.active_document = (self.active_document + 1) % self.documents.len();
+        self.last_message = format!("Switched to {}.", self.active_note().title());
+    }
+
+    pub fn snapshot(&self) -> AppSnapshot {
+        let note = self.active_note();
+        let stats = note.stats();
+        let cursor = cursor_snapshot(note);
+        let mode_text = if note.is_open() {
+            note.mode().label().to_string()
+        } else {
+            "READY".to_string()
+        };
+        let theme = self.theme_snapshot();
+        AppSnapshot {
+            file_title: note.title(),
+            file_path: note.path_string().unwrap_or_default(),
+            document_text: document_text_for_editor(note),
+            line_numbers: line_numbers(stats.line_count),
+            document_tabs: self.document_tabs(),
+            status_text: if note.is_open() {
+                format!(
+                    " {}{}",
+                    note.title(),
+                    if note.dirty() { " [+]" } else { "" },
+                )
+            } else {
+                " [No Name]".to_string()
+            },
+            status_right: if note.is_open() {
+                format!(
+                    "Doc {}/{}  |  Ln {}, Col {}  |  {} lines, {} words, {} chars  ",
+                    self.active_document + 1,
+                    self.open_document_count(),
+                    note.cursor_line() + 1,
+                    note.display_cursor_col() + 1,
+                    stats.line_count,
+                    stats.word_count,
+                    stats.char_count
+                )
+            } else {
+                "NeoNote native Vim core  ".to_string()
+            },
+            mode_color: self.mode_color(&mode_text),
+            cursor_line: note.cursor_line() as i32,
+            cursor_column: note.display_cursor_col() as i32,
+            cursor_prefix: cursor.prefix,
+            cursor_cell: cursor.cell,
+            cursor_suffix: cursor.suffix,
+            cursor_block: note.mode() == VimMode::Normal,
+            mode_text,
+            message: self.last_message.clone(),
+            has_document: note.is_open(),
+            editor_font_family: crate::platform::fonts::select_editor_font(&self.config.font_family),
+            theme,
+        }
+    }
+
+    fn handle_normal_editor_key(&mut self, key: &str) {
+        let normal_key = match key {
+            "escape" => {
+                self.active_note_mut().enter_normal();
+                return;
+            }
+            "left" => "h",
+            "right" => "l",
+            "up" => "k",
+            "down" => "j",
+            "return" | "backspace" | "delete" => return,
+            value => value,
+        };
+
+        if self.active_note_mut().handle_normal_input(normal_key) {
+            self.last_message.clear();
+        }
+    }
+
+    fn handle_insert_editor_key(&mut self, key: &str) {
+        match key {
+            "escape" => self.active_note_mut().enter_normal(),
+            "return" => self.active_note_mut().insert_newline(),
+            "backspace" => self.active_note_mut().backspace(),
+            "delete" => self.active_note_mut().delete_at_cursor(),
+            "left" | "right" | "up" | "down" => {}
+            text if is_printable_editor_text(text) => {
+                self.active_note_mut().handle_insert_text(text)
+            }
+            _ => {}
+        }
+    }
+
+    fn open_path(&mut self, path: PathBuf) {
+        if let Some(index) = self.document_index_for_path(&path) {
+            self.active_document = index;
+            self.last_message = "File already open.".to_string();
+            return;
+        }
+
+        let mut note = NoteDocument::default();
+        match note.open(&path) {
+            Ok(()) => {
+                if self.documents.len() == 1 && !self.active_note().is_open() {
+                    self.documents[0] = note;
+                    self.active_document = 0;
+                } else {
+                    self.documents.push(note);
+                    self.active_document = self.documents.len().saturating_sub(1);
+                }
+                self.remember_recent(path);
+                self.last_message = "Opened note.".to_string();
+            }
+            Err(error) => self.last_message = format!("Could not open note: {error}"),
         }
     }
 
@@ -127,285 +319,97 @@ impl NeoNoteApp {
         self.recent_files
             .upsert(path.display().to_string(), chrono_like_now());
         if let Err(error) = self.recent_files.save(&self.paths) {
-            self.toasts
-                .push(format!("Could not update recent files: {error}"));
+            self.last_message = format!("Could not update recent files: {error}");
         }
     }
 
-    fn render_menu_bar(&mut self, ctx: &egui::Context) {
-        egui::TopBottomPanel::top("menubar")
-            .exact_height(28.0)
-            .show(ctx, |ui| {
-                egui::menu::bar(ui, |ui| {
-                    ui.menu_button("File", |ui| {
-                        if ui.button("New File").clicked() {
-                            self.new_note();
-                            ui.close_menu();
-                        }
-                        if ui.button("Open File").clicked() {
-                            self.open_note_dialog();
-                            ui.close_menu();
-                        }
-                        if ui.button("Open Folder").clicked() {
-                            self.toasts.push("Folder browsing is planned for the sidebar.");
-                            ui.close_menu();
-                        }
-                        if ui.button("Save").clicked() {
-                            self.save_note();
-                            ui.close_menu();
-                        }
-                        if ui.button("Save As").clicked() {
-                            self.save_note_as();
-                            ui.close_menu();
-                        }
-                        ui.menu_button("Recent Files", |ui| {
-                            let entries = self.recent_files.entries().to_vec();
-                            for entry in entries {
-                                if ui.button(&entry.path).clicked() {
-                                    if self.note.dirty() {
-                                        self.toasts.push(
-                                            "Save the current note before opening another file.",
-                                        );
-                                    } else {
-                                        self.open_path(PathBuf::from(entry.path));
-                                    }
-                                    ui.close_menu();
-                                }
-                            }
-                        });
-                        if ui.button("Exit").clicked() {
-                            if !self.note.dirty() {
-                                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                            } else {
-                                self.toasts.push("Save the current note before exiting.");
-                            }
-                            ui.close_menu();
-                        }
-                    });
-                    ui.menu_button("View", |ui| {
-                        if ui.button("Toggle Status Bar").clicked() {
-                            self.toasts
-                                .push("Status bar toggle will be persisted in Phase 6 settings.");
-                            ui.close_menu();
-                        }
-                        if ui.button("Zen Mode").clicked() {
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
-                            ui.close_menu();
-                        }
-                    });
-                    ui.menu_button("Theme", |ui| {
-                        if ui.button("Theme Panel").clicked() {
-                            self.theme_panel.open();
-                            ui.close_menu();
-                        }
-                    });
-                });
-            });
-    }
+    fn theme_snapshot(&self) -> ThemeSnapshot {
+        let Some(theme) = self.themes.active_theme() else {
+            return ThemeSnapshot::default();
+        };
 
-    fn render_editor_shell(&mut self, ctx: &egui::Context) {
-        egui::TopBottomPanel::top("titlebar")
-            .exact_height(36.0)
-            .show(ctx, |ui| {
-                if let Some(action) = self.titlebar.ui(ui, &self.note.title(), self.note.dirty()) {
-                    self.handle_titlebar_action(ctx, action);
-                }
-            });
-
-        self.render_menu_bar(ctx);
-
-        egui::TopBottomPanel::bottom("statusbar")
-            .exact_height(26.0)
-            .show(ctx, |ui| {
-                self.statusbar.ui_note(ui, &self.note);
-            });
-
-        egui::CentralPanel::default().show(ctx, |ui| {
-            if !self.note.is_open() {
-                ui.centered_and_justified(|ui| {
-                    match self.launcher.ui(ui, &self.recent_files, &self.themes) {
-                        Some(LauncherAction::NewFile) => self.new_note(),
-                        Some(LauncherAction::OpenFile) => self.open_note_dialog(),
-                        Some(LauncherAction::OpenFolder) => {
-                            self.toasts.push("Folder browsing is planned for the sidebar.");
-                        }
-                        None => {}
-                    }
-                });
-            } else {
-                self.render_vim_editor(ctx, ui);
-            }
-        });
-    }
-
-    fn render_vim_editor(&mut self, ctx: &egui::Context, ui: &mut egui::Ui) {
-        let (rect, response) = ui.allocate_exact_size(ui.available_size(), egui::Sense::click());
-        if response.clicked() || self.focus_editor {
-            response.request_focus();
-            self.focus_editor = false;
-        }
-
-        if response.has_focus() {
-            self.handle_editor_input(ctx);
-        }
-
-        let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 0.0, ui.visuals().panel_fill);
-        let font = egui::FontId::monospace(15.0);
-        let row_height = 20.0;
-        let gutter_width = 54.0;
-        let cursor_line = self.note.cursor_line();
-
-        for (index, line) in self.note.content().split('\n').enumerate() {
-            let y = rect.top() + 8.0 + index as f32 * row_height;
-            if y > rect.bottom() {
-                break;
-            }
-
-            let line_rect = egui::Rect::from_min_size(
-                egui::pos2(rect.left(), y - 2.0),
-                egui::vec2(rect.width(), row_height),
-            );
-            if index == cursor_line {
-                painter.rect_filled(line_rect, 0.0, ui.visuals().faint_bg_color);
-            }
-
-            painter.text(
-                egui::pos2(rect.left() + 8.0, y),
-                egui::Align2::LEFT_TOP,
-                format!("{:>4}", index + 1),
-                font.clone(),
-                ui.visuals().weak_text_color(),
-            );
-            painter.text(
-                egui::pos2(rect.left() + gutter_width, y),
-                egui::Align2::LEFT_TOP,
-                self.note.normal_mode_line_with_cursor(line, index),
-                font.clone(),
-                ui.visuals().strong_text_color(),
-            );
-        }
-
-        if self.note.content().is_empty() {
-            painter.text(
-                egui::pos2(rect.left() + gutter_width, rect.top() + 8.0),
-                egui::Align2::LEFT_TOP,
-                "|",
-                font,
-                ui.visuals().strong_text_color(),
-            );
+        ThemeSnapshot {
+            background: theme.colors.background.clone(),
+            background_alt: theme.colors.background_alt.clone(),
+            surface: theme.colors.surface.clone(),
+            border: theme.colors.border.clone(),
+            text: theme.colors.text.clone(),
+            text_muted: theme.colors.text_muted.clone(),
+            accent_primary: theme.colors.accent_primary.clone(),
+            accent_secondary: theme.colors.accent_secondary.clone(),
+            success: theme.colors.success.clone(),
+            warning: theme.colors.warning.clone(),
+            error: theme.colors.error.clone(),
+            cursor: theme.colors.cursor.clone(),
         }
     }
 
-    fn handle_editor_input(&mut self, ctx: &egui::Context) {
-        let events = ctx.input(|input| input.events.clone());
-        for event in events {
-            match event {
-                egui::Event::Key {
-                    key: egui::Key::Escape,
-                    pressed: true,
-                    ..
-                } => self.note.enter_normal(),
-                egui::Event::Key {
-                    key: egui::Key::Enter,
-                    pressed: true,
-                    ..
-                } if self.note.mode() == VimMode::Insert => self.note.insert_newline(),
-                egui::Event::Key {
-                    key: egui::Key::Backspace,
-                    pressed: true,
-                    ..
-                } if self.note.mode() == VimMode::Insert => self.note.backspace(),
-                egui::Event::Key {
-                    key: egui::Key::Delete,
-                    pressed: true,
-                    ..
-                } if self.note.mode() == VimMode::Insert => self.note.delete_at_cursor(),
-                egui::Event::Text(text) if self.note.mode() == VimMode::Insert => {
-                    self.note.handle_insert_text(&text);
-                }
-                egui::Event::Paste(text) if self.note.mode() == VimMode::Insert => {
-                    self.note.handle_insert_text(&text);
-                }
-                egui::Event::Text(text) if self.note.mode() == VimMode::Normal => {
-                    self.note.handle_normal_input(&text);
-                }
-                _ => {}
-            }
+    fn mode_color(&self, mode: &str) -> String {
+        let Some(theme) = self.themes.active_theme() else {
+            return ThemeSnapshot::default().accent_primary;
+        };
+
+        match mode {
+            "NORMAL" => theme.vim_modes.normal.clone(),
+            "INSERT" => theme.vim_modes.insert.clone(),
+            "VISUAL" => theme.vim_modes.visual.clone(),
+            "COMMAND" => theme.vim_modes.command.clone(),
+            "REPLACE" => theme.vim_modes.replace.clone(),
+            _ => theme.colors.accent_primary.clone(),
         }
     }
 
-    fn handle_titlebar_action(&mut self, ctx: &egui::Context, action: TitleBarAction) {
-        match action {
-            TitleBarAction::Minimize => {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
-            }
-            TitleBarAction::ToggleMaximize => {
-                let maximized = self.titlebar.toggle_maximized();
-                ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(maximized));
-            }
-            TitleBarAction::Close => {
-                if !self.note.dirty() {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+    fn active_note(&self) -> &NoteDocument {
+        &self.documents[self
+            .active_document
+            .min(self.documents.len().saturating_sub(1))]
+    }
+
+    fn active_note_mut(&mut self) -> &mut NoteDocument {
+        let index = self
+            .active_document
+            .min(self.documents.len().saturating_sub(1));
+        &mut self.documents[index]
+    }
+
+    fn document_index_for_path(&self, path: &std::path::Path) -> Option<usize> {
+        self.documents.iter().position(|note| {
+            note.path_string()
+                .map(|open_path| PathBuf::from(open_path) == path)
+                .unwrap_or(false)
+        })
+    }
+
+    fn document_tabs(&self) -> String {
+        self.documents
+            .iter()
+            .enumerate()
+            .filter(|(_, note)| note.is_open())
+            .map(|(index, note)| {
+                let active_marker = if index == self.active_document {
+                    ">"
                 } else {
-                    self.toasts.push("Save the current note before closing.");
-                }
-            }
-        }
+                    " "
+                };
+                let dirty_marker = if note.dirty() { " +" } else { "" };
+                format!("{active_marker} {}{dirty_marker}", note.title())
+            })
+            .collect::<Vec<_>>()
+            .join("   ")
     }
 
-    fn handle_theme_action(&mut self, ctx: &egui::Context, action: ThemePanelAction) {
-        match action {
-            ThemePanelAction::Preview(index) => {
-                self.themes.preview(index);
-                if let Some(theme) = self.themes.active_theme() {
-                    ctx.set_visuals(theme.to_visuals());
-                }
-            }
-            ThemePanelAction::ClearPreview => {
-                self.themes.clear_preview();
-                if let Some(theme) = self.themes.active_theme() {
-                    ctx.set_visuals(theme.to_visuals());
-                }
-            }
-            ThemePanelAction::Apply(index) => {
-                let theme = self.themes.commit(index).cloned();
-                if let Some(theme) = theme {
-                    ctx.set_visuals(theme.to_visuals());
-                    self.config.active_theme = Some(theme.slug());
-                    if let Err(error) = self.config.save(&self.paths) {
-                        self.toasts.push(format!("Could not save config: {error}"));
-                    }
-                }
-            }
-            ThemePanelAction::Imported(name) => self.toasts.push(format!("Imported theme: {name}")),
-            ThemePanelAction::ImportFailed(error) => {
-                self.toasts.push(format!("Theme import failed: {error}"))
-            }
-            ThemePanelAction::Saved(path) => self.toasts.push(format!("Saved theme: {path}")),
-            ThemePanelAction::SaveFailed(error) => {
-                self.toasts.push(format!("Theme save failed: {error}"))
-            }
-        }
+    fn open_document_count(&self) -> usize {
+        self.documents
+            .iter()
+            .filter(|note| note.is_open())
+            .count()
+            .max(1)
     }
 }
 
-impl eframe::App for NeoNoteApp {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        let _ = frame;
-        if ctx.input(|input| {
-            input.key_pressed(egui::Key::T) && input.modifiers.ctrl && input.modifiers.shift
-        }) {
-            self.theme_panel.open();
-        }
-        self.render_editor_shell(ctx);
-        if let Some(action) = self.theme_panel.ui(ctx, &self.paths, &mut self.themes) {
-            self.handle_theme_action(ctx, action);
-        }
-        self.settings_panel.ui(ctx, &mut self.config);
-        self.toasts.ui(ctx);
-
-        let _ = (&self.paths, &self.session);
+impl Default for AppController {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -417,4 +421,131 @@ fn chrono_like_now() -> String {
         .map(|duration| duration.as_secs())
         .unwrap_or_default();
     format!("{seconds}")
+}
+
+fn is_printable_editor_text(text: &str) -> bool {
+    !text.is_empty() && text.chars().all(|ch| !ch.is_control())
+}
+
+fn line_numbers(line_count: usize) -> String {
+    (1..=line_count.max(1))
+        .map(|line| line.to_string())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn migrate_old_default_theme(paths: &AppDataPaths, config: &mut AppConfig) {
+    if config.active_theme.as_deref() == Some("catppuccin-mocha") {
+        config.active_theme = Some("neovim-dark".to_string());
+        let _ = config.save(paths);
+    }
+}
+
+struct CursorSnapshot {
+    prefix: String,
+    cell: String,
+    suffix: String,
+}
+
+fn cursor_snapshot(note: &NoteDocument) -> CursorSnapshot {
+    let line = note
+        .content()
+        .split('\n')
+        .nth(note.cursor_line())
+        .unwrap_or_default();
+    let col = note.display_cursor_col();
+    let prefix = line.chars().take(col).collect::<String>();
+    let suffix_start = if note.mode() == VimMode::Normal {
+        col.saturating_add(1)
+    } else {
+        col
+    };
+    let cell = if note.mode() == VimMode::Normal {
+        line.chars().nth(col).unwrap_or(' ').to_string()
+    } else {
+        " ".to_string()
+    };
+    let suffix = line.chars().skip(suffix_start).collect::<String>();
+
+    CursorSnapshot {
+        prefix,
+        cell,
+        suffix,
+    }
+}
+
+fn document_text_for_editor(note: &NoteDocument) -> String {
+    note.content().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_file_keeps_multiple_untitled_documents() {
+        let mut controller = AppController::new();
+        controller.new_file();
+        controller.handle_editor_key("i");
+        controller.handle_editor_key("a");
+
+        controller.new_file();
+        controller.handle_editor_key("i");
+        controller.handle_editor_key("b");
+
+        assert_eq!(controller.active_note().content(), "b");
+        controller.previous_document();
+        assert_eq!(controller.active_note().content(), "a");
+    }
+
+    #[test]
+    fn open_path_adds_multiple_file_documents() {
+        let root = std::env::temp_dir().join(format!("neonote-test-{}", chrono_like_now()));
+        std::fs::create_dir_all(&root).unwrap();
+        let first = root.join("first.txt");
+        let second = root.join("second.txt");
+        std::fs::write(&first, "one").unwrap();
+        std::fs::write(&second, "two").unwrap();
+
+        let mut controller = AppController::new();
+        controller.open_path(first);
+        controller.open_path(second);
+
+        assert_eq!(controller.open_document_count(), 2);
+        assert_eq!(controller.active_note().content(), "two");
+        controller.previous_document();
+        assert_eq!(controller.active_note().content(), "one");
+    }
+
+    #[test]
+    fn cursor_snapshot_uses_prefix_and_cell_for_normal_mode() {
+        let mut controller = AppController::new();
+        controller.new_file();
+        controller.handle_editor_key("i");
+        for key in ["a", "b", "c", "escape", "h"] {
+            controller.handle_editor_key(key);
+        }
+
+        let snapshot = controller.snapshot();
+        assert_eq!(snapshot.cursor_prefix, "a");
+        assert_eq!(snapshot.cursor_cell, "b");
+        assert_eq!(snapshot.cursor_suffix, "c");
+        assert!(snapshot.cursor_block);
+    }
+
+    #[test]
+    fn document_text_keeps_active_line_for_cursor_overlay() {
+        let mut controller = AppController::new();
+        controller.new_file();
+        controller.handle_editor_key("i");
+        for key in ["o", "n", "e", "return", "t", "w", "o", "escape"] {
+            controller.handle_editor_key(key);
+        }
+
+        let snapshot = controller.snapshot();
+        assert_eq!(snapshot.document_text, "one\ntwo");
+        assert_eq!(snapshot.cursor_prefix, "tw");
+        assert_eq!(snapshot.cursor_cell, "o");
+        assert_eq!(snapshot.cursor_suffix, "");
+    }
 }

@@ -1,4 +1,9 @@
 fn main() {
+    if let Err(error) = slint_build::compile("ui/app-window.slint") {
+        println!("cargo:warning=failed to compile Slint UI: {error}");
+        panic!("failed to compile Slint UI: {error}");
+    }
+
     #[cfg(windows)]
     {
         let mut resource = winres::WindowsResource::new();

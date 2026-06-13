@@ -357,6 +357,8 @@ Acceptance:
 
 ### Phase 1 - Slint Foundation
 
+Status: first shell implemented.
+
 Scope:
 
 - Add Slint dependencies and build integration.

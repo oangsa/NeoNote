@@ -8,7 +8,7 @@ use std::{
 
 use crate::persistence::AppDataPaths;
 
-pub use schema::{Theme, ThemeColors, ThemeVariant, VimModeColors};
+pub use schema::{Theme, ThemeVariant};
 
 #[derive(Default)]
 pub struct ThemeStore {
@@ -59,7 +59,11 @@ impl ThemeStore {
         self.themes
             .iter()
             .enumerate()
-            .filter(|(_, theme)| variant.map(|variant| theme.variant == variant).unwrap_or(true))
+            .filter(|(_, theme)| {
+                variant
+                    .map(|variant| theme.variant == variant)
+                    .unwrap_or(true)
+            })
             .collect()
     }
 
@@ -89,11 +93,7 @@ impl ThemeStore {
         self.committed_theme()
     }
 
-    pub fn import_theme(
-        &mut self,
-        source: &Path,
-        paths: &AppDataPaths,
-    ) -> Result<Theme, String> {
+    pub fn import_theme(&mut self, source: &Path, paths: &AppDataPaths) -> Result<Theme, String> {
         let content = fs::read_to_string(source).map_err(|error| error.to_string())?;
         let theme: Theme = serde_json::from_str(&content).map_err(|error| error.to_string())?;
         let file_name = source
@@ -112,7 +112,9 @@ impl ThemeStore {
         theme: &Theme,
         paths: &AppDataPaths,
     ) -> Result<PathBuf, String> {
-        let path = paths.user_theme_dir().join(format!("{}.json", theme.slug()));
+        let path = paths
+            .user_theme_dir()
+            .join(format!("{}.json", theme.slug()));
         let content = serde_json::to_string_pretty(theme).map_err(|error| error.to_string())?;
         fs::write(&path, content).map_err(|error| error.to_string())?;
         self.reload(paths, Some(&theme.slug()));
@@ -147,7 +149,12 @@ impl ThemeStore {
 
 fn built_in_theme_dirs(paths: &AppDataPaths) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    dirs.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets").join("themes").join("built-in"));
+    dirs.push(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("assets")
+            .join("themes")
+            .join("built-in"),
+    );
 
     if let Ok(current_dir) = std::env::current_dir() {
         dirs.push(current_dir.join("assets").join("themes").join("built-in"));
@@ -175,7 +182,10 @@ mod tests {
             active_index: None,
             preview_index: None,
         };
-        assert_eq!(store.commit(0).map(|theme| theme.name.as_str()), Some("NeoNote Dark"));
+        assert_eq!(
+            store.commit(0).map(|theme| theme.name.as_str()),
+            Some("NeoNote Dark")
+        );
         assert_eq!(store.active_slug().as_deref(), Some("neonote-dark"));
     }
 }

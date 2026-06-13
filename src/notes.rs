@@ -69,6 +69,15 @@ impl NoteDocument {
         &self.content
     }
 
+    pub fn content_with_cursor_marker(&self) -> String {
+        self.lines_vec()
+            .iter()
+            .enumerate()
+            .map(|(line_index, line)| self.line_with_cursor_marker(line, line_index))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     pub fn is_empty(&self) -> bool {
         self.content.is_empty()
     }
@@ -95,6 +104,13 @@ impl NoteDocument {
 
     pub fn cursor_col(&self) -> usize {
         self.cursor_col.min(self.current_line_max_col())
+    }
+
+    pub fn display_cursor_col(&self) -> usize {
+        match self.mode {
+            VimMode::Normal => self.cursor_col(),
+            VimMode::Insert => self.cursor_col.min(self.current_line_char_count()),
+        }
     }
 
     pub fn enter_insert(&mut self) {
@@ -217,7 +233,12 @@ impl NoteDocument {
     fn handle_normal_char(&mut self, ch: char) -> bool {
         if ch.is_ascii_digit() && !(ch == '0' && self.count.is_none()) {
             let digit = ch.to_digit(10).unwrap_or_default() as usize;
-            self.count = Some(self.count.unwrap_or(0).saturating_mul(10).saturating_add(digit));
+            self.count = Some(
+                self.count
+                    .unwrap_or(0)
+                    .saturating_mul(10)
+                    .saturating_add(digit),
+            );
             return false;
         }
 
@@ -249,7 +270,8 @@ impl NoteDocument {
                         false
                     }
                     'a' => {
-                        self.cursor_col = (self.cursor_col() + 1).min(self.current_line_char_count());
+                        self.cursor_col =
+                            (self.cursor_col() + 1).min(self.current_line_char_count());
                         self.enter_insert();
                         false
                     }
@@ -532,6 +554,29 @@ impl NoteDocument {
         }
         output
     }
+
+    fn line_with_cursor_marker(&self, line: &str, line_index: usize) -> String {
+        if self.mode == VimMode::Normal {
+            return self.normal_mode_line_with_cursor(line, line_index);
+        }
+
+        if line_index != self.cursor_line {
+            return line.to_string();
+        }
+
+        let col = self.cursor_col.min(char_count(line));
+        let mut output = String::new();
+        for (index, ch) in line.chars().enumerate() {
+            if index == col {
+                output.push('|');
+            }
+            output.push(ch);
+        }
+        if col >= char_count(line) {
+            output.push('|');
+        }
+        output
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -687,6 +732,18 @@ mod tests {
         assert_eq!(doc.content(), "hello\nworld");
         doc.backspace();
         assert_eq!(doc.content(), "hello\nworl");
+    }
+
+    #[test]
+    fn cursor_marker_allows_insert_caret_after_line_end() {
+        let mut doc = NoteDocument::default();
+        doc.new_blank();
+        doc.handle_normal_input("i");
+        doc.handle_insert_text("hello");
+        assert_eq!(doc.content_with_cursor_marker(), "hello|");
+
+        doc.enter_normal();
+        assert_eq!(doc.content_with_cursor_marker(), "hell|o");
     }
 
     #[test]
