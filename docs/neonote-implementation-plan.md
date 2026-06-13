@@ -408,6 +408,14 @@ Acceptance:
 - `Esc`, `hjkl`, counts, word motions, line motions, `dd`, and `x` work through Slint.
 - No Slint text input widget owns the core Vim caret.
 
+Current implementation note:
+
+- The Slint editor renders from an `EditorLine` model, one row per buffer line.
+- Rust owns text, cursor line/column, Vim mode, and cursor row metadata (`cursor_prefix`, `cursor_cell`, `cursor_suffix`, `cursor_block`).
+- Slint renders each row's visible text through one full-line `Text` item. The cursor is a background rectangle behind that text, positioned from the measured cursor-prefix width and sized from the measured cursor-cell width.
+- For column 0, the cursor uses the editor text origin directly instead of the empty prefix measurement. A small `cursor-x-adjust` compensates for glyph side-bearing.
+- Do not render the focused row as visible prefix/cursor/suffix text segments; that creates a separate text layout path and can misalign the focused line.
+
 ### Phase 4 - Extract Vim Core
 
 Scope:

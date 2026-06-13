@@ -27,6 +27,10 @@ Performance pattern:
 - Expose the editor as a Slint model with one row per buffer line. Each row should include line number, text, cursor-line flag, cursor column, and cursor style. This avoids trying to align a custom cursor overlay to Slint's internal multiline text layout.
 - Do not inject a cursor marker into a cloned copy of the text for every key press.
 - Use a block rectangle for Normal mode and a thin bar for Insert mode.
-- Keep editor font metrics centralized in Slint properties. Render every row's visible text through the same full-line `Text` item, regardless of cursor focus. Draw the cursor as a background rectangle behind that text, positioned from the measured cursor-prefix width and sized from the measured cursor-cell width. A small negative cursor x-adjust can compensate for glyph side-bearing; do not reconstruct the focused line as prefix/cell/suffix text segments because it can drift from non-focused row placement.
+- Keep editor font metrics centralized in Slint properties. Render every row's visible text through the same full-line `Text` item, regardless of cursor focus.
+- Draw the cursor as a background rectangle behind the full-line text. Position it from the measured `cursor-prefix` width and size it from the measured `cursor-cell` width.
+- When `cursor-prefix` is empty, position the cursor at the editor text origin (`0px`) instead of using `prefix-measure.preferred-width`; Slint may report a non-zero preferred width for an empty/hidden text item depending on layout context.
+- A small negative `cursor-x-adjust` can compensate for glyph side-bearing. Apply the same adjustment to cursor width so the highlight still covers the intended glyph area.
+- Do not reconstruct the focused line as prefix/cell/suffix visible text segments. That creates a second text layout path and can drift from non-focused row placement.
 - During editor key handling, update only editor-facing properties; avoid reapplying static theme brushes on every keystroke.
 - Multi-document support belongs in the app controller. Each open tab/document owns its own `NoteDocument`; switching documents should only change the active index and refresh the Slint snapshot.

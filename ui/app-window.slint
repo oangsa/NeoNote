@@ -355,7 +355,7 @@ export component AppWindow inherits Window {
                             }
 
                             Rectangle {
-                                x: 58px + root.editor-left-padding + prefix-measure.preferred-width + root.cursor-x-adjust;
+                                x: 58px + root.editor-left-padding + (line.cursor-prefix == "" ? 0px : prefix-measure.preferred-width) + root.cursor-x-adjust;
                                 y: 0px;
                                 height: root.editor-line-height;
                                 width: line.is-cursor-line ? (line.cursor-block ? max(cursor-cell-measure.preferred-width - root.cursor-x-adjust, 2px) : 2px) : 0px;
