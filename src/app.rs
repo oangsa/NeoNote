@@ -61,14 +61,18 @@ pub struct ThemeItemSnapshot {
 pub struct SettingsSnapshot {
     pub font_family: String,
     pub font_size: f32,
+    pub font_size_label: String,
     pub line_height: f32,
+    pub line_height_label: String,
     pub tab_size: i32,
+    pub tab_size_label: String,
     pub word_wrap: bool,
     pub restore_last_session: bool,
     pub show_launcher_on_startup: bool,
     pub remember_window_geometry: bool,
     pub blur_behind: bool,
     pub window_opacity: i32,
+    pub window_opacity_label: String,
 }
 
 impl Default for SettingsSnapshot {
@@ -83,14 +87,18 @@ impl SettingsSnapshot {
         Self {
             font_family: config.font_family.clone(),
             font_size: config.font_size,
+            font_size_label: format!("{:.0}", config.font_size),
             line_height: config.line_height,
+            line_height_label: format!("{:.1}", config.line_height),
             tab_size: i32::from(config.tab_size),
+            tab_size_label: config.tab_size.to_string(),
             word_wrap: config.word_wrap,
             restore_last_session: config.restore_last_session,
             show_launcher_on_startup: config.show_launcher_on_startup,
             remember_window_geometry: config.remember_window_geometry,
             blur_behind: config.blur_behind,
             window_opacity: i32::from(config.window_opacity),
+            window_opacity_label: format!("{}%", config.window_opacity),
         }
     }
 }

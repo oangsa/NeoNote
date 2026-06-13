@@ -295,11 +295,15 @@ export component AppWindow inherits Window {
                 padding-right: 10px;
                 spacing: 8px;
 
-                Rectangle {
-                    width: 4px;
-                    height: 20px;
-                    border-radius: 2px;
-                    background: root.mode-color;
+                VerticalLayout {
+                    alignment: center;
+
+                    Rectangle {
+                        width: 4px;
+                        height: 20px;
+                        border-radius: 2px;
+                        background: root.mode-color;
+                    }
                 }
 
                 Text {

@@ -266,14 +266,18 @@ fn apply_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
     window.set_settings(SettingsData {
         font_family: SharedString::from(snapshot.settings.font_family.as_str()),
         font_size: snapshot.settings.font_size,
+        font_size_label: SharedString::from(snapshot.settings.font_size_label.as_str()),
         line_height: snapshot.settings.line_height,
+        line_height_label: SharedString::from(snapshot.settings.line_height_label.as_str()),
         tab_size: snapshot.settings.tab_size,
+        tab_size_label: SharedString::from(snapshot.settings.tab_size_label.as_str()),
         word_wrap: snapshot.settings.word_wrap,
         restore_last_session: snapshot.settings.restore_last_session,
         show_launcher_on_startup: snapshot.settings.show_launcher_on_startup,
         remember_window_geometry: snapshot.settings.remember_window_geometry,
         blur_behind: snapshot.settings.blur_behind,
         window_opacity: snapshot.settings.window_opacity,
+        window_opacity_label: SharedString::from(snapshot.settings.window_opacity_label.as_str()),
     });
     window.set_theme_items(
         Rc::new(VecModel::from(
