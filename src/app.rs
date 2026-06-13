@@ -15,6 +15,7 @@ pub struct AppController {
     themes: ThemeStore,
     documents: Vec<NoteDocument>,
     active_document: usize,
+    mouse_selection: Option<MouseSelection>,
     theme_panel_open: bool,
     settings_panel_open: bool,
     last_message: String,
@@ -111,11 +112,26 @@ pub struct EditorLineSnapshot {
     pub number: i32,
     pub text: String,
     pub is_cursor_line: bool,
+    pub is_selected: bool,
     pub cursor_column: i32,
     pub cursor_prefix: String,
     pub cursor_cell: String,
     pub cursor_suffix: String,
     pub cursor_block: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct MouseSelection {
+    anchor_line: usize,
+    focus_line: usize,
+}
+
+impl MouseSelection {
+    fn includes(self, line: usize) -> bool {
+        let start = self.anchor_line.min(self.focus_line);
+        let end = self.anchor_line.max(self.focus_line);
+        start != end && (start..=end).contains(&line)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -174,6 +190,7 @@ impl AppController {
             themes,
             documents: vec![NoteDocument::default()],
             active_document: 0,
+            mouse_selection: None,
             theme_panel_open: false,
             settings_panel_open: false,
             last_message: String::new(),
@@ -191,6 +208,7 @@ impl AppController {
             self.active_document = self.documents.len().saturating_sub(1);
         }
         self.last_message = "New note ready.".to_string();
+        self.mouse_selection = None;
     }
 
     pub fn open_file_dialog(&mut self) {
@@ -361,10 +379,47 @@ impl AppController {
             return;
         }
 
+        self.mouse_selection = None;
         match self.active_note().mode() {
             VimMode::Normal => self.handle_normal_editor_key(key),
             VimMode::Insert => self.handle_insert_editor_key(key),
         }
+    }
+
+    pub fn handle_editor_pointer(&mut self, line: i32, x_pixels: f32, event_kind: &str) {
+        if !self.active_note().is_open() || line < 0 {
+            return;
+        }
+
+        let line = line as usize;
+        let column = pointer_column_from_x(x_pixels, self.config.font_size);
+        self.active_note_mut().set_cursor_from_pointer(line, column);
+
+        match event_kind {
+            "down" => {
+                let cursor_line = self.active_note().cursor_line();
+                self.mouse_selection = Some(MouseSelection {
+                    anchor_line: cursor_line,
+                    focus_line: cursor_line,
+                });
+            }
+            "move" => {
+                let focus_line = self.active_note().cursor_line();
+                if let Some(selection) = &mut self.mouse_selection {
+                    selection.focus_line = focus_line;
+                }
+            }
+            "up" => {
+                if let Some(selection) = self.mouse_selection {
+                    if selection.anchor_line == selection.focus_line {
+                        self.mouse_selection = None;
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        self.last_message.clear();
     }
 
     pub fn previous_document(&mut self) {
@@ -378,6 +433,7 @@ impl AppController {
             self.active_document - 1
         };
         self.last_message = format!("Switched to {}.", self.active_note().title());
+        self.mouse_selection = None;
     }
 
     pub fn next_document(&mut self) {
@@ -387,6 +443,7 @@ impl AppController {
 
         self.active_document = (self.active_document + 1) % self.documents.len();
         self.last_message = format!("Switched to {}.", self.active_note().title());
+        self.mouse_selection = None;
     }
 
     pub fn snapshot(&self) -> AppSnapshot {
@@ -402,7 +459,7 @@ impl AppController {
         AppSnapshot {
             file_title: note.title(),
             file_path: note.path_string().unwrap_or_default(),
-            editor_lines: editor_lines(note),
+            editor_lines: editor_lines(note, self.mouse_selection),
             document_tabs: self.document_tabs(),
             status_text: if note.is_open() {
                 format!(
@@ -497,6 +554,7 @@ impl AppController {
     fn open_path(&mut self, path: PathBuf) {
         if let Some(index) = self.document_index_for_path(&path) {
             self.active_document = index;
+            self.mouse_selection = None;
             self.last_message = "File already open.".to_string();
             return;
         }
@@ -511,6 +569,7 @@ impl AppController {
                     self.documents.push(note);
                     self.active_document = self.documents.len().saturating_sub(1);
                 }
+                self.mouse_selection = None;
                 self.remember_recent(path);
                 self.last_message = "Opened note.".to_string();
             }
@@ -682,6 +741,11 @@ fn is_clipboard_paste_key(key: &str) -> bool {
     matches!(key, "p" | "P")
 }
 
+fn pointer_column_from_x(x_pixels: f32, font_size: f32) -> usize {
+    let char_width = (font_size * 0.62).max(1.0);
+    (x_pixels.max(0.0) / char_width).round() as usize
+}
+
 fn migrate_old_default_theme(paths: &AppDataPaths, config: &mut AppConfig) {
     if config.active_theme.as_deref() == Some("catppuccin-mocha") {
         config.active_theme = Some("neovim-dark".to_string());
@@ -722,7 +786,10 @@ fn cursor_snapshot(note: &NoteDocument) -> CursorSnapshot {
     }
 }
 
-fn editor_lines(note: &NoteDocument) -> Vec<EditorLineSnapshot> {
+fn editor_lines(
+    note: &NoteDocument,
+    mouse_selection: Option<MouseSelection>,
+) -> Vec<EditorLineSnapshot> {
     let cursor_line = note.cursor_line();
     let cursor_column = note.display_cursor_col() as i32;
     let cursor_block = note.mode() == VimMode::Normal;
@@ -734,6 +801,9 @@ fn editor_lines(note: &NoteDocument) -> Vec<EditorLineSnapshot> {
         .map(|(index, text)| EditorLineSnapshot {
             number: (index + 1) as i32,
             is_cursor_line: index == cursor_line,
+            is_selected: mouse_selection
+                .map(|selection| selection.includes(index))
+                .unwrap_or(false),
             cursor_column,
             cursor_prefix: if index == cursor_line {
                 cursor.prefix.clone()
@@ -836,6 +906,7 @@ mod tests {
                     number: 1,
                     text: "one".to_string(),
                     is_cursor_line: false,
+                    is_selected: false,
                     cursor_column: 2,
                     cursor_prefix: String::new(),
                     cursor_cell: String::new(),
@@ -846,6 +917,7 @@ mod tests {
                     number: 2,
                     text: "two".to_string(),
                     is_cursor_line: true,
+                    is_selected: false,
                     cursor_column: 2,
                     cursor_prefix: "tw".to_string(),
                     cursor_cell: "o".to_string(),
@@ -929,6 +1001,37 @@ mod tests {
         assert_eq!(snapshot.editor_lines[0].cursor_prefix, "");
         assert_eq!(snapshot.editor_lines[0].cursor_cell, "d");
         assert_eq!(snapshot.editor_lines[0].cursor_suffix, "awdwad");
+    }
+
+    #[test]
+    fn editor_pointer_places_cursor_and_highlights_dragged_lines() {
+        let mut controller = AppController::new();
+        controller.new_file();
+        controller.handle_editor_key("i");
+        for key in [
+            "a", "b", "c", "return", "d", "e", "f", "return", "g", "h", "i", "escape",
+        ] {
+            controller.handle_editor_key(key);
+        }
+
+        controller.handle_editor_pointer(0, 18.0, "down");
+        controller.handle_editor_pointer(2, 0.0, "move");
+
+        let snapshot = controller.snapshot();
+        assert_eq!(snapshot.cursor_line, 2);
+        assert!(snapshot.editor_lines[0].is_selected);
+        assert!(snapshot.editor_lines[1].is_selected);
+        assert!(snapshot.editor_lines[2].is_selected);
+
+        controller.handle_editor_pointer(2, 0.0, "up");
+        assert!(controller.snapshot().editor_lines[1].is_selected);
+
+        controller.handle_editor_key("j");
+        assert!(controller
+            .snapshot()
+            .editor_lines
+            .iter()
+            .all(|line| !line.is_selected));
     }
 
     #[test]

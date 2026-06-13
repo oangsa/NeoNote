@@ -417,6 +417,7 @@ Current implementation note:
 - Slint renders each row's visible text through one full-line `Text` item. The cursor is a background rectangle behind that text, positioned from the measured cursor-prefix width and sized from the measured cursor-cell width.
 - For column 0, the cursor uses the editor text origin directly instead of the empty prefix measurement. A small `cursor-x-adjust` compensates for glyph side-bearing.
 - Do not render the focused row as visible prefix/cursor/suffix text segments; that creates a separate text layout path and can misalign the focused line.
+- The editor viewport is scrollable through Slint `ScrollView`. Mouse clicks and drags route through narrow controller callbacks that update Rust-owned cursor and selection state.
 
 ### Phase 4 - Extract Vim Core
 

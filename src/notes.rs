@@ -143,6 +143,16 @@ impl NoteDocument {
         self.registers.unnamed = RegisterValue { text, linewise };
     }
 
+    pub fn set_cursor_from_pointer(&mut self, line: usize, column: usize) {
+        self.pending = None;
+        self.count = None;
+        self.cursor_line = line.min(self.line_count().saturating_sub(1));
+        self.cursor_col = match self.mode {
+            VimMode::Normal => column.min(self.current_line_max_col()),
+            VimMode::Insert => column.min(self.current_line_char_count()),
+        };
+    }
+
     pub fn enter_insert(&mut self) {
         self.mode = VimMode::Insert;
         self.pending = None;
@@ -1581,6 +1591,27 @@ mod tests {
         assert_eq!(doc.unnamed_register_text(), "bc");
         assert!(!doc.unnamed_register_is_linewise());
         assert_eq!(doc.yank_register_text(), "abcdef");
+    }
+
+    #[test]
+    fn pointer_cursor_placement_clamps_to_line_and_mode_bounds() {
+        let mut normal = NoteDocument::default();
+        normal.content = "abc\nde".to_string();
+        normal.enter_normal();
+
+        normal.set_cursor_from_pointer(9, 99);
+
+        assert_eq!(normal.cursor_line(), 1);
+        assert_eq!(normal.cursor_col(), 1);
+
+        let mut insert = NoteDocument::default();
+        insert.content = "abc".to_string();
+        insert.enter_insert();
+
+        insert.set_cursor_from_pointer(0, 99);
+
+        assert_eq!(insert.cursor_line(), 0);
+        assert_eq!(insert.display_cursor_col(), 3);
     }
 
     #[test]

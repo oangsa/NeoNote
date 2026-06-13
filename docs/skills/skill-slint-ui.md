@@ -46,3 +46,4 @@ Theme binding pattern validated in this repo:
 - For configurable lengths such as editor font size or line height, prefer Slint `float` properties from Rust and multiply by `1px` at the Slint use site. This avoids depending on version-specific Rust length wrapper exports.
 - For user-visible numeric values, send preformatted string labels from Rust instead of binding raw `float` values directly to `Text`; raw float conversion can expose awkward precision such as `1.4000`.
 - In dense rows with labels plus trailing controls, reserve a fixed-width trailing action/value column and elide long text. This keeps settings and theme panel controls aligned at smaller panel widths.
+- For editor mouse input, keep Slint responsible for pointer position and scroll presentation, then route compact line/column intent through Rust controller callbacks. Do not let a Slint text editing widget own the Vim caret.

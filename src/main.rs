@@ -256,6 +256,20 @@ fn install_callbacks(window: &AppWindow, controller: Rc<RefCell<AppController>>)
             window.invoke_focus_editor();
         }
     });
+
+    let weak_window = window.as_weak();
+    let controller_for_pointer = Rc::clone(&controller);
+    window.on_editor_pointer_event(move |line, x_pixels, event_kind| {
+        controller_for_pointer.borrow_mut().handle_editor_pointer(
+            line,
+            x_pixels,
+            event_kind.as_str(),
+        );
+        if let Some(window) = weak_window.upgrade() {
+            apply_editor_snapshot(&window, &controller_for_pointer.borrow().snapshot());
+            window.invoke_focus_editor();
+        }
+    });
 }
 
 fn apply_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
@@ -322,6 +336,7 @@ fn apply_editor_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
                     number: line.number,
                     text: SharedString::from(line.text.as_str()),
                     is_cursor_line: line.is_cursor_line,
+                    is_selected: line.is_selected,
                     cursor_column: line.cursor_column,
                     cursor_prefix: SharedString::from(line.cursor_prefix.as_str()),
                     cursor_cell: SharedString::from(line.cursor_cell.as_str()),
