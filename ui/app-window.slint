@@ -33,6 +33,7 @@ export struct EditorLine {
     text: string,
     is-cursor-line: bool,
     cursor-column: int,
+    cursor-prefix: string,
     cursor-block: bool,
 }
 
@@ -349,8 +350,20 @@ export component AppWindow inherits Window {
                                 wrap: no-wrap;
                             }
 
+                            prefix-measure := Text {
+                                x: 58px + root.editor-left-padding;
+                                y: 0px;
+                                height: root.editor-line-height;
+                                text: line.cursor-prefix;
+                                color: transparent;
+                                font-family: root.editor-font-family;
+                                font-size: root.editor-font-size;
+                                vertical-alignment: center;
+                                wrap: no-wrap;
+                            }
+
                             cursor-cell := Rectangle {
-                                x: 58px + root.editor-left-padding + (cell-measure.preferred-width * line.cursor-column);
+                                x: 58px + root.editor-left-padding + prefix-measure.preferred-width;
                                 y: 0px;
                                 width: line.is-cursor-line ? (line.cursor-block ? max(cell-measure.preferred-width, 2px) : 2px) : 0px;
                                 height: root.editor-line-height;

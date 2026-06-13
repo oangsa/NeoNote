@@ -45,6 +45,7 @@ pub struct EditorLineSnapshot {
     pub text: String,
     pub is_cursor_line: bool,
     pub cursor_column: i32,
+    pub cursor_prefix: String,
     pub cursor_block: bool,
 }
 
@@ -484,9 +485,16 @@ fn editor_lines(note: &NoteDocument) -> Vec<EditorLineSnapshot> {
         .enumerate()
         .map(|(index, text)| EditorLineSnapshot {
             number: (index + 1) as i32,
-            text,
             is_cursor_line: index == cursor_line,
             cursor_column,
+            cursor_prefix: if index == cursor_line {
+                text.chars()
+                    .take(note.display_cursor_col())
+                    .collect::<String>()
+            } else {
+                String::new()
+            },
+            text,
             cursor_block,
         })
         .collect()
@@ -573,6 +581,7 @@ mod tests {
                     text: "one".to_string(),
                     is_cursor_line: false,
                     cursor_column: 2,
+                    cursor_prefix: String::new(),
                     cursor_block: true,
                 },
                 EditorLineSnapshot {
@@ -580,6 +589,7 @@ mod tests {
                     text: "two".to_string(),
                     is_cursor_line: true,
                     cursor_column: 2,
+                    cursor_prefix: "tw".to_string(),
                     cursor_block: true,
                 },
             ]
@@ -634,6 +644,26 @@ mod tests {
         let snapshot = controller.snapshot();
         assert_eq!(snapshot.editor_lines[0].text, "abc");
         assert_eq!(snapshot.editor_lines[0].cursor_column, 3);
+        assert_eq!(snapshot.editor_lines[0].cursor_prefix, "abc");
         assert!(!snapshot.editor_lines[0].cursor_block);
+    }
+
+    #[test]
+    fn editor_line_cursor_prefix_uses_actual_text_before_cursor() {
+        let mut controller = AppController::new();
+        controller.new_file();
+        controller.handle_editor_key("i");
+        for key in ["d", "a", "w", "d", "w", "a", "d", "escape"] {
+            controller.handle_editor_key(key);
+        }
+
+        let snapshot = controller.snapshot();
+        assert_eq!(snapshot.editor_lines[0].cursor_column, 6);
+        assert_eq!(snapshot.editor_lines[0].cursor_prefix, "dawdwa");
+
+        controller.handle_editor_key("0");
+        let snapshot = controller.snapshot();
+        assert_eq!(snapshot.editor_lines[0].cursor_column, 0);
+        assert_eq!(snapshot.editor_lines[0].cursor_prefix, "");
     }
 }
