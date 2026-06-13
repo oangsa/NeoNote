@@ -60,6 +60,7 @@ export component AppWindow inherits Window {
     in property <length> editor-left-padding: 14px;
     in property <length> editor-line-height: 17px;
     in property <length> editor-font-size: 14px;
+    in property <length> cursor-x-adjust: -1px;
     in property <string> editor-font-family: "Consolas";
     in property <string> message: "";
     in property <bool> has-document: false;
@@ -354,10 +355,10 @@ export component AppWindow inherits Window {
                             }
 
                             Rectangle {
-                                x: 58px + root.editor-left-padding + prefix-measure.preferred-width;
+                                x: 58px + root.editor-left-padding + prefix-measure.preferred-width + root.cursor-x-adjust;
                                 y: 0px;
                                 height: root.editor-line-height;
-                                width: line.is-cursor-line ? (line.cursor-block ? max(cursor-cell-measure.preferred-width, 2px) : 2px) : 0px;
+                                width: line.is-cursor-line ? (line.cursor-block ? max(cursor-cell-measure.preferred-width - root.cursor-x-adjust, 2px) : 2px) : 0px;
                                 background: line.cursor-block ? root.theme-cursor.with_alpha(0.58) : root.mode-color;
                             }
 
