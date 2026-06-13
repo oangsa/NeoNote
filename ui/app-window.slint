@@ -289,16 +289,6 @@ export component AppWindow inherits Window {
                         width: parent.width - 58px;
                         height: 100%;
                         background: root.theme-background;
-
-                        cell-measure := Text {
-                            x: 0px;
-                            y: 0px;
-                            text: "M";
-                            color: transparent;
-                            font-family: root.editor-font-family;
-                            font-size: root.editor-font-size;
-                            wrap: no-wrap;
-                        }
                     }
 
                     Text {
@@ -376,7 +366,7 @@ export component AppWindow inherits Window {
 
                                 Rectangle {
                                     height: root.editor-line-height;
-                                    width: line.cursor-block ? max(max(cursor-cell-text.preferred-width, cell-measure.preferred-width), 2px) : 2px;
+                                    width: line.cursor-block ? max(cursor-cell-text.preferred-width, 2px) : 2px;
                                     background: line.cursor-block ? root.theme-cursor.with_alpha(0.72) : root.mode-color;
 
                                     cursor-cell-text := Text {
