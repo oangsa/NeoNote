@@ -329,20 +329,6 @@ export component AppWindow inherits Window {
                                 vertical-alignment: center;
                             }
 
-                            Text {
-                                x: 58px + root.editor-left-padding;
-                                y: 0px;
-                                width: parent.width - 58px - (root.editor-left-padding * 2);
-                                height: root.editor-line-height;
-                                text: line.text;
-                                color: root.theme-text;
-                                font-family: root.editor-font-family;
-                                font-size: root.editor-font-size;
-                                vertical-alignment: center;
-                                wrap: no-wrap;
-                                visible: !line.is-cursor-line;
-                            }
-
                             HorizontalLayout {
                                 x: 58px + root.editor-left-padding;
                                 y: 0px;
@@ -354,10 +340,9 @@ export component AppWindow inherits Window {
                                 padding-right: 0px;
                                 padding-top: 0px;
                                 padding-bottom: 0px;
-                                visible: line.is-cursor-line;
 
                                 Text {
-                                    text: line.cursor-prefix;
+                                    text: line.is-cursor-line ? line.cursor-prefix : line.text;
                                     color: root.theme-text;
                                     font-family: root.editor-font-family;
                                     font-size: root.editor-font-size;
@@ -367,7 +352,7 @@ export component AppWindow inherits Window {
 
                                 Rectangle {
                                     height: root.editor-line-height;
-                                    width: line.cursor-block ? max(cursor-cell-text.preferred-width, 2px) : 2px;
+                                    width: line.is-cursor-line ? (line.cursor-block ? max(cursor-cell-text.preferred-width, 2px) : 2px) : 0px;
                                     background: line.cursor-block ? root.theme-cursor.with_alpha(0.72) : root.mode-color;
 
                                     cursor-cell-text := Text {
@@ -386,7 +371,7 @@ export component AppWindow inherits Window {
                                 }
 
                                 Text {
-                                    text: line.cursor-suffix;
+                                    text: line.is-cursor-line ? line.cursor-suffix : "";
                                     color: root.theme-text;
                                     font-family: root.editor-font-family;
                                     font-size: root.editor-font-size;
