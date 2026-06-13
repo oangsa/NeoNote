@@ -439,6 +439,10 @@ impl NoteDocument {
                 self.count = None;
                 false
             }
+            (PendingCommand::Operator { operator, count }, 'g') => {
+                self.pending = Some(PendingCommand::OperatorGoto { operator, count });
+                false
+            }
             (
                 PendingCommand::Operator { operator, count },
                 motion @ ('h' | 'j' | 'k' | 'l' | 'w' | 'W' | 'b' | 'B' | 'e' | 'E' | '0' | '^'
@@ -473,6 +477,14 @@ impl NoteDocument {
                     .saturating_sub(1);
                 self.clamp_cursor_normal();
                 false
+            }
+            (PendingCommand::OperatorGoto { operator, count: _ }, 'g') => {
+                let target_line = self.count.take().unwrap_or(1).saturating_sub(1);
+                self.pending = None;
+                self.apply_operator_range(
+                    operator,
+                    self.linewise_range(self.cursor_line(), target_line),
+                )
             }
             _ => {
                 self.pending = None;
@@ -1023,6 +1035,10 @@ enum PendingCommand {
         count: usize,
         around: bool,
     },
+    OperatorGoto {
+        operator: Operator,
+        count: usize,
+    },
     Goto {
         count: Option<usize>,
     },
@@ -1438,5 +1454,45 @@ mod tests {
         assert_eq!(doc.unnamed_register_text(), "beta ");
         assert_eq!(doc.yank_register_text(), "alpha");
         assert_eq!(doc.mode(), VimMode::Insert);
+    }
+
+    #[test]
+    fn normal_mode_operator_gg_uses_linewise_range() {
+        let mut yank_to_top = NoteDocument::default();
+        yank_to_top.content = "one\ntwo\nthree\nfour".to_string();
+        yank_to_top.enter_normal();
+        yank_to_top.handle_normal_input("G");
+
+        assert!(!yank_to_top.handle_normal_input("ygg"));
+
+        assert_eq!(yank_to_top.content(), "one\ntwo\nthree\nfour");
+        assert_eq!(yank_to_top.yank_register_text(), "one\ntwo\nthree\nfour");
+        assert!(yank_to_top.yank_register_is_linewise());
+
+        let mut yank_to_counted_line = NoteDocument::default();
+        yank_to_counted_line.content = "one\ntwo\nthree\nfour".to_string();
+        yank_to_counted_line.enter_normal();
+        yank_to_counted_line.handle_normal_input("G");
+
+        assert!(!yank_to_counted_line.handle_normal_input("y2gg"));
+
+        assert_eq!(
+            yank_to_counted_line.yank_register_text(),
+            "two\nthree\nfour"
+        );
+
+        let mut delete_to_top = NoteDocument::default();
+        delete_to_top.content = "one\ntwo\nthree\nfour".to_string();
+        delete_to_top.enter_normal();
+        delete_to_top.handle_normal_input("G");
+
+        assert!(delete_to_top.handle_normal_input("dgg"));
+
+        assert_eq!(delete_to_top.content(), "");
+        assert_eq!(
+            delete_to_top.unnamed_register_text(),
+            "one\ntwo\nthree\nfour"
+        );
+        assert!(delete_to_top.unnamed_register_is_linewise());
     }
 }
