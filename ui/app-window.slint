@@ -329,55 +329,49 @@ export component AppWindow inherits Window {
                                 vertical-alignment: center;
                             }
 
-                            HorizontalLayout {
+                            prefix-measure := Text {
+                                x: 58px + root.editor-left-padding;
+                                y: 0px;
+                                height: root.editor-line-height;
+                                text: line.cursor-prefix;
+                                color: transparent;
+                                font-family: root.editor-font-family;
+                                font-size: root.editor-font-size;
+                                vertical-alignment: center;
+                                wrap: no-wrap;
+                            }
+
+                            cursor-cell-measure := Text {
+                                x: 58px + root.editor-left-padding;
+                                y: 0px;
+                                height: root.editor-line-height;
+                                text: line.cursor-cell;
+                                color: transparent;
+                                font-family: root.editor-font-family;
+                                font-size: root.editor-font-size;
+                                vertical-alignment: center;
+                                wrap: no-wrap;
+                            }
+
+                            Rectangle {
+                                x: 58px + root.editor-left-padding + prefix-measure.preferred-width;
+                                y: 0px;
+                                height: root.editor-line-height;
+                                width: line.is-cursor-line ? (line.cursor-block ? max(cursor-cell-measure.preferred-width, 2px) : 2px) : 0px;
+                                background: line.cursor-block ? root.theme-cursor.with_alpha(0.58) : root.mode-color;
+                            }
+
+                            Text {
                                 x: 58px + root.editor-left-padding;
                                 y: 0px;
                                 width: parent.width - 58px - (root.editor-left-padding * 2);
                                 height: root.editor-line-height;
-                                alignment: start;
-                                spacing: 0px;
-                                padding-left: 0px;
-                                padding-right: 0px;
-                                padding-top: 0px;
-                                padding-bottom: 0px;
-
-                                Text {
-                                    text: line.is-cursor-line ? line.cursor-prefix : line.text;
-                                    color: root.theme-text;
-                                    font-family: root.editor-font-family;
-                                    font-size: root.editor-font-size;
-                                    vertical-alignment: center;
-                                    wrap: no-wrap;
-                                }
-
-                                Rectangle {
-                                    height: root.editor-line-height;
-                                    width: line.is-cursor-line ? (line.cursor-block ? max(cursor-cell-text.preferred-width, 2px) : 2px) : 0px;
-                                    background: line.cursor-block ? root.theme-cursor.with_alpha(0.72) : root.mode-color;
-
-                                    cursor-cell-text := Text {
-                                        x: 0px;
-                                        y: 0px;
-                                        width: parent.width;
-                                        height: parent.height;
-                                        text: line.cursor-block ? line.cursor-cell : "";
-                                        color: root.theme-background;
-                                        font-family: root.editor-font-family;
-                                        font-size: root.editor-font-size;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
-                                        wrap: no-wrap;
-                                    }
-                                }
-
-                                Text {
-                                    text: line.is-cursor-line ? line.cursor-suffix : "";
-                                    color: root.theme-text;
-                                    font-family: root.editor-font-family;
-                                    font-size: root.editor-font-size;
-                                    vertical-alignment: center;
-                                    wrap: no-wrap;
-                                }
+                                text: line.text;
+                                color: root.theme-text;
+                                font-family: root.editor-font-family;
+                                font-size: root.editor-font-size;
+                                vertical-alignment: center;
+                                wrap: no-wrap;
                             }
                         }
                     }
