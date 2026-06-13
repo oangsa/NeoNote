@@ -23,6 +23,7 @@ raw-window-handle = "0.6"
 uuid = { version = "1", features = ["v4", "serde"] }
 winapi = { version = "0.3", features = ["winerror"] }
 slint = "1.16.1"
+arboard = "3"
 
 [build-dependencies]
 slint-build = "1.16.1"

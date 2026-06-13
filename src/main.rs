@@ -193,6 +193,17 @@ fn install_callbacks(window: &AppWindow, controller: Rc<RefCell<AppController>>)
     });
 
     let weak_window = window.as_weak();
+    let controller_for_clipboard = Rc::clone(&controller);
+    window.on_settings_toggle_sync_clipboard(move || {
+        controller_for_clipboard
+            .borrow_mut()
+            .toggle_sync_clipboard();
+        if let Some(window) = weak_window.upgrade() {
+            apply_snapshot(&window, &controller_for_clipboard.borrow().snapshot());
+        }
+    });
+
+    let weak_window = window.as_weak();
     let controller_for_restore = Rc::clone(&controller);
     window.on_settings_toggle_restore_last_session(move || {
         controller_for_restore
@@ -272,6 +283,7 @@ fn apply_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
         tab_size: snapshot.settings.tab_size,
         tab_size_label: SharedString::from(snapshot.settings.tab_size_label.as_str()),
         word_wrap: snapshot.settings.word_wrap,
+        sync_clipboard: snapshot.settings.sync_clipboard,
         restore_last_session: snapshot.settings.restore_last_session,
         show_launcher_on_startup: snapshot.settings.show_launcher_on_startup,
         remember_window_geometry: snapshot.settings.remember_window_geometry,

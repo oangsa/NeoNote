@@ -236,6 +236,7 @@ surround
 - Visual selections may have reversed anchor/cursor; mutation ranges must still be normalized.
 - File operations are app-level commands. Vim command mode may request file actions, but the app performs filesystem work.
 - Scroll commands affect viewport state, not buffer text.
+- When `sync_clipboard` is enabled, the app controller syncs the Vim unnamed register with the system clipboard. The Vim layer must still remain platform-free.
 
 ## Theme Model
 
@@ -308,6 +309,7 @@ All user-facing data lives under:
   "line_height": 1.4,
   "tab_size": 4,
   "word_wrap": false,
+  "sync_clipboard": true,
   "startup_mode": "windowed",
   "window_opacity": 100,
   "blur_behind": false,

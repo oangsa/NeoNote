@@ -132,6 +132,17 @@ impl NoteDocument {
         self.registers.yank.linewise
     }
 
+    pub fn unnamed_register_snapshot(&self) -> RegisterSnapshot {
+        RegisterSnapshot {
+            text: self.registers.unnamed.text.clone(),
+            linewise: self.registers.unnamed.linewise,
+        }
+    }
+
+    pub fn set_unnamed_register(&mut self, text: String, linewise: bool) {
+        self.registers.unnamed = RegisterValue { text, linewise };
+    }
+
     pub fn enter_insert(&mut self) {
         self.mode = VimMode::Insert;
         self.pending = None;
@@ -373,12 +384,9 @@ impl NoteDocument {
                 });
                 false
             }
-            'x' => {
-                for _ in 0..count {
-                    self.delete_char_on_current_line();
-                }
-                true
-            }
+            'p' => self.paste_unnamed(count, PastePlacement::After),
+            'P' => self.paste_unnamed(count, PastePlacement::Before),
+            'x' => self.delete_chars_on_current_line(count),
             _ => false,
         }
     }
@@ -612,15 +620,27 @@ impl NoteDocument {
         self.clamp_cursor_normal();
     }
 
-    fn delete_char_on_current_line(&mut self) {
+    fn delete_chars_on_current_line(&mut self, count: usize) -> bool {
         let mut lines = self.lines_vec();
         if let Some(line) = lines.get_mut(self.cursor_line()) {
-            if !line.is_empty() {
-                let col = self.cursor_col().min(char_count(line).saturating_sub(1));
-                remove_char_at(line, col);
-                self.replace_lines(lines);
+            if line.is_empty() {
+                return false;
             }
+
+            let col = self.cursor_col().min(char_count(line).saturating_sub(1));
+            let end = col.saturating_add(count.max(1)).min(char_count(line));
+            let deleted = line.chars().skip(col).take(end - col).collect::<String>();
+            if deleted.is_empty() {
+                return false;
+            }
+
+            self.registers.store_deleted(deleted, false);
+            remove_char_range(line, col, end);
+            self.replace_lines(lines);
+            return true;
         }
+
+        false
     }
 
     fn first_non_blank_col(&self) -> usize {
@@ -905,6 +925,66 @@ impl NoteDocument {
         }
     }
 
+    fn paste_unnamed(&mut self, count: usize, placement: PastePlacement) -> bool {
+        if self.registers.unnamed.text.is_empty() {
+            return false;
+        }
+
+        if self.registers.unnamed.linewise {
+            self.paste_linewise(count.max(1), placement)
+        } else {
+            self.paste_charwise(count.max(1), placement)
+        }
+    }
+
+    fn paste_linewise(&mut self, count: usize, placement: PastePlacement) -> bool {
+        let register_text = self.registers.unnamed.text.clone();
+        let paste_lines = register_text
+            .trim_end_matches('\n')
+            .split('\n')
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>();
+        if paste_lines.is_empty() {
+            return false;
+        }
+
+        let mut lines = self.lines_vec();
+        let insert_at = match placement {
+            PastePlacement::After => self.cursor_line().saturating_add(1).min(lines.len()),
+            PastePlacement::Before => self.cursor_line().min(lines.len()),
+        };
+        let mut offset = 0;
+        for _ in 0..count {
+            for line in &paste_lines {
+                lines.insert(insert_at + offset, line.clone());
+                offset += 1;
+            }
+        }
+
+        self.replace_lines(lines);
+        self.cursor_line = insert_at.min(self.line_count().saturating_sub(1));
+        self.cursor_col = self.first_non_blank_col();
+        self.clamp_cursor_normal();
+        true
+    }
+
+    fn paste_charwise(&mut self, count: usize, placement: PastePlacement) -> bool {
+        let text = self.registers.unnamed.text.repeat(count);
+        let insert_at = match placement {
+            PastePlacement::After => {
+                (self.flattened_cursor() + 1).min(self.current_line_end_flat_exclusive())
+            }
+            PastePlacement::Before => self.flattened_cursor(),
+        };
+        let inserted_chars = text.chars().count();
+        let byte_index = byte_index_for_char(&self.content, insert_at);
+        self.content.insert_str(byte_index, &text);
+        self.dirty = true;
+        self.set_insert_cursor_from_flat(insert_at + inserted_chars.saturating_sub(1));
+        self.enter_normal();
+        true
+    }
+
     fn content_char_len(&self) -> usize {
         self.content.chars().count()
     }
@@ -1052,6 +1132,12 @@ enum Operator {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PastePlacement {
+    After,
+    Before,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct TextRange {
     start: usize,
     end: usize,
@@ -1168,6 +1254,12 @@ pub struct NoteStats {
     pub line_count: usize,
     pub word_count: usize,
     pub char_count: usize,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RegisterSnapshot {
+    pub text: String,
+    pub linewise: bool,
 }
 
 #[cfg(test)]
@@ -1404,6 +1496,24 @@ mod tests {
     }
 
     #[test]
+    fn unnamed_register_can_be_replaced_from_app_boundary() {
+        let mut doc = NoteDocument::default();
+
+        doc.set_unnamed_register("clip\n".to_string(), true);
+
+        assert_eq!(
+            doc.unnamed_register_snapshot(),
+            RegisterSnapshot {
+                text: "clip\n".to_string(),
+                linewise: true,
+            }
+        );
+        assert_eq!(doc.unnamed_register_text(), "clip\n");
+        assert!(doc.unnamed_register_is_linewise());
+        assert_eq!(doc.yank_register_text(), "");
+    }
+
+    #[test]
     fn normal_mode_yank_operator_composes_with_motions_and_text_objects() {
         let mut motion = NoteDocument::default();
         motion.content = "alpha beta gamma".to_string();
@@ -1457,6 +1567,23 @@ mod tests {
     }
 
     #[test]
+    fn normal_mode_x_updates_unnamed_without_replacing_yank_register() {
+        let mut doc = NoteDocument::default();
+        doc.content = "abcdef".to_string();
+        doc.enter_normal();
+
+        doc.handle_normal_input("ywl");
+        assert_eq!(doc.yank_register_text(), "abcdef");
+
+        assert!(doc.handle_normal_input("2x"));
+
+        assert_eq!(doc.content(), "adef");
+        assert_eq!(doc.unnamed_register_text(), "bc");
+        assert!(!doc.unnamed_register_is_linewise());
+        assert_eq!(doc.yank_register_text(), "abcdef");
+    }
+
+    #[test]
     fn normal_mode_operator_gg_uses_linewise_range() {
         let mut yank_to_top = NoteDocument::default();
         yank_to_top.content = "one\ntwo\nthree\nfour".to_string();
@@ -1494,5 +1621,59 @@ mod tests {
             "one\ntwo\nthree\nfour"
         );
         assert!(delete_to_top.unnamed_register_is_linewise());
+    }
+
+    #[test]
+    fn normal_mode_paste_linewise_unnamed_register_after_and_before() {
+        let mut after = NoteDocument::default();
+        after.content = "one\ntwo".to_string();
+        after.enter_normal();
+
+        after.handle_normal_input("yyp");
+
+        assert_eq!(after.content(), "one\none\ntwo");
+        assert_eq!(after.cursor_line(), 1);
+        assert_eq!(after.cursor_col(), 0);
+
+        let mut before = NoteDocument::default();
+        before.content = "one\ntwo".to_string();
+        before.enter_normal();
+
+        before.handle_normal_input("yyjP");
+
+        assert_eq!(before.content(), "one\none\ntwo");
+        assert_eq!(before.cursor_line(), 1);
+        assert_eq!(before.cursor_col(), 0);
+    }
+
+    #[test]
+    fn normal_mode_paste_charwise_unnamed_register_after_and_before() {
+        let mut after = NoteDocument::default();
+        after.content = "alpha beta".to_string();
+        after.enter_normal();
+        after.handle_normal_input("yiw$p");
+
+        assert_eq!(after.content(), "alpha betaalpha");
+        assert_eq!(after.cursor_col(), 14);
+
+        let mut before = NoteDocument::default();
+        before.content = "alpha beta".to_string();
+        before.enter_normal();
+        before.handle_normal_input("yiwwP");
+
+        assert_eq!(before.content(), "alpha alphabeta");
+        assert_eq!(before.cursor_col(), 10);
+    }
+
+    #[test]
+    fn normal_mode_paste_respects_count() {
+        let mut doc = NoteDocument::default();
+        doc.content = "one\ntwo".to_string();
+        doc.enter_normal();
+
+        doc.handle_normal_input("yy2p");
+
+        assert_eq!(doc.content(), "one\none\none\ntwo");
+        assert_eq!(doc.cursor_line(), 1);
     }
 }

@@ -3379,6 +3379,7 @@ dependencies = [
 name = "neonote"
 version = "0.1.0"
 dependencies = [
+ "arboard",
  "eframe",
  "egui",
  "raw-window-handle",

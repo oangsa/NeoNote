@@ -12,6 +12,8 @@ pub struct AppConfig {
     pub line_height: f32,
     pub tab_size: u8,
     pub word_wrap: bool,
+    #[serde(default = "default_true")]
+    pub sync_clipboard: bool,
     pub cursor_trail_enabled: bool,
     pub cursor_vfx_override: Option<String>,
     pub startup_mode: StartupMode,
@@ -41,6 +43,7 @@ impl Default for AppConfig {
             line_height: 1.4,
             tab_size: 2,
             word_wrap: false,
+            sync_clipboard: true,
             cursor_trail_enabled: true,
             cursor_vfx_override: None,
             startup_mode: StartupMode::Windowed,
@@ -53,6 +56,10 @@ impl Default for AppConfig {
             keybindings: serde_json::Map::new(),
         }
     }
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl AppConfig {
@@ -78,5 +85,6 @@ mod tests {
         assert_eq!(config.active_theme.as_deref(), Some("neovim-dark"));
         assert_eq!(config.window_opacity, 100);
         assert!(config.show_launcher_on_startup);
+        assert!(config.sync_clipboard);
     }
 }

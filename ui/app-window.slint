@@ -202,6 +202,7 @@ export struct SettingsData {
     tab-size: int,
     tab-size-label: string,
     word-wrap: bool,
+    sync-clipboard: bool,
     restore-last-session: bool,
     show-launcher-on-startup: bool,
     remember-window-geometry: bool,
@@ -270,6 +271,7 @@ export component AppWindow inherits Window {
     callback settings-adjust-tab-size(int);
     callback settings-adjust-window-opacity(int);
     callback settings-toggle-word-wrap();
+    callback settings-toggle-sync-clipboard();
     callback settings-toggle-restore-last-session();
     callback settings-toggle-show-launcher-on-startup();
     callback settings-toggle-remember-window-geometry();
@@ -913,6 +915,26 @@ export component AppWindow inherits Window {
                     row-text-muted: root.theme-text-muted;
                     row-accent: root.theme-accent-primary;
                     toggled => { root.settings-toggle-word-wrap(); }
+                }
+
+                Text {
+                    text: "Vim Mode";
+                    color: root.theme-text-muted;
+                    font-size: 12px;
+                    font-weight: 700;
+                }
+
+                ToggleRow {
+                    title: "Sync with clipboard";
+                    detail: "Use the system clipboard for yanks and pastes";
+                    checked: root.settings.sync-clipboard;
+                    row-background: root.theme-background;
+                    row-hover: root.theme-background-alt;
+                    row-border: root.theme-border;
+                    row-text: root.theme-text;
+                    row-text-muted: root.theme-text-muted;
+                    row-accent: root.theme-accent-primary;
+                    toggled => { root.settings-toggle-sync-clipboard(); }
                 }
 
                 Text {

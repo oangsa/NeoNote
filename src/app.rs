@@ -1,8 +1,9 @@
 use std::path::PathBuf;
 
 use crate::{
-    notes::{NoteDocument, VimMode},
+    notes::{NoteDocument, RegisterSnapshot, VimMode},
     persistence::{AppConfig, AppDataPaths, RecentFiles, SessionState},
+    platform::clipboard,
     theme::ThemeStore,
 };
 
@@ -67,6 +68,7 @@ pub struct SettingsSnapshot {
     pub tab_size: i32,
     pub tab_size_label: String,
     pub word_wrap: bool,
+    pub sync_clipboard: bool,
     pub restore_last_session: bool,
     pub show_launcher_on_startup: bool,
     pub remember_window_geometry: bool,
@@ -93,6 +95,7 @@ impl SettingsSnapshot {
             tab_size: i32::from(config.tab_size),
             tab_size_label: config.tab_size.to_string(),
             word_wrap: config.word_wrap,
+            sync_clipboard: config.sync_clipboard,
             restore_last_session: config.restore_last_session,
             show_launcher_on_startup: config.show_launcher_on_startup,
             remember_window_geometry: config.remember_window_geometry,
@@ -328,6 +331,11 @@ impl AppController {
         self.save_config_message("Word wrap updated.");
     }
 
+    pub fn toggle_sync_clipboard(&mut self) {
+        self.config.sync_clipboard = !self.config.sync_clipboard;
+        self.save_config_message("Clipboard sync updated.");
+    }
+
     pub fn toggle_restore_last_session(&mut self) {
         self.config.restore_last_session = !self.config.restore_last_session;
         self.save_config_message("Session restore updated.");
@@ -456,9 +464,20 @@ impl AppController {
             value => value,
         };
 
+        if self.config.sync_clipboard && is_clipboard_paste_key(normal_key) {
+            self.import_clipboard_to_unnamed_register();
+        }
+
+        let before_register = self
+            .config
+            .sync_clipboard
+            .then(|| self.active_note().unnamed_register_snapshot());
+
         if self.active_note_mut().handle_normal_input(normal_key) {
             self.last_message.clear();
         }
+
+        self.export_unnamed_register_if_changed(before_register);
     }
 
     fn handle_insert_editor_key(&mut self, key: &str) {
@@ -566,6 +585,31 @@ impl AppController {
         }
     }
 
+    fn import_clipboard_to_unnamed_register(&mut self) {
+        match clipboard::read_text() {
+            Ok(text) => {
+                let linewise = text.ends_with('\n');
+                self.active_note_mut().set_unnamed_register(text, linewise);
+            }
+            Err(error) => self.last_message = format!("Could not read clipboard: {error}"),
+        }
+    }
+
+    fn export_unnamed_register_if_changed(&mut self, before: Option<RegisterSnapshot>) {
+        let Some(before) = before else {
+            return;
+        };
+
+        let after = self.active_note().unnamed_register_snapshot();
+        if after == before || after.text.is_empty() {
+            return;
+        }
+
+        if let Err(error) = clipboard::write_text(&after.text) {
+            self.last_message = format!("Could not update clipboard: {error}");
+        }
+    }
+
     fn active_note(&self) -> &NoteDocument {
         &self.documents[self
             .active_document
@@ -632,6 +676,10 @@ fn chrono_like_now() -> String {
 
 fn is_printable_editor_text(text: &str) -> bool {
     !text.is_empty() && text.chars().all(|ch| !ch.is_control())
+}
+
+fn is_clipboard_paste_key(key: &str) -> bool {
+    matches!(key, "p" | "P")
 }
 
 fn migrate_old_default_theme(paths: &AppDataPaths, config: &mut AppConfig) {
@@ -968,6 +1016,10 @@ mod tests {
             snapshot.settings.show_launcher_on_startup,
             AppConfig::default().show_launcher_on_startup
         );
+        assert_eq!(
+            snapshot.settings.sync_clipboard,
+            AppConfig::default().sync_clipboard
+        );
     }
 
     #[test]
@@ -982,6 +1034,7 @@ mod tests {
         controller.toggle_restore_last_session();
         controller.toggle_show_launcher_on_startup();
         controller.toggle_word_wrap();
+        controller.toggle_sync_clipboard();
 
         let saved_config = AppConfig::load_or_default(&paths);
         assert_eq!(saved_config.font_size, 17.0);
@@ -990,6 +1043,7 @@ mod tests {
         assert!(!saved_config.restore_last_session);
         assert!(!saved_config.show_launcher_on_startup);
         assert!(saved_config.word_wrap);
+        assert!(!saved_config.sync_clipboard);
     }
 
     #[test]
