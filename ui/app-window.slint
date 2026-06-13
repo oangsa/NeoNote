@@ -1,3 +1,5 @@
+import { ScrollView } from "std-widgets.slint";
+
 component CommandButton inherits Rectangle {
     in property <string> text;
     in property <brush> background-color;
@@ -590,7 +592,8 @@ export component AppWindow inherits Window {
                     background: root.theme-border;
                 }
 
-                VerticalLayout {
+                ScrollView {
+                    VerticalLayout {
                     spacing: 6px;
                     horizontal-stretch: 1;
                     vertical-stretch: 1;
@@ -669,6 +672,7 @@ export component AppWindow inherits Window {
                         }
                     }
                 }
+                }
             }
         }
     }
@@ -730,6 +734,10 @@ export component AppWindow inherits Window {
                     height: 1px;
                     background: root.theme-border;
                 }
+
+                ScrollView {
+                    VerticalLayout {
+                        spacing: 12px;
 
                 Text {
                     text: "Editor";
@@ -1007,6 +1015,8 @@ export component AppWindow inherits Window {
                             clicked => { root.settings-adjust-window-opacity(5); }
                         }
                     }
+                }
+                }
                 }
             }
         }
