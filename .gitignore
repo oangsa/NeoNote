@@ -1,1 +1,6 @@
-NeoNote-implementation-plan.md
+target/
+*.msi
+.vscode/
+
+
+docs/neonote-implementation-plan.md
