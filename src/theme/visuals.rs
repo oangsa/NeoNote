@@ -23,16 +23,29 @@ pub fn apply_to_egui_visuals(theme: &Theme) -> Visuals {
     if let Some(color) = parse_hex_color(&theme.colors.background) {
         visuals.panel_fill = color;
         visuals.window_fill = color;
+        visuals.extreme_bg_color = color;
+    }
+    if let Some(color) = parse_hex_color(&theme.colors.background_alt) {
+        visuals.faint_bg_color = color;
     }
     if let Some(color) = parse_hex_color(&theme.colors.surface) {
         visuals.widgets.noninteractive.bg_fill = color;
         visuals.widgets.inactive.bg_fill = color;
+        visuals.widgets.hovered.bg_fill = color.gamma_multiply(1.15);
+        visuals.widgets.active.bg_fill = color.gamma_multiply(1.25);
     }
     if let Some(color) = parse_hex_color(&theme.colors.text) {
         visuals.override_text_color = Some(color);
     }
     if let Some(color) = parse_hex_color(&theme.colors.accent_primary) {
         visuals.selection.bg_fill = color;
+        visuals.hyperlink_color = color;
+    }
+    if let Some(color) = parse_hex_color(&theme.colors.border) {
+        visuals.window_stroke.color = color;
+        visuals.widgets.noninteractive.bg_stroke.color = color;
+        visuals.widgets.inactive.bg_stroke.color = color;
+        visuals.widgets.hovered.bg_stroke.color = color;
     }
 
     visuals

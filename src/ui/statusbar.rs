@@ -1,22 +1,27 @@
+use crate::notes::NoteDocument;
+
 #[derive(Default)]
-pub struct StatusBar {
-    mode: String,
-}
+pub struct StatusBar;
 
 impl StatusBar {
-    pub fn ui(&mut self, ui: &mut egui::Ui, file_title: &str) {
-        if self.mode.is_empty() {
-            self.mode = "--".to_string();
-        }
-
+    pub fn ui_note(&mut self, ui: &mut egui::Ui, note: &NoteDocument) {
+        let stats = note.stats();
         ui.horizontal(|ui| {
-            ui.monospace(format!("[{}]", self.mode));
+            ui.monospace(format!(" {} ", note.mode().label()));
             ui.separator();
-            ui.label(file_title);
+            ui.label(note.title());
+            if let Some(path) = note.path_string() {
+                ui.separator();
+                ui.label(path);
+            }
             ui.separator();
-            ui.label("utf-8");
+            ui.label(format!("Ln {}  Col {}", note.cursor_line() + 1, note.cursor_col() + 1));
             ui.separator();
-            ui.label("Ln 1  Col 1");
+            ui.label(format!("{} lines", stats.line_count));
+            ui.separator();
+            ui.label(format!("{} words", stats.word_count));
+            ui.separator();
+            ui.label(format!("{} chars", stats.char_count));
         });
     }
 }

@@ -1,11 +1,9 @@
 #![allow(dead_code)]
 
 mod app;
-mod embed;
+mod notes;
 mod persistence;
 mod platform;
-mod rpc;
-mod tabs;
 mod theme;
 mod ui;
 

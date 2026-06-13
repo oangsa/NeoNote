@@ -37,6 +37,11 @@ impl RecentFiles {
         self.entries.push(RecentFile { path, last_opened });
         sort_and_trim(&mut self.entries);
     }
+
+    pub fn save(&self, paths: &AppDataPaths) -> std::io::Result<()> {
+        let content = serde_json::to_string_pretty(&self.entries)?;
+        fs::write(paths.recent_files_path(), content)
+    }
 }
 
 fn sort_and_trim(entries: &mut Vec<RecentFile>) {

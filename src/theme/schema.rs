@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+use super::visuals::parse_hex_color;
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ThemeVariant {
     Dark,
@@ -14,8 +16,6 @@ pub struct Theme {
     pub author: String,
     pub colors: ThemeColors,
     pub vim_modes: VimModeColors,
-    pub neovim_colorscheme: String,
-    pub neovide: NeovideTheme,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -41,13 +41,6 @@ pub struct VimModeColors {
     pub visual: String,
     pub command: String,
     pub replace: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct NeovideTheme {
-    pub cursor_animation_length: f32,
-    pub cursor_trail_size: f32,
-    pub cursor_vfx_mode: String,
 }
 
 impl Theme {
@@ -89,12 +82,18 @@ impl Theme {
                 command: "#f5c56b".to_string(),
                 replace: "#ff7b86".to_string(),
             },
-            neovim_colorscheme: "default".to_string(),
-            neovide: NeovideTheme {
-                cursor_animation_length: 0.13,
-                cursor_trail_size: 0.8,
-                cursor_vfx_mode: "railgun".to_string(),
-            },
         }
+    }
+
+    pub fn mode_color(&self, mode: &str) -> Option<egui::Color32> {
+        let value = match mode {
+            "NORMAL" => &self.vim_modes.normal,
+            "INSERT" => &self.vim_modes.insert,
+            "VISUAL" => &self.vim_modes.visual,
+            "COMMAND" => &self.vim_modes.command,
+            "REPLACE" => &self.vim_modes.replace,
+            _ => &self.colors.accent_primary,
+        };
+        parse_hex_color(value)
     }
 }
