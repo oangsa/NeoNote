@@ -14,6 +14,7 @@ pub struct NoteDocument {
     cursor_col: usize,
     pending: Option<PendingCommand>,
     count: Option<usize>,
+    registers: Registers,
 }
 
 impl NoteDocument {
@@ -27,6 +28,7 @@ impl NoteDocument {
         self.cursor_col = 0;
         self.pending = None;
         self.count = None;
+        self.registers = Registers::default();
     }
 
     pub fn open(&mut self, path: impl AsRef<Path>) -> std::io::Result<()> {
@@ -40,6 +42,7 @@ impl NoteDocument {
         self.cursor_col = 0;
         self.pending = None;
         self.count = None;
+        self.registers = Registers::default();
         Ok(())
     }
 
@@ -111,6 +114,22 @@ impl NoteDocument {
             VimMode::Normal => self.cursor_col(),
             VimMode::Insert => self.cursor_col.min(self.current_line_char_count()),
         }
+    }
+
+    pub fn unnamed_register_text(&self) -> &str {
+        &self.registers.unnamed.text
+    }
+
+    pub fn yank_register_text(&self) -> &str {
+        &self.registers.yank.text
+    }
+
+    pub fn unnamed_register_is_linewise(&self) -> bool {
+        self.registers.unnamed.linewise
+    }
+
+    pub fn yank_register_is_linewise(&self) -> bool {
+        self.registers.yank.linewise
     }
 
     pub fn enter_insert(&mut self) {
@@ -347,6 +366,13 @@ impl NoteDocument {
                 });
                 false
             }
+            'y' => {
+                self.pending = Some(PendingCommand::Operator {
+                    operator: Operator::Yank,
+                    count,
+                });
+                false
+            }
             'x' => {
                 for _ in 0..count {
                     self.delete_char_on_current_line();
@@ -382,6 +408,18 @@ impl NoteDocument {
                 self.count = None;
                 self.change_current_lines(count);
                 true
+            }
+            (
+                PendingCommand::Operator {
+                    operator: Operator::Yank,
+                    count,
+                },
+                'y',
+            ) => {
+                self.pending = None;
+                self.count = None;
+                self.yank_current_lines(count);
+                false
             }
             (PendingCommand::Operator { operator, count }, 'i') => {
                 self.pending = Some(PendingCommand::TextObject {
@@ -516,6 +554,7 @@ impl NoteDocument {
     }
 
     fn delete_current_lines(&mut self, count: usize) {
+        self.capture_line_register(count, false);
         let mut lines = self.lines_vec();
         if lines.len() <= 1 {
             lines[0].clear();
@@ -534,6 +573,7 @@ impl NoteDocument {
     }
 
     fn change_current_lines(&mut self, count: usize) {
+        self.capture_line_register(count, false);
         let mut lines = self.lines_vec();
         let index = self.cursor_line();
         if lines.len() <= 1 {
@@ -553,6 +593,11 @@ impl NoteDocument {
         self.cursor_line = index.min(self.line_count().saturating_sub(1));
         self.cursor_col = 0;
         self.enter_insert();
+    }
+
+    fn yank_current_lines(&mut self, count: usize) {
+        self.capture_line_register(count, true);
+        self.clamp_cursor_normal();
     }
 
     fn delete_char_on_current_line(&mut self) {
@@ -679,17 +724,30 @@ impl NoteDocument {
             return false;
         }
 
-        self.delete_flat_range(range);
-        self.set_insert_cursor_from_flat(range.start);
         match operator {
             Operator::Delete => {
+                let text = self.text_for_range(range);
+                self.registers.store_deleted(text, range.linewise);
+                self.delete_flat_range(range);
+                self.set_insert_cursor_from_flat(range.start);
                 self.enter_normal();
+                true
             }
             Operator::Change => {
+                let text = self.text_for_range(range);
+                self.registers.store_deleted(text, range.linewise);
+                self.delete_flat_range(range);
+                self.set_insert_cursor_from_flat(range.start);
                 self.enter_insert();
+                true
+            }
+            Operator::Yank => {
+                let text = self.text_for_range(range);
+                self.registers.store_yank(text, range.linewise);
+                self.clamp_cursor_normal();
+                false
             }
         }
-        true
     }
 
     fn operator_motion_range(&self, count: usize, motion: char) -> Option<TextRange> {
@@ -812,6 +870,29 @@ impl NoteDocument {
         self.dirty = true;
     }
 
+    fn text_for_range(&self, range: TextRange) -> String {
+        let range = range.normalized().clamped(self.content_char_len());
+        self.content
+            .chars()
+            .skip(range.start)
+            .take(range.end.saturating_sub(range.start))
+            .collect()
+    }
+
+    fn capture_line_register(&mut self, count: usize, yank: bool) {
+        let range = self.linewise_range(
+            self.cursor_line(),
+            self.cursor_line()
+                .saturating_add(count.max(1).saturating_sub(1)),
+        );
+        let text = self.text_for_range(range);
+        if yank {
+            self.registers.store_yank(text, true);
+        } else {
+            self.registers.store_deleted(text, true);
+        }
+    }
+
     fn content_char_len(&self) -> usize {
         self.content.chars().count()
     }
@@ -847,7 +928,7 @@ impl NoteDocument {
     fn linewise_range(&self, first_line: usize, second_line: usize) -> TextRange {
         let start_line = first_line.min(second_line);
         let end_line = first_line.max(second_line);
-        TextRange::new(
+        TextRange::linewise(
             self.line_start_flat(start_line),
             self.line_end_flat_including_newline(end_line),
         )
@@ -951,17 +1032,31 @@ enum PendingCommand {
 enum Operator {
     Delete,
     Change,
+    Yank,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct TextRange {
     start: usize,
     end: usize,
+    linewise: bool,
 }
 
 impl TextRange {
     fn new(start: usize, end: usize) -> Self {
-        Self { start, end }
+        Self {
+            start,
+            end,
+            linewise: false,
+        }
+    }
+
+    fn linewise(start: usize, end: usize) -> Self {
+        Self {
+            start,
+            end,
+            linewise: true,
+        }
     }
 
     fn normalized(self) -> Self {
@@ -971,6 +1066,7 @@ impl TextRange {
             Self {
                 start: self.end,
                 end: self.start,
+                linewise: self.linewise,
             }
         }
     }
@@ -979,8 +1075,33 @@ impl TextRange {
         Self {
             start: self.start.min(len),
             end: self.end.min(len),
+            linewise: self.linewise,
         }
     }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct Registers {
+    unnamed: RegisterValue,
+    yank: RegisterValue,
+}
+
+impl Registers {
+    fn store_yank(&mut self, text: String, linewise: bool) {
+        let value = RegisterValue { text, linewise };
+        self.unnamed = value.clone();
+        self.yank = value;
+    }
+
+    fn store_deleted(&mut self, text: String, linewise: bool) {
+        self.unnamed = RegisterValue { text, linewise };
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct RegisterValue {
+    text: String,
+    linewise: bool,
 }
 
 fn char_count(line: &str) -> usize {
@@ -1248,5 +1369,74 @@ mod tests {
         doc.handle_normal_input("2gg");
 
         assert_eq!(doc.cursor_line(), 1);
+    }
+
+    #[test]
+    fn normal_mode_yank_line_updates_unnamed_and_yank_registers() {
+        let mut doc = NoteDocument::default();
+        doc.content = "one\ntwo\nthree".to_string();
+        doc.enter_normal();
+        doc.handle_normal_input("j");
+
+        assert!(!doc.handle_normal_input("yy"));
+
+        assert_eq!(doc.content(), "one\ntwo\nthree");
+        assert_eq!(doc.unnamed_register_text(), "two\n");
+        assert_eq!(doc.yank_register_text(), "two\n");
+        assert!(doc.unnamed_register_is_linewise());
+        assert!(doc.yank_register_is_linewise());
+    }
+
+    #[test]
+    fn normal_mode_yank_operator_composes_with_motions_and_text_objects() {
+        let mut motion = NoteDocument::default();
+        motion.content = "alpha beta gamma".to_string();
+        motion.enter_normal();
+
+        assert!(!motion.handle_normal_input("yw"));
+
+        assert_eq!(motion.content(), "alpha beta gamma");
+        assert_eq!(motion.unnamed_register_text(), "alpha ");
+        assert_eq!(motion.yank_register_text(), "alpha ");
+        assert!(!motion.yank_register_is_linewise());
+
+        let mut inner = NoteDocument::default();
+        inner.content = "hello world".to_string();
+        inner.enter_normal();
+        inner.handle_normal_input("w");
+
+        assert!(!inner.handle_normal_input("yiw"));
+
+        assert_eq!(inner.yank_register_text(), "world");
+        assert_eq!(inner.content(), "hello world");
+
+        let mut around = NoteDocument::default();
+        around.content = "hello world".to_string();
+        around.enter_normal();
+
+        assert!(!around.handle_normal_input("yaw"));
+
+        assert_eq!(around.yank_register_text(), "hello ");
+        assert_eq!(around.content(), "hello world");
+    }
+
+    #[test]
+    fn delete_and_change_update_unnamed_without_replacing_yank_register() {
+        let mut doc = NoteDocument::default();
+        doc.content = "alpha beta gamma".to_string();
+        doc.enter_normal();
+
+        doc.handle_normal_input("yiw");
+        assert_eq!(doc.yank_register_text(), "alpha");
+
+        assert!(doc.handle_normal_input("dw"));
+
+        assert_eq!(doc.unnamed_register_text(), "alpha ");
+        assert_eq!(doc.yank_register_text(), "alpha");
+
+        doc.handle_normal_input("cw");
+        assert_eq!(doc.unnamed_register_text(), "beta ");
+        assert_eq!(doc.yank_register_text(), "alpha");
+        assert_eq!(doc.mode(), VimMode::Insert);
     }
 }
