@@ -1,0 +1,32 @@
+{
+  "name": "Nord",
+  "variant": "dark",
+  "author": "arcticicestudio",
+  "colors": {
+    "background": "#2e3440",
+    "background_alt": "#242933",
+    "surface": "#3b4252",
+    "border": "#4c566a",
+    "text": "#d8dee9",
+    "text_muted": "#81a1c1",
+    "accent_primary": "#88c0d0",
+    "accent_secondary": "#81a1c1",
+    "success": "#a3be8c",
+    "warning": "#ebcb8b",
+    "error": "#bf616a",
+    "cursor": "#eceff4"
+  },
+  "vim_modes": {
+    "normal": "#81a1c1",
+    "insert": "#a3be8c",
+    "visual": "#b48ead",
+    "command": "#ebcb8b",
+    "replace": "#bf616a"
+  },
+  "neovim_colorscheme": "nord",
+  "neovide": {
+    "cursor_animation_length": 0.13,
+    "cursor_trail_size": 0.8,
+    "cursor_vfx_mode": "railgun"
+  }
+}

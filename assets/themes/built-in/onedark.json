@@ -1,0 +1,32 @@
+{
+  "name": "One Dark Pro",
+  "variant": "dark",
+  "author": "One Dark",
+  "colors": {
+    "background": "#282c34",
+    "background_alt": "#21252b",
+    "surface": "#3e4451",
+    "border": "#4b5263",
+    "text": "#abb2bf",
+    "text_muted": "#5c6370",
+    "accent_primary": "#61afef",
+    "accent_secondary": "#c678dd",
+    "success": "#98c379",
+    "warning": "#e5c07b",
+    "error": "#e06c75",
+    "cursor": "#528bff"
+  },
+  "vim_modes": {
+    "normal": "#61afef",
+    "insert": "#98c379",
+    "visual": "#c678dd",
+    "command": "#e5c07b",
+    "replace": "#e06c75"
+  },
+  "neovim_colorscheme": "onedark",
+  "neovide": {
+    "cursor_animation_length": 0.13,
+    "cursor_trail_size": 0.8,
+    "cursor_vfx_mode": "railgun"
+  }
+}

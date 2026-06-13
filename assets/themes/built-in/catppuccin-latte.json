@@ -1,0 +1,32 @@
+{
+  "name": "Catppuccin Latte",
+  "variant": "light",
+  "author": "catppuccin",
+  "colors": {
+    "background": "#eff1f5",
+    "background_alt": "#e6e9ef",
+    "surface": "#ccd0da",
+    "border": "#bcc0cc",
+    "text": "#4c4f69",
+    "text_muted": "#8c8fa1",
+    "accent_primary": "#8839ef",
+    "accent_secondary": "#1e66f5",
+    "success": "#40a02b",
+    "warning": "#df8e1d",
+    "error": "#d20f39",
+    "cursor": "#ea76cb"
+  },
+  "vim_modes": {
+    "normal": "#1e66f5",
+    "insert": "#40a02b",
+    "visual": "#8839ef",
+    "command": "#df8e1d",
+    "replace": "#d20f39"
+  },
+  "neovim_colorscheme": "catppuccin",
+  "neovide": {
+    "cursor_animation_length": 0.13,
+    "cursor_trail_size": 0.8,
+    "cursor_vfx_mode": "railgun"
+  }
+}

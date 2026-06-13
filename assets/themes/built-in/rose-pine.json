@@ -1,0 +1,32 @@
+{
+  "name": "Rose Pine",
+  "variant": "dark",
+  "author": "rose-pine",
+  "colors": {
+    "background": "#191724",
+    "background_alt": "#1f1d2e",
+    "surface": "#26233a",
+    "border": "#403d52",
+    "text": "#e0def4",
+    "text_muted": "#6e6a86",
+    "accent_primary": "#c4a7e7",
+    "accent_secondary": "#9ccfd8",
+    "success": "#31748f",
+    "warning": "#f6c177",
+    "error": "#eb6f92",
+    "cursor": "#e0def4"
+  },
+  "vim_modes": {
+    "normal": "#9ccfd8",
+    "insert": "#31748f",
+    "visual": "#c4a7e7",
+    "command": "#f6c177",
+    "replace": "#eb6f92"
+  },
+  "neovim_colorscheme": "rose-pine",
+  "neovide": {
+    "cursor_animation_length": 0.13,
+    "cursor_trail_size": 0.8,
+    "cursor_vfx_mode": "railgun"
+  }
+}

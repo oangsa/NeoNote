@@ -1,0 +1,27 @@
+[package]
+name = "neonote"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eframe = "0.31"
+egui = "0.31"
+windows = { version = "0.58", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_DirectWrite",
+  "Win32_Graphics_Dwm",
+  "Win32_System_Threading",
+  "Win32_System_SystemInformation",
+  "Win32_UI_WindowsAndMessaging",
+] }
+nvim-rs = { version = "0.6", features = ["use_tokio"] }
+tokio = { version = "1", features = ["full"] }
+rmpv = "1.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rfd = "0.14"
+uuid = { version = "1", features = ["v4", "serde"] }
+winapi = { version = "0.3", features = ["winerror"] }
+
+[build-dependencies]
+winres = "0.1"

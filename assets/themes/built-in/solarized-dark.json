@@ -1,0 +1,32 @@
+{
+  "name": "Solarized Dark",
+  "variant": "dark",
+  "author": "ethanschoonover",
+  "colors": {
+    "background": "#002b36",
+    "background_alt": "#073642",
+    "surface": "#073642",
+    "border": "#586e75",
+    "text": "#839496",
+    "text_muted": "#657b83",
+    "accent_primary": "#268bd2",
+    "accent_secondary": "#2aa198",
+    "success": "#859900",
+    "warning": "#b58900",
+    "error": "#dc322f",
+    "cursor": "#93a1a1"
+  },
+  "vim_modes": {
+    "normal": "#268bd2",
+    "insert": "#859900",
+    "visual": "#6c71c4",
+    "command": "#b58900",
+    "replace": "#dc322f"
+  },
+  "neovim_colorscheme": "solarized",
+  "neovide": {
+    "cursor_animation_length": 0.13,
+    "cursor_trail_size": 0.8,
+    "cursor_vfx_mode": "railgun"
+  }
+}

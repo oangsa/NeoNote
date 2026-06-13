@@ -1,0 +1,32 @@
+{
+  "name": "Catppuccin Mocha",
+  "variant": "dark",
+  "author": "catppuccin",
+  "colors": {
+    "background": "#1e1e2e",
+    "background_alt": "#181825",
+    "surface": "#313244",
+    "border": "#45475a",
+    "text": "#cdd6f4",
+    "text_muted": "#6c7086",
+    "accent_primary": "#cba6f7",
+    "accent_secondary": "#89b4fa",
+    "success": "#a6e3a1",
+    "warning": "#f9e2af",
+    "error": "#f38ba8",
+    "cursor": "#f5c2e7"
+  },
+  "vim_modes": {
+    "normal": "#89b4fa",
+    "insert": "#a6e3a1",
+    "visual": "#cba6f7",
+    "command": "#f9e2af",
+    "replace": "#f38ba8"
+  },
+  "neovim_colorscheme": "catppuccin",
+  "neovide": {
+    "cursor_animation_length": 0.13,
+    "cursor_trail_size": 0.8,
+    "cursor_vfx_mode": "railgun"
+  }
+}

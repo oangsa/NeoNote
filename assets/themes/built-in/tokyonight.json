@@ -1,0 +1,32 @@
+{
+  "name": "Tokyo Night",
+  "variant": "dark",
+  "author": "Tokyo Night",
+  "colors": {
+    "background": "#1a1b26",
+    "background_alt": "#16161e",
+    "surface": "#24283b",
+    "border": "#414868",
+    "text": "#c0caf5",
+    "text_muted": "#565f89",
+    "accent_primary": "#7aa2f7",
+    "accent_secondary": "#bb9af7",
+    "success": "#9ece6a",
+    "warning": "#e0af68",
+    "error": "#f7768e",
+    "cursor": "#c0caf5"
+  },
+  "vim_modes": {
+    "normal": "#7aa2f7",
+    "insert": "#9ece6a",
+    "visual": "#bb9af7",
+    "command": "#e0af68",
+    "replace": "#f7768e"
+  },
+  "neovim_colorscheme": "tokyonight",
+  "neovide": {
+    "cursor_animation_length": 0.13,
+    "cursor_trail_size": 0.8,
+    "cursor_vfx_mode": "railgun"
+  }
+}
