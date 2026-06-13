@@ -15,6 +15,7 @@ pub struct AppController {
     documents: Vec<NoteDocument>,
     active_document: usize,
     theme_panel_open: bool,
+    settings_panel_open: bool,
     last_message: String,
 }
 
@@ -37,8 +38,12 @@ pub struct AppSnapshot {
     pub message: String,
     pub has_document: bool,
     pub editor_font_family: String,
+    pub editor_font_size: f32,
+    pub editor_line_height: f32,
     pub theme_panel_open: bool,
     pub theme_items: Vec<ThemeItemSnapshot>,
+    pub settings_panel_open: bool,
+    pub settings: SettingsSnapshot,
     pub theme: ThemeSnapshot,
 }
 
@@ -50,6 +55,44 @@ pub struct ThemeItemSnapshot {
     pub author: String,
     pub is_active: bool,
     pub is_preview: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SettingsSnapshot {
+    pub font_family: String,
+    pub font_size: f32,
+    pub line_height: f32,
+    pub tab_size: i32,
+    pub word_wrap: bool,
+    pub restore_last_session: bool,
+    pub show_launcher_on_startup: bool,
+    pub remember_window_geometry: bool,
+    pub blur_behind: bool,
+    pub window_opacity: i32,
+}
+
+impl Default for SettingsSnapshot {
+    fn default() -> Self {
+        let config = AppConfig::default();
+        Self::from_config(&config)
+    }
+}
+
+impl SettingsSnapshot {
+    fn from_config(config: &AppConfig) -> Self {
+        Self {
+            font_family: config.font_family.clone(),
+            font_size: config.font_size,
+            line_height: config.line_height,
+            tab_size: i32::from(config.tab_size),
+            word_wrap: config.word_wrap,
+            restore_last_session: config.restore_last_session,
+            show_launcher_on_startup: config.show_launcher_on_startup,
+            remember_window_geometry: config.remember_window_geometry,
+            blur_behind: config.blur_behind,
+            window_opacity: i32::from(config.window_opacity),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -121,6 +164,7 @@ impl AppController {
             documents: vec![NoteDocument::default()],
             active_document: 0,
             theme_panel_open: false,
+            settings_panel_open: false,
             last_message: String::new(),
         }
     }
@@ -194,6 +238,7 @@ impl AppController {
 
     pub fn open_theme_panel(&mut self) {
         self.theme_panel_open = true;
+        self.settings_panel_open = false;
         self.themes.clear_preview();
         self.last_message = "Choose a theme.".to_string();
     }
@@ -237,7 +282,62 @@ impl AppController {
     }
 
     pub fn open_settings_panel(&mut self) {
-        self.last_message = "Settings panel migration to Slint is next.".to_string();
+        self.themes.clear_preview();
+        self.theme_panel_open = false;
+        self.settings_panel_open = true;
+        self.last_message = "Adjust settings.".to_string();
+    }
+
+    pub fn close_settings_panel(&mut self) {
+        self.settings_panel_open = false;
+        self.last_message = "Settings closed.".to_string();
+    }
+
+    pub fn adjust_font_size(&mut self, delta: i32) {
+        self.config.font_size = (self.config.font_size + delta as f32).clamp(8.0, 32.0);
+        self.save_config_message("Font size updated.");
+    }
+
+    pub fn adjust_line_height(&mut self, delta_tenths: i32) {
+        self.config.line_height =
+            (self.config.line_height + (delta_tenths as f32 / 10.0)).clamp(1.0, 2.4);
+        self.save_config_message("Line height updated.");
+    }
+
+    pub fn adjust_tab_size(&mut self, delta: i32) {
+        self.config.tab_size = ((i32::from(self.config.tab_size) + delta).clamp(2, 8)) as u8;
+        self.save_config_message("Tab size updated.");
+    }
+
+    pub fn adjust_window_opacity(&mut self, delta: i32) {
+        self.config.window_opacity =
+            ((i32::from(self.config.window_opacity) + delta).clamp(40, 100)) as u8;
+        self.save_config_message("Window opacity updated.");
+    }
+
+    pub fn toggle_word_wrap(&mut self) {
+        self.config.word_wrap = !self.config.word_wrap;
+        self.save_config_message("Word wrap updated.");
+    }
+
+    pub fn toggle_restore_last_session(&mut self) {
+        self.config.restore_last_session = !self.config.restore_last_session;
+        self.save_config_message("Session restore updated.");
+    }
+
+    pub fn toggle_show_launcher_on_startup(&mut self) {
+        self.config.show_launcher_on_startup = !self.config.show_launcher_on_startup;
+        self.save_config_message("Startup launcher updated.");
+    }
+
+    pub fn toggle_remember_window_geometry(&mut self) {
+        self.config.remember_window_geometry = !self.config.remember_window_geometry;
+        self.save_config_message("Window geometry setting updated.");
+    }
+
+    pub fn toggle_blur_behind(&mut self) {
+        self.config.blur_behind = !self.config.blur_behind;
+        self.save_config_message("Window blur setting updated.");
     }
 
     pub fn handle_editor_key(&mut self, key: &str) {
@@ -324,8 +424,12 @@ impl AppController {
             editor_font_family: crate::platform::fonts::select_editor_font(
                 &self.config.font_family,
             ),
+            editor_font_size: self.config.font_size,
+            editor_line_height: self.config.font_size * self.config.line_height,
             theme_panel_open: self.theme_panel_open,
             theme_items: self.theme_items(),
+            settings_panel_open: self.settings_panel_open,
+            settings: SettingsSnapshot::from_config(&self.config),
             theme,
         }
     }
@@ -445,6 +549,13 @@ impl AppController {
                 is_preview: self.themes.is_preview(index),
             })
             .collect()
+    }
+
+    fn save_config_message(&mut self, success_message: &str) {
+        match self.config.save(&self.paths) {
+            Ok(()) => self.last_message = success_message.to_string(),
+            Err(error) => self.last_message = format!("Could not save settings: {error}"),
+        }
     }
 
     fn active_note(&self) -> &NoteDocument {
@@ -830,6 +941,70 @@ mod tests {
         );
         assert!(snapshot.theme_items[apply_index].is_active);
         assert!(snapshot.theme_items.iter().all(|item| !item.is_preview));
+    }
+
+    #[test]
+    fn settings_panel_snapshot_reflects_config_values() {
+        let (_root, mut controller) = test_controller();
+
+        controller.open_settings_panel();
+
+        let snapshot = controller.snapshot();
+        assert!(snapshot.settings_panel_open);
+        assert_eq!(snapshot.settings.font_size, AppConfig::default().font_size);
+        assert_eq!(
+            snapshot.settings.restore_last_session,
+            AppConfig::default().restore_last_session
+        );
+        assert_eq!(
+            snapshot.settings.show_launcher_on_startup,
+            AppConfig::default().show_launcher_on_startup
+        );
+    }
+
+    #[test]
+    fn settings_updates_persist_config_values() {
+        let (_root, mut controller) = test_controller();
+        let paths = controller.paths.clone();
+
+        controller.open_settings_panel();
+        controller.adjust_font_size(3);
+        controller.adjust_line_height(2);
+        controller.adjust_tab_size(2);
+        controller.toggle_restore_last_session();
+        controller.toggle_show_launcher_on_startup();
+        controller.toggle_word_wrap();
+
+        let saved_config = AppConfig::load_or_default(&paths);
+        assert_eq!(saved_config.font_size, 17.0);
+        assert_eq!(saved_config.line_height, 1.6);
+        assert_eq!(saved_config.tab_size, 4);
+        assert!(!saved_config.restore_last_session);
+        assert!(!saved_config.show_launcher_on_startup);
+        assert!(saved_config.word_wrap);
+    }
+
+    #[test]
+    fn settings_numeric_updates_clamp_to_supported_ranges() {
+        let (_root, mut controller) = test_controller();
+
+        controller.adjust_font_size(-100);
+        controller.adjust_line_height(-100);
+        controller.adjust_tab_size(-100);
+        controller.adjust_window_opacity(-100);
+        assert_eq!(controller.snapshot().settings.font_size, 8.0);
+        assert_eq!(controller.snapshot().settings.line_height, 1.0);
+        assert_eq!(controller.snapshot().settings.tab_size, 2);
+        assert_eq!(controller.snapshot().settings.window_opacity, 40);
+
+        controller.adjust_font_size(100);
+        controller.adjust_line_height(100);
+        controller.adjust_tab_size(100);
+        controller.adjust_window_opacity(100);
+        assert_eq!(controller.snapshot().settings.font_size, 32.0);
+        assert_eq!(controller.snapshot().settings.line_height, 2.4);
+        assert_eq!(controller.snapshot().settings.tab_size, 8);
+        assert_eq!(controller.snapshot().settings.window_opacity, 100);
     }
 
     fn test_controller() -> (PathBuf, AppController) {

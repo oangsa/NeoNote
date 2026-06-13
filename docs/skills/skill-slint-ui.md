@@ -43,3 +43,4 @@ Theme binding pattern validated in this repo:
 - Convert theme JSON hex strings to `slint::Brush` in the Rust bridge with `Color::from_rgb_u8`.
 - Avoid naming custom component properties the same as inherited Slint properties such as `border-color`.
 - Do not set `x` or `y` on children owned by a `HorizontalLayout` or `VerticalLayout`; the layout owns those coordinates.
+- For configurable lengths such as editor font size or line height, prefer Slint `float` properties from Rust and multiply by `1px` at the Slint use site. This avoids depending on version-specific Rust length wrapper exports.

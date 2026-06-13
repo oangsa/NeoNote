@@ -28,6 +28,71 @@ component CommandButton inherits Rectangle {
     }
 }
 
+component ToggleRow inherits Rectangle {
+    in property <string> title;
+    in property <string> detail;
+    in property <bool> checked;
+    in property <brush> row-background;
+    in property <brush> row-hover;
+    in property <brush> row-border;
+    in property <brush> row-text;
+    in property <brush> row-text-muted;
+    in property <brush> row-accent;
+    callback toggled();
+
+    height: 48px;
+    border-radius: 4px;
+    background: touch.has-hover ? root.row-hover : root.row-background;
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 10px;
+
+        VerticalLayout {
+            spacing: 2px;
+            horizontal-stretch: 1;
+
+            Text {
+                text: root.title;
+                color: root.row-text;
+                font-size: 13px;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+
+            Text {
+                text: root.detail;
+                color: root.row-text-muted;
+                font-size: 11px;
+                vertical-alignment: center;
+            }
+        }
+
+        Rectangle {
+            width: 38px;
+            height: 20px;
+            border-radius: 10px;
+            background: root.checked ? root.row-accent : root.row-border;
+
+            Rectangle {
+                x: root.checked ? 20px : 2px;
+                y: 2px;
+                width: 16px;
+                height: 16px;
+                border-radius: 8px;
+                background: root.row-background;
+            }
+        }
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.toggled();
+        }
+    }
+}
+
 export struct EditorLine {
     number: int,
     text: string,
@@ -46,6 +111,19 @@ export struct ThemeItem {
     author: string,
     is-active: bool,
     is-preview: bool,
+}
+
+export struct SettingsData {
+    font-family: string,
+    font-size: float,
+    line-height: float,
+    tab-size: int,
+    word-wrap: bool,
+    restore-last-session: bool,
+    show-launcher-on-startup: bool,
+    remember-window-geometry: bool,
+    blur-behind: bool,
+    window-opacity: int,
 }
 
 export component AppWindow inherits Window {
@@ -67,14 +145,16 @@ export component AppWindow inherits Window {
     in property <string> cursor-suffix: "";
     in property <bool> cursor-block: true;
     in property <length> editor-left-padding: 14px;
-    in property <length> editor-line-height: 17px;
-    in property <length> editor-font-size: 14px;
+    in property <float> editor-line-height: 17;
+    in property <float> editor-font-size: 14;
     in property <length> cursor-x-adjust: -1px;
     in property <string> editor-font-family: "Consolas";
     in property <string> message: "";
     in property <bool> has-document: false;
     in property <bool> show-theme-panel: false;
+    in property <bool> show-settings-panel: false;
     in property <[ThemeItem]> theme-items;
+    in property <SettingsData> settings;
     in property <brush> theme-background: #0f1117;
     in property <brush> theme-background-alt: #161922;
     in property <brush> theme-surface: #1d2430;
@@ -100,6 +180,16 @@ export component AppWindow inherits Window {
     callback theme-apply(int);
     callback theme-panel-close();
     callback open-settings-panel();
+    callback settings-panel-close();
+    callback settings-adjust-font-size(int);
+    callback settings-adjust-line-height(int);
+    callback settings-adjust-tab-size(int);
+    callback settings-adjust-window-opacity(int);
+    callback settings-toggle-word-wrap();
+    callback settings-toggle-restore-last-session();
+    callback settings-toggle-show-launcher-on-startup();
+    callback settings-toggle-remember-window-geometry();
+    callback settings-toggle-blur-behind();
     callback editor-key(string);
 
     public function focus-editor() {
@@ -314,7 +404,7 @@ export component AppWindow inherits Window {
                         text: "New File\nOpen File";
                         color: root.theme-text-muted;
                         font-family: root.editor-font-family;
-                        font-size: root.editor-font-size;
+                        font-size: root.editor-font-size * 1px;
                         visible: !root.has-document;
                     }
 
@@ -327,7 +417,7 @@ export component AppWindow inherits Window {
                         visible: root.has-document;
 
                         for line in root.editor-lines: Rectangle {
-                            height: root.editor-line-height;
+                            height: root.editor-line-height * 1px;
                             width: 100%;
                             background: line.is-cursor-line ? root.theme-surface.with_alpha(0.28) : transparent;
 
@@ -335,11 +425,11 @@ export component AppWindow inherits Window {
                                 x: 0px;
                                 y: 0px;
                                 width: 48px;
-                                height: root.editor-line-height;
+                                height: root.editor-line-height * 1px;
                                 text: line.number;
                                 color: root.theme-text-muted;
                                 font-family: root.editor-font-family;
-                                font-size: root.editor-font-size;
+                                font-size: root.editor-font-size * 1px;
                                 horizontal-alignment: right;
                                 vertical-alignment: center;
                             }
@@ -347,11 +437,11 @@ export component AppWindow inherits Window {
                             prefix-measure := Text {
                                 x: 58px + root.editor-left-padding;
                                 y: 0px;
-                                height: root.editor-line-height;
+                                height: root.editor-line-height * 1px;
                                 text: line.cursor-prefix;
                                 color: transparent;
                                 font-family: root.editor-font-family;
-                                font-size: root.editor-font-size;
+                                font-size: root.editor-font-size * 1px;
                                 vertical-alignment: center;
                                 wrap: no-wrap;
                             }
@@ -359,11 +449,11 @@ export component AppWindow inherits Window {
                             cursor-cell-measure := Text {
                                 x: 58px + root.editor-left-padding;
                                 y: 0px;
-                                height: root.editor-line-height;
+                                height: root.editor-line-height * 1px;
                                 text: line.cursor-cell;
                                 color: transparent;
                                 font-family: root.editor-font-family;
-                                font-size: root.editor-font-size;
+                                font-size: root.editor-font-size * 1px;
                                 vertical-alignment: center;
                                 wrap: no-wrap;
                             }
@@ -371,7 +461,7 @@ export component AppWindow inherits Window {
                             Rectangle {
                                 x: 58px + root.editor-left-padding + (line.cursor-prefix == "" ? 0px : prefix-measure.preferred-width) + root.cursor-x-adjust;
                                 y: 0px;
-                                height: root.editor-line-height;
+                                height: root.editor-line-height * 1px;
                                 width: line.is-cursor-line ? (line.cursor-block ? max(cursor-cell-measure.preferred-width - root.cursor-x-adjust, 2px) : 2px) : 0px;
                                 background: line.cursor-block ? root.theme-cursor.with_alpha(0.58) : root.mode-color;
                             }
@@ -380,11 +470,11 @@ export component AppWindow inherits Window {
                                 x: 58px + root.editor-left-padding;
                                 y: 0px;
                                 width: parent.width - 58px - (root.editor-left-padding * 2);
-                                height: root.editor-line-height;
+                                height: root.editor-line-height * 1px;
                                 text: line.text;
                                 color: root.theme-text;
                                 font-family: root.editor-font-family;
-                                font-size: root.editor-font-size;
+                                font-size: root.editor-font-size * 1px;
                                 vertical-alignment: center;
                                 wrap: no-wrap;
                             }
@@ -576,6 +666,345 @@ export component AppWindow inherits Window {
                                 text-color: item.is-active ? root.theme-text-muted : root.theme-background;
                                 clicked => { root.theme-apply(item.index); }
                             }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        x: 0px;
+        y: 0px;
+        width: 100%;
+        height: 100%;
+        visible: root.show-settings-panel;
+        background: root.theme-background.with_alpha(0.68);
+
+        TouchArea {
+            width: 100%;
+            height: 100%;
+            clicked => {
+                root.settings-panel-close();
+            }
+        }
+
+        Rectangle {
+            width: min(parent.width - 48px, 600px);
+            height: min(parent.height - 80px, 560px);
+            x: (parent.width - self.width) / 2;
+            y: 56px;
+            border-width: 1px;
+            border-color: root.theme-border;
+            border-radius: 6px;
+            background: root.theme-surface;
+
+            VerticalLayout {
+                padding: 16px;
+                spacing: 12px;
+
+                HorizontalLayout {
+                    height: 32px;
+                    spacing: 8px;
+
+                    Text {
+                        text: "Settings";
+                        color: root.theme-text;
+                        font-size: 18px;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+
+                    CommandButton {
+                        text: "Close";
+                        background-color: root.theme-background-alt;
+                        hover-color: root.theme-border;
+                        command-border-color: root.theme-border;
+                        text-color: root.theme-text-muted;
+                        clicked => { root.settings-panel-close(); }
+                    }
+                }
+
+                Rectangle {
+                    height: 1px;
+                    background: root.theme-border;
+                }
+
+                Text {
+                    text: "Editor";
+                    color: root.theme-text-muted;
+                    font-size: 12px;
+                    font-weight: 700;
+                }
+
+                Rectangle {
+                    height: 46px;
+                    border-radius: 4px;
+                    background: root.theme-background;
+
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 10px;
+                        spacing: 10px;
+
+                        Text {
+                            text: "Font size";
+                            color: root.theme-text;
+                            font-size: 13px;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+
+                        CommandButton {
+                            text: "-";
+                            background-color: root.theme-background-alt;
+                            hover-color: root.theme-border;
+                            command-border-color: root.theme-border;
+                            text-color: root.theme-text;
+                            clicked => { root.settings-adjust-font-size(-1); }
+                        }
+
+                        Text {
+                            text: root.settings.font-size;
+                            color: root.theme-text-muted;
+                            font-size: 13px;
+                            width: 42px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        CommandButton {
+                            text: "+";
+                            background-color: root.theme-background-alt;
+                            hover-color: root.theme-border;
+                            command-border-color: root.theme-border;
+                            text-color: root.theme-text;
+                            clicked => { root.settings-adjust-font-size(1); }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    height: 46px;
+                    border-radius: 4px;
+                    background: root.theme-background;
+
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 10px;
+                        spacing: 10px;
+
+                        Text {
+                            text: "Line height";
+                            color: root.theme-text;
+                            font-size: 13px;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+
+                        CommandButton {
+                            text: "-";
+                            background-color: root.theme-background-alt;
+                            hover-color: root.theme-border;
+                            command-border-color: root.theme-border;
+                            text-color: root.theme-text;
+                            clicked => { root.settings-adjust-line-height(-1); }
+                        }
+
+                        Text {
+                            text: root.settings.line-height;
+                            color: root.theme-text-muted;
+                            font-size: 13px;
+                            width: 42px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        CommandButton {
+                            text: "+";
+                            background-color: root.theme-background-alt;
+                            hover-color: root.theme-border;
+                            command-border-color: root.theme-border;
+                            text-color: root.theme-text;
+                            clicked => { root.settings-adjust-line-height(1); }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    height: 46px;
+                    border-radius: 4px;
+                    background: root.theme-background;
+
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 10px;
+                        spacing: 10px;
+
+                        Text {
+                            text: "Tab size";
+                            color: root.theme-text;
+                            font-size: 13px;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+
+                        CommandButton {
+                            text: "-";
+                            background-color: root.theme-background-alt;
+                            hover-color: root.theme-border;
+                            command-border-color: root.theme-border;
+                            text-color: root.theme-text;
+                            clicked => { root.settings-adjust-tab-size(-1); }
+                        }
+
+                        Text {
+                            text: root.settings.tab-size;
+                            color: root.theme-text-muted;
+                            font-size: 13px;
+                            width: 42px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        CommandButton {
+                            text: "+";
+                            background-color: root.theme-background-alt;
+                            hover-color: root.theme-border;
+                            command-border-color: root.theme-border;
+                            text-color: root.theme-text;
+                            clicked => { root.settings-adjust-tab-size(1); }
+                        }
+                    }
+                }
+
+                ToggleRow {
+                    title: "Word wrap";
+                    detail: "Soft-wrap long note lines";
+                    checked: root.settings.word-wrap;
+                    row-background: root.theme-background;
+                    row-hover: root.theme-background-alt;
+                    row-border: root.theme-border;
+                    row-text: root.theme-text;
+                    row-text-muted: root.theme-text-muted;
+                    row-accent: root.theme-accent-primary;
+                    toggled => { root.settings-toggle-word-wrap(); }
+                }
+
+                Text {
+                    text: "Startup";
+                    color: root.theme-text-muted;
+                    font-size: 12px;
+                    font-weight: 700;
+                }
+
+                ToggleRow {
+                    title: "Restore last session";
+                    detail: "Open remembered notes on launch";
+                    checked: root.settings.restore-last-session;
+                    row-background: root.theme-background;
+                    row-hover: root.theme-background-alt;
+                    row-border: root.theme-border;
+                    row-text: root.theme-text;
+                    row-text-muted: root.theme-text-muted;
+                    row-accent: root.theme-accent-primary;
+                    toggled => { root.settings-toggle-restore-last-session(); }
+                }
+
+                ToggleRow {
+                    title: "Show launcher on startup";
+                    detail: "Start on the note launcher when no session opens";
+                    checked: root.settings.show-launcher-on-startup;
+                    row-background: root.theme-background;
+                    row-hover: root.theme-background-alt;
+                    row-border: root.theme-border;
+                    row-text: root.theme-text;
+                    row-text-muted: root.theme-text-muted;
+                    row-accent: root.theme-accent-primary;
+                    toggled => { root.settings-toggle-show-launcher-on-startup(); }
+                }
+
+                Text {
+                    text: "Window";
+                    color: root.theme-text-muted;
+                    font-size: 12px;
+                    font-weight: 700;
+                }
+
+                ToggleRow {
+                    title: "Remember window geometry";
+                    detail: "Persist size and placement when supported";
+                    checked: root.settings.remember-window-geometry;
+                    row-background: root.theme-background;
+                    row-hover: root.theme-background-alt;
+                    row-border: root.theme-border;
+                    row-text: root.theme-text;
+                    row-text-muted: root.theme-text-muted;
+                    row-accent: root.theme-accent-primary;
+                    toggled => { root.settings-toggle-remember-window-geometry(); }
+                }
+
+                ToggleRow {
+                    title: "Blur behind";
+                    detail: "Use the Windows blur effect when supported";
+                    checked: root.settings.blur-behind;
+                    row-background: root.theme-background;
+                    row-hover: root.theme-background-alt;
+                    row-border: root.theme-border;
+                    row-text: root.theme-text;
+                    row-text-muted: root.theme-text-muted;
+                    row-accent: root.theme-accent-primary;
+                    toggled => { root.settings-toggle-blur-behind(); }
+                }
+
+                Rectangle {
+                    height: 46px;
+                    border-radius: 4px;
+                    background: root.theme-background;
+
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 10px;
+                        spacing: 10px;
+
+                        Text {
+                            text: "Window opacity";
+                            color: root.theme-text;
+                            font-size: 13px;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+
+                        CommandButton {
+                            text: "-";
+                            background-color: root.theme-background-alt;
+                            hover-color: root.theme-border;
+                            command-border-color: root.theme-border;
+                            text-color: root.theme-text;
+                            clicked => { root.settings-adjust-window-opacity(-5); }
+                        }
+
+                        Text {
+                            text: root.settings.window-opacity;
+                            color: root.theme-text-muted;
+                            font-size: 13px;
+                            width: 42px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        CommandButton {
+                            text: "+";
+                            background-color: root.theme-background-alt;
+                            hover-color: root.theme-border;
+                            command-border-color: root.theme-border;
+                            text-color: root.theme-text;
+                            clicked => { root.settings-adjust-window-opacity(5); }
                         }
                     }
                 }

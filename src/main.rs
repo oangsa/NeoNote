@@ -130,6 +130,111 @@ fn install_callbacks(window: &AppWindow, controller: Rc<RefCell<AppController>>)
     });
 
     let weak_window = window.as_weak();
+    let controller_for_settings_close = Rc::clone(&controller);
+    window.on_settings_panel_close(move || {
+        controller_for_settings_close
+            .borrow_mut()
+            .close_settings_panel();
+        if let Some(window) = weak_window.upgrade() {
+            apply_snapshot(&window, &controller_for_settings_close.borrow().snapshot());
+            window.invoke_focus_editor();
+        }
+    });
+
+    let weak_window = window.as_weak();
+    let controller_for_font_size = Rc::clone(&controller);
+    window.on_settings_adjust_font_size(move |delta| {
+        controller_for_font_size
+            .borrow_mut()
+            .adjust_font_size(delta);
+        if let Some(window) = weak_window.upgrade() {
+            apply_snapshot(&window, &controller_for_font_size.borrow().snapshot());
+        }
+    });
+
+    let weak_window = window.as_weak();
+    let controller_for_line_height = Rc::clone(&controller);
+    window.on_settings_adjust_line_height(move |delta| {
+        controller_for_line_height
+            .borrow_mut()
+            .adjust_line_height(delta);
+        if let Some(window) = weak_window.upgrade() {
+            apply_snapshot(&window, &controller_for_line_height.borrow().snapshot());
+        }
+    });
+
+    let weak_window = window.as_weak();
+    let controller_for_tab_size = Rc::clone(&controller);
+    window.on_settings_adjust_tab_size(move |delta| {
+        controller_for_tab_size.borrow_mut().adjust_tab_size(delta);
+        if let Some(window) = weak_window.upgrade() {
+            apply_snapshot(&window, &controller_for_tab_size.borrow().snapshot());
+        }
+    });
+
+    let weak_window = window.as_weak();
+    let controller_for_opacity = Rc::clone(&controller);
+    window.on_settings_adjust_window_opacity(move |delta| {
+        controller_for_opacity
+            .borrow_mut()
+            .adjust_window_opacity(delta);
+        if let Some(window) = weak_window.upgrade() {
+            apply_snapshot(&window, &controller_for_opacity.borrow().snapshot());
+        }
+    });
+
+    let weak_window = window.as_weak();
+    let controller_for_word_wrap = Rc::clone(&controller);
+    window.on_settings_toggle_word_wrap(move || {
+        controller_for_word_wrap.borrow_mut().toggle_word_wrap();
+        if let Some(window) = weak_window.upgrade() {
+            apply_snapshot(&window, &controller_for_word_wrap.borrow().snapshot());
+        }
+    });
+
+    let weak_window = window.as_weak();
+    let controller_for_restore = Rc::clone(&controller);
+    window.on_settings_toggle_restore_last_session(move || {
+        controller_for_restore
+            .borrow_mut()
+            .toggle_restore_last_session();
+        if let Some(window) = weak_window.upgrade() {
+            apply_snapshot(&window, &controller_for_restore.borrow().snapshot());
+        }
+    });
+
+    let weak_window = window.as_weak();
+    let controller_for_launcher = Rc::clone(&controller);
+    window.on_settings_toggle_show_launcher_on_startup(move || {
+        controller_for_launcher
+            .borrow_mut()
+            .toggle_show_launcher_on_startup();
+        if let Some(window) = weak_window.upgrade() {
+            apply_snapshot(&window, &controller_for_launcher.borrow().snapshot());
+        }
+    });
+
+    let weak_window = window.as_weak();
+    let controller_for_geometry = Rc::clone(&controller);
+    window.on_settings_toggle_remember_window_geometry(move || {
+        controller_for_geometry
+            .borrow_mut()
+            .toggle_remember_window_geometry();
+        if let Some(window) = weak_window.upgrade() {
+            apply_snapshot(&window, &controller_for_geometry.borrow().snapshot());
+        }
+    });
+
+    let weak_window = window.as_weak();
+    let controller_for_blur = Rc::clone(&controller);
+    window.on_settings_toggle_blur_behind(move || {
+        controller_for_blur.borrow_mut().toggle_blur_behind();
+        if let Some(window) = weak_window.upgrade() {
+            apply_snapshot(&window, &controller_for_blur.borrow().snapshot());
+        }
+    });
+
+    let weak_window = window.as_weak();
     let controller_for_editor = Rc::clone(&controller);
     window.on_editor_key(move |key| {
         controller_for_editor
@@ -157,6 +262,19 @@ fn apply_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
     window.set_theme_error(brush_from_hex(&snapshot.theme.error));
     window.set_theme_cursor(brush_from_hex(&snapshot.theme.cursor));
     window.set_show_theme_panel(snapshot.theme_panel_open);
+    window.set_show_settings_panel(snapshot.settings_panel_open);
+    window.set_settings(SettingsData {
+        font_family: SharedString::from(snapshot.settings.font_family.as_str()),
+        font_size: snapshot.settings.font_size,
+        line_height: snapshot.settings.line_height,
+        tab_size: snapshot.settings.tab_size,
+        word_wrap: snapshot.settings.word_wrap,
+        restore_last_session: snapshot.settings.restore_last_session,
+        show_launcher_on_startup: snapshot.settings.show_launcher_on_startup,
+        remember_window_geometry: snapshot.settings.remember_window_geometry,
+        blur_behind: snapshot.settings.blur_behind,
+        window_opacity: snapshot.settings.window_opacity,
+    });
     window.set_theme_items(
         Rc::new(VecModel::from(
             snapshot
@@ -211,6 +329,8 @@ fn apply_editor_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
     window.set_message(SharedString::from(snapshot.message.as_str()));
     window.set_has_document(snapshot.has_document);
     window.set_editor_font_family(SharedString::from(snapshot.editor_font_family.as_str()));
+    window.set_editor_font_size(snapshot.editor_font_size);
+    window.set_editor_line_height(snapshot.editor_line_height);
     window.set_mode_color(brush_from_hex(&snapshot.mode_color));
 }
 
