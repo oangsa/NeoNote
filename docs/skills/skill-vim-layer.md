@@ -17,3 +17,5 @@ Core rules:
 - Motions must clamp at file and line boundaries instead of panicking.
 - Insert mode mutates `NoteDocument` directly so Slint text input controls do not own an incompatible caret.
 - Future operators, visual mode, undo, registers, and repeat should all reuse the same motion and text-buffer APIs.
+- Pending normal-mode operators should retain their operator count until a motion or text object arrives. Combine operator and motion counts, then mutate a normalized flat character range.
+- Keep text object behavior separate from motion behavior: `iw` stays inside word bounds, while `aw` may absorb adjacent horizontal whitespace.

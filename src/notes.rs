@@ -242,119 +242,204 @@ impl NoteDocument {
             return false;
         }
 
-        match (self.pending, ch) {
-            (Some(PendingCommand::Delete), 'd') => {
-                self.pending = None;
-                self.count = None;
-                self.delete_current_line();
+        if let Some(pending) = self.pending {
+            return self.handle_pending_normal_char(pending, ch);
+        }
+
+        let explicit_count = self.count.take();
+        let count = explicit_count.unwrap_or(1).max(1);
+        match ch {
+            'i' => {
+                self.enter_insert();
+                false
+            }
+            'I' => {
+                self.cursor_col = self.first_non_blank_col();
+                self.enter_insert();
+                false
+            }
+            'a' => {
+                self.cursor_col = (self.cursor_col() + 1).min(self.current_line_char_count());
+                self.enter_insert();
+                false
+            }
+            'A' => {
+                self.cursor_col = self.current_line_char_count();
+                self.enter_insert();
+                false
+            }
+            'o' => {
+                self.insert_blank_line(self.cursor_line() + 1);
+                self.enter_insert();
                 true
             }
-            (Some(PendingCommand::Goto), 'g') => {
+            'O' => {
+                self.insert_blank_line(self.cursor_line());
+                self.enter_insert();
+                true
+            }
+            'j' => {
+                self.move_cursor_line(count as isize);
+                false
+            }
+            'k' => {
+                self.move_cursor_line(-(count as isize));
+                false
+            }
+            'h' => {
+                self.move_cursor_col(-(count as isize));
+                false
+            }
+            'l' => {
+                self.move_cursor_col(count as isize);
+                false
+            }
+            'w' | 'W' => {
+                self.move_word_forward(count, ch == 'W');
+                false
+            }
+            'b' | 'B' => {
+                self.move_word_backward(count, ch == 'B');
+                false
+            }
+            'e' | 'E' => {
+                self.move_word_end(count, ch == 'E');
+                false
+            }
+            '0' => {
+                self.cursor_col = 0;
+                false
+            }
+            '^' => {
+                self.cursor_col = self.first_non_blank_col();
+                false
+            }
+            '$' => {
+                self.cursor_col = self.current_line_max_col();
+                false
+            }
+            'G' => {
+                self.cursor_line = if let Some(count) = explicit_count {
+                    count.saturating_sub(1)
+                } else {
+                    self.line_count().saturating_sub(1)
+                };
+                self.clamp_cursor_normal();
+                false
+            }
+            'g' => {
+                self.pending = Some(PendingCommand::Goto {
+                    count: explicit_count,
+                });
+                false
+            }
+            'd' => {
+                self.pending = Some(PendingCommand::Operator {
+                    operator: Operator::Delete,
+                    count,
+                });
+                false
+            }
+            'c' => {
+                self.pending = Some(PendingCommand::Operator {
+                    operator: Operator::Change,
+                    count,
+                });
+                false
+            }
+            'x' => {
+                for _ in 0..count {
+                    self.delete_char_on_current_line();
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn handle_pending_normal_char(&mut self, pending: PendingCommand, ch: char) -> bool {
+        match (pending, ch) {
+            (
+                PendingCommand::Operator {
+                    operator: Operator::Delete,
+                    count,
+                },
+                'd',
+            ) => {
                 self.pending = None;
-                self.cursor_line = self.count.take().unwrap_or(1).saturating_sub(1);
+                self.count = None;
+                self.delete_current_lines(count);
+                true
+            }
+            (
+                PendingCommand::Operator {
+                    operator: Operator::Change,
+                    count,
+                },
+                'c',
+            ) => {
+                self.pending = None;
+                self.count = None;
+                self.change_current_lines(count);
+                true
+            }
+            (PendingCommand::Operator { operator, count }, 'i') => {
+                self.pending = Some(PendingCommand::TextObject {
+                    operator,
+                    count,
+                    around: false,
+                });
+                self.count = None;
+                false
+            }
+            (PendingCommand::Operator { operator, count }, 'a') => {
+                self.pending = Some(PendingCommand::TextObject {
+                    operator,
+                    count,
+                    around: true,
+                });
+                self.count = None;
+                false
+            }
+            (
+                PendingCommand::Operator { operator, count },
+                motion @ ('h' | 'j' | 'k' | 'l' | 'w' | 'W' | 'b' | 'B' | 'e' | 'E' | '0' | '^'
+                | '$' | 'G'),
+            ) => {
+                let motion_count = self.count.take().unwrap_or(1).max(1);
+                self.pending = None;
+                self.apply_operator_motion(operator, count.saturating_mul(motion_count), motion)
+            }
+            (
+                PendingCommand::TextObject {
+                    operator,
+                    count,
+                    around,
+                },
+                object @ ('w' | 'W'),
+            ) => {
+                let motion_count = self.count.take().unwrap_or(1).max(1);
+                self.pending = None;
+                self.apply_text_object_operator(
+                    operator,
+                    count.saturating_mul(motion_count),
+                    around,
+                    object == 'W',
+                )
+            }
+            (PendingCommand::Goto { count }, 'g') => {
+                self.pending = None;
+                self.cursor_line = count
+                    .or_else(|| self.count.take())
+                    .unwrap_or(1)
+                    .saturating_sub(1);
                 self.clamp_cursor_normal();
                 false
             }
             _ => {
                 self.pending = None;
-                let explicit_count = self.count.take();
-                let count = explicit_count.unwrap_or(1).max(1);
-                match ch {
-                    'i' => {
-                        self.enter_insert();
-                        false
-                    }
-                    'I' => {
-                        self.cursor_col = self.first_non_blank_col();
-                        self.enter_insert();
-                        false
-                    }
-                    'a' => {
-                        self.cursor_col =
-                            (self.cursor_col() + 1).min(self.current_line_char_count());
-                        self.enter_insert();
-                        false
-                    }
-                    'A' => {
-                        self.cursor_col = self.current_line_char_count();
-                        self.enter_insert();
-                        false
-                    }
-                    'o' => {
-                        self.insert_blank_line(self.cursor_line() + 1);
-                        self.enter_insert();
-                        true
-                    }
-                    'O' => {
-                        self.insert_blank_line(self.cursor_line());
-                        self.enter_insert();
-                        true
-                    }
-                    'j' => {
-                        self.move_cursor_line(count as isize);
-                        false
-                    }
-                    'k' => {
-                        self.move_cursor_line(-(count as isize));
-                        false
-                    }
-                    'h' => {
-                        self.move_cursor_col(-(count as isize));
-                        false
-                    }
-                    'l' => {
-                        self.move_cursor_col(count as isize);
-                        false
-                    }
-                    'w' | 'W' => {
-                        self.move_word_forward(count, ch == 'W');
-                        false
-                    }
-                    'b' | 'B' => {
-                        self.move_word_backward(count, ch == 'B');
-                        false
-                    }
-                    'e' | 'E' => {
-                        self.move_word_end(count, ch == 'E');
-                        false
-                    }
-                    '0' => {
-                        self.cursor_col = 0;
-                        false
-                    }
-                    '^' => {
-                        self.cursor_col = self.first_non_blank_col();
-                        false
-                    }
-                    '$' => {
-                        self.cursor_col = self.current_line_max_col();
-                        false
-                    }
-                    'G' => {
-                        self.cursor_line = if let Some(count) = explicit_count {
-                            count.saturating_sub(1)
-                        } else {
-                            self.line_count().saturating_sub(1)
-                        };
-                        self.clamp_cursor_normal();
-                        false
-                    }
-                    'g' => {
-                        self.pending = Some(PendingCommand::Goto);
-                        false
-                    }
-                    'd' => {
-                        self.pending = Some(PendingCommand::Delete);
-                        false
-                    }
-                    'x' => {
-                        for _ in 0..count {
-                            self.delete_char_on_current_line();
-                        }
-                        true
-                    }
-                    _ => false,
-                }
+                self.count = None;
+                false
             }
         }
     }
@@ -427,13 +512,47 @@ impl NoteDocument {
     }
 
     fn delete_current_line(&mut self) {
+        self.delete_current_lines(1);
+    }
+
+    fn delete_current_lines(&mut self, count: usize) {
         let mut lines = self.lines_vec();
         if lines.len() <= 1 {
             lines[0].clear();
         } else {
-            lines.remove(self.cursor_line());
+            let index = self.cursor_line();
+            let remove_count = count.max(1).min(lines.len().saturating_sub(index));
+            for _ in 0..remove_count {
+                lines.remove(index);
+                if lines.is_empty() {
+                    lines.push(String::new());
+                    break;
+                }
+            }
         }
         self.replace_lines(lines);
+    }
+
+    fn change_current_lines(&mut self, count: usize) {
+        let mut lines = self.lines_vec();
+        let index = self.cursor_line();
+        if lines.len() <= 1 {
+            lines[0].clear();
+        } else {
+            let remove_count = count.max(1).min(lines.len().saturating_sub(index));
+            for _ in 0..remove_count {
+                lines.remove(index);
+                if lines.is_empty() {
+                    break;
+                }
+            }
+            lines.insert(index.min(lines.len()), String::new());
+        }
+        self.content = lines.join("\n");
+        self.dirty = true;
+        self.cursor_line = index.min(self.line_count().saturating_sub(1));
+        self.cursor_col = 0;
+        self.enter_insert();
     }
 
     fn delete_char_on_current_line(&mut self) {
@@ -532,6 +651,223 @@ impl NoteDocument {
         }
     }
 
+    fn apply_operator_motion(&mut self, operator: Operator, count: usize, motion: char) -> bool {
+        let Some(range) = self.operator_motion_range(count.max(1), motion) else {
+            return false;
+        };
+
+        self.apply_operator_range(operator, range)
+    }
+
+    fn apply_text_object_operator(
+        &mut self,
+        operator: Operator,
+        count: usize,
+        around: bool,
+        big_word: bool,
+    ) -> bool {
+        let Some(range) = self.word_text_object_range(count.max(1), around, big_word) else {
+            return false;
+        };
+
+        self.apply_operator_range(operator, range)
+    }
+
+    fn apply_operator_range(&mut self, operator: Operator, range: TextRange) -> bool {
+        let range = range.normalized().clamped(self.content_char_len());
+        if range.start >= range.end {
+            return false;
+        }
+
+        self.delete_flat_range(range);
+        self.set_insert_cursor_from_flat(range.start);
+        match operator {
+            Operator::Delete => {
+                self.enter_normal();
+            }
+            Operator::Change => {
+                self.enter_insert();
+            }
+        }
+        true
+    }
+
+    fn operator_motion_range(&self, count: usize, motion: char) -> Option<TextRange> {
+        let start = self.flattened_cursor();
+        match motion {
+            'h' => Some(TextRange::new(
+                start.saturating_sub(count),
+                start.min(self.content_char_len()),
+            )),
+            'l' => Some(TextRange::new(
+                start,
+                (start + count).min(self.current_line_end_flat_exclusive()),
+            )),
+            'w' | 'W' => {
+                let mut target = self.clone();
+                target.move_word_forward(count, motion == 'W');
+                let mut end = target.flattened_cursor().min(self.content_char_len());
+                if end == self.content_char_len().saturating_sub(1) && start < end {
+                    end = self.content_char_len();
+                }
+                Some(TextRange::new(start, end))
+            }
+            'b' | 'B' => {
+                let mut target = self.clone();
+                target.move_word_backward(count, motion == 'B');
+                Some(TextRange::new(target.flattened_cursor(), start))
+            }
+            'e' | 'E' => {
+                let mut target = self.clone();
+                target.move_word_end(count, motion == 'E');
+                Some(TextRange::new(
+                    start,
+                    target.flattened_cursor().saturating_add(1),
+                ))
+            }
+            '0' => Some(TextRange::new(self.current_line_start_flat(), start)),
+            '^' => Some(TextRange::new(
+                self.current_line_start_flat() + self.first_non_blank_col(),
+                start,
+            )),
+            '$' => Some(TextRange::new(
+                start,
+                self.current_line_end_flat_exclusive(),
+            )),
+            'j' | 'k' => {
+                let mut target = self.clone();
+                let delta = if motion == 'j' {
+                    count as isize
+                } else {
+                    -(count as isize)
+                };
+                target.move_cursor_line(delta);
+                Some(self.linewise_range(self.cursor_line(), target.cursor_line()))
+            }
+            'G' => {
+                let target_line = count.saturating_sub(1);
+                Some(self.linewise_range(self.cursor_line(), target_line))
+            }
+            _ => None,
+        }
+    }
+
+    fn word_text_object_range(
+        &self,
+        count: usize,
+        around: bool,
+        big_word: bool,
+    ) -> Option<TextRange> {
+        let chars: Vec<char> = self.content.chars().collect();
+        if chars.is_empty() {
+            return None;
+        }
+
+        let mut start = self.flattened_cursor().min(chars.len().saturating_sub(1));
+        if !is_word_char(chars[start], big_word) {
+            while start < chars.len() && !is_word_char(chars[start], big_word) {
+                start += 1;
+            }
+            if start >= chars.len() {
+                return None;
+            }
+        }
+
+        while start > 0 && is_word_char(chars[start - 1], big_word) {
+            start -= 1;
+        }
+
+        let mut end = start;
+        for index in 0..count {
+            if index > 0 {
+                while end < chars.len() && !is_word_char(chars[end], big_word) {
+                    end += 1;
+                }
+            }
+            while end < chars.len() && is_word_char(chars[end], big_word) {
+                end += 1;
+            }
+            if end >= chars.len() {
+                break;
+            }
+        }
+
+        if around {
+            if end < chars.len() {
+                while end < chars.len() && chars[end].is_whitespace() && chars[end] != '\n' {
+                    end += 1;
+                }
+            } else {
+                while start > 0 && chars[start - 1].is_whitespace() && chars[start - 1] != '\n' {
+                    start -= 1;
+                }
+            }
+        }
+
+        Some(TextRange::new(start, end))
+    }
+
+    fn delete_flat_range(&mut self, range: TextRange) {
+        remove_char_range(&mut self.content, range.start, range.end);
+        self.dirty = true;
+    }
+
+    fn content_char_len(&self) -> usize {
+        self.content.chars().count()
+    }
+
+    fn current_line_start_flat(&self) -> usize {
+        self.line_start_flat(self.cursor_line())
+    }
+
+    fn current_line_end_flat_exclusive(&self) -> usize {
+        self.line_start_flat(self.cursor_line()) + self.current_line_char_count()
+    }
+
+    fn line_start_flat(&self, line: usize) -> usize {
+        self.lines_vec()
+            .iter()
+            .take(line)
+            .map(|line| char_count(line) + 1)
+            .sum()
+    }
+
+    fn line_end_flat_including_newline(&self, line: usize) -> usize {
+        let lines = self.lines_vec();
+        let line = line.min(lines.len().saturating_sub(1));
+        let start = self.line_start_flat(line);
+        let line_len = char_count(&lines[line]);
+        if line + 1 < lines.len() {
+            start + line_len + 1
+        } else {
+            start + line_len
+        }
+    }
+
+    fn linewise_range(&self, first_line: usize, second_line: usize) -> TextRange {
+        let start_line = first_line.min(second_line);
+        let end_line = first_line.max(second_line);
+        TextRange::new(
+            self.line_start_flat(start_line),
+            self.line_end_flat_including_newline(end_line),
+        )
+    }
+
+    fn set_insert_cursor_from_flat(&mut self, mut offset: usize) {
+        let lines = self.lines_vec();
+        for (line_index, line) in lines.iter().enumerate() {
+            let len = char_count(line);
+            if offset <= len {
+                self.cursor_line = line_index;
+                self.cursor_col = offset.min(len);
+                return;
+            }
+            offset = offset.saturating_sub(len + 1);
+        }
+        self.cursor_line = lines.len().saturating_sub(1);
+        self.cursor_col = self.current_line_char_count();
+    }
+
     pub fn normal_mode_line_with_cursor(&self, line: &str, line_index: usize) -> String {
         if line_index != self.cursor_line() {
             return line.to_string();
@@ -597,8 +933,54 @@ impl VimMode {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PendingCommand {
+    Operator {
+        operator: Operator,
+        count: usize,
+    },
+    TextObject {
+        operator: Operator,
+        count: usize,
+        around: bool,
+    },
+    Goto {
+        count: Option<usize>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Operator {
     Delete,
-    Goto,
+    Change,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct TextRange {
+    start: usize,
+    end: usize,
+}
+
+impl TextRange {
+    fn new(start: usize, end: usize) -> Self {
+        Self { start, end }
+    }
+
+    fn normalized(self) -> Self {
+        if self.start <= self.end {
+            self
+        } else {
+            Self {
+                start: self.end,
+                end: self.start,
+            }
+        }
+    }
+
+    fn clamped(self, len: usize) -> Self {
+        Self {
+            start: self.start.min(len),
+            end: self.end.min(len),
+        }
+    }
 }
 
 fn char_count(line: &str) -> usize {
@@ -626,6 +1008,14 @@ fn remove_char_at(text: &mut String, char_index: usize) {
     let byte_index = byte_index_for_char(text, char_index);
     if byte_index < text.len() {
         text.remove(byte_index);
+    }
+}
+
+fn remove_char_range(text: &mut String, start: usize, end: usize) {
+    let start_byte = byte_index_for_char(text, start);
+    let end_byte = byte_index_for_char(text, end);
+    if start_byte < end_byte && start_byte <= text.len() && end_byte <= text.len() {
+        text.replace_range(start_byte..end_byte, "");
     }
 }
 
@@ -757,5 +1147,106 @@ mod tests {
         assert_eq!(doc.cursor_col(), 9);
         doc.handle_normal_input("b");
         assert_eq!(doc.cursor_col(), 6);
+    }
+
+    #[test]
+    fn normal_mode_delete_operator_composes_with_word_motion() {
+        let mut doc = NoteDocument::default();
+        doc.content = "alpha beta gamma".to_string();
+        doc.enter_normal();
+
+        assert!(doc.handle_normal_input("dw"));
+
+        assert_eq!(doc.content(), "beta gamma");
+        assert_eq!(doc.cursor_line(), 0);
+        assert_eq!(doc.cursor_col(), 0);
+        assert_eq!(doc.mode(), VimMode::Normal);
+    }
+
+    #[test]
+    fn normal_mode_operator_counts_work_before_or_after_operator() {
+        let mut doc = NoteDocument::default();
+        doc.content = "alpha beta gamma delta".to_string();
+        doc.enter_normal();
+
+        assert!(doc.handle_normal_input("3dw"));
+
+        assert_eq!(doc.content(), "delta");
+        assert_eq!(doc.cursor_col(), 0);
+
+        let mut doc = NoteDocument::default();
+        doc.content = "alpha beta gamma delta".to_string();
+        doc.enter_normal();
+
+        assert!(doc.handle_normal_input("d3w"));
+
+        assert_eq!(doc.content(), "delta");
+        assert_eq!(doc.cursor_col(), 0);
+    }
+
+    #[test]
+    fn normal_mode_change_to_line_end_enters_insert() {
+        let mut doc = NoteDocument::default();
+        doc.content = "alpha beta".to_string();
+        doc.enter_normal();
+        doc.handle_normal_input("w");
+
+        assert!(doc.handle_normal_input("c$"));
+
+        assert_eq!(doc.content(), "alpha ");
+        assert_eq!(doc.display_cursor_col(), 6);
+        assert_eq!(doc.mode(), VimMode::Insert);
+    }
+
+    #[test]
+    fn normal_mode_change_line_replaces_line_with_empty_insert_line() {
+        let mut doc = NoteDocument::default();
+        doc.content = "one\ntwo\nthree".to_string();
+        doc.enter_normal();
+        doc.handle_normal_input("j");
+
+        assert!(doc.handle_normal_input("cc"));
+
+        assert_eq!(doc.content(), "one\n\nthree");
+        assert_eq!(doc.cursor_line(), 1);
+        assert_eq!(doc.cursor_col(), 0);
+        assert_eq!(doc.mode(), VimMode::Insert);
+    }
+
+    #[test]
+    fn normal_mode_text_objects_support_inner_and_around_word() {
+        let mut inner = NoteDocument::default();
+        inner.content = "hello world".to_string();
+        inner.enter_normal();
+        inner.handle_normal_input("l");
+
+        assert!(inner.handle_normal_input("ciw"));
+
+        assert_eq!(inner.content(), " world");
+        assert_eq!(inner.cursor_col(), 0);
+        assert_eq!(inner.mode(), VimMode::Insert);
+
+        let mut around = NoteDocument::default();
+        around.content = "hello world".to_string();
+        around.enter_normal();
+        around.handle_normal_input("l");
+
+        assert!(around.handle_normal_input("daw"));
+
+        assert_eq!(around.content(), "world");
+        assert_eq!(around.cursor_col(), 0);
+        assert_eq!(around.mode(), VimMode::Normal);
+    }
+
+    #[test]
+    fn normal_mode_gg_preserves_prefix_count() {
+        let mut doc = NoteDocument::default();
+        doc.content = "one\ntwo\nthree".to_string();
+        doc.enter_normal();
+        doc.handle_normal_input("G");
+
+        doc.handle_normal_input("2gg");
+
+        assert_eq!(doc.cursor_line(), 1);
     }
 }
