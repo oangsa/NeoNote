@@ -24,9 +24,9 @@ Rust remains the editor authority:
 
 Performance pattern:
 
-- Keep `document-text` as the raw buffer content. Do not inject a cursor marker into a cloned copy of the text for every key press.
-- Expose cursor row/column and mode as separate Slint properties, then draw a cursor rectangle over the editor surface.
+- Expose the editor as a Slint model with one row per buffer line. Each row should include line number, text, cursor-line flag, cursor column, and cursor style. This avoids trying to align a custom cursor overlay to Slint's internal multiline text layout.
+- Do not inject a cursor marker into a cloned copy of the text for every key press.
 - Use a block rectangle for Normal mode and a thin bar for Insert mode.
-- Keep editor font metrics centralized in Slint properties. Render the full document text, including the active line, through one multiline `Text` element so every row uses the same text origin and shaping path. In Slint 1.16, `Text` has no `line-height` property; derive the cursor row pitch from hidden single-line and two-line text probes using the same font. Draw the cursor as a separate overlay positioned from a Slint-measured monospace cell width; do not rebuild the active line from prefix/cell/suffix `Text` segments because that can drift at column zero.
+- Keep editor font metrics centralized in Slint properties. Render each line as an independent fixed-height row; draw text and cursor from the same row-local origin. Position the cursor from a Slint-measured monospace cell width, not from measured arbitrary prefix text.
 - During editor key handling, update only editor-facing properties; avoid reapplying static theme brushes on every keystroke.
 - Multi-document support belongs in the app controller. Each open tab/document owns its own `NoteDocument`; switching documents should only change the active index and refresh the Slint snapshot.

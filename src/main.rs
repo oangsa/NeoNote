@@ -9,7 +9,7 @@ mod theme;
 use std::{cell::RefCell, rc::Rc};
 
 use app::{AppController, AppSnapshot};
-use slint::{Brush, Color, ComponentHandle, SharedString};
+use slint::{Brush, Color, ComponentHandle, SharedString, VecModel};
 
 slint::include_modules!();
 
@@ -130,8 +130,22 @@ fn apply_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
 fn apply_editor_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
     window.set_file_title(SharedString::from(snapshot.file_title.as_str()));
     window.set_file_path(SharedString::from(snapshot.file_path.as_str()));
-    window.set_document_text(SharedString::from(snapshot.document_text.as_str()));
-    window.set_line_numbers(SharedString::from(snapshot.line_numbers.as_str()));
+    window.set_editor_lines(
+        Rc::new(VecModel::from(
+            snapshot
+                .editor_lines
+                .iter()
+                .map(|line| EditorLine {
+                    number: line.number,
+                    text: SharedString::from(line.text.as_str()),
+                    is_cursor_line: line.is_cursor_line,
+                    cursor_column: line.cursor_column,
+                    cursor_block: line.cursor_block,
+                })
+                .collect::<Vec<_>>(),
+        ))
+        .into(),
+    );
     window.set_document_tabs(SharedString::from(snapshot.document_tabs.as_str()));
     window.set_status_text(SharedString::from(snapshot.status_text.as_str()));
     window.set_status_right(SharedString::from(snapshot.status_right.as_str()));

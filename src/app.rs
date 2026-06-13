@@ -21,8 +21,7 @@ pub struct AppController {
 pub struct AppSnapshot {
     pub file_title: String,
     pub file_path: String,
-    pub document_text: String,
-    pub line_numbers: String,
+    pub editor_lines: Vec<EditorLineSnapshot>,
     pub document_tabs: String,
     pub status_text: String,
     pub status_right: String,
@@ -38,6 +37,15 @@ pub struct AppSnapshot {
     pub has_document: bool,
     pub editor_font_family: String,
     pub theme: ThemeSnapshot,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct EditorLineSnapshot {
+    pub number: i32,
+    pub text: String,
+    pub is_cursor_line: bool,
+    pub cursor_column: i32,
+    pub cursor_block: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -217,8 +225,7 @@ impl AppController {
         AppSnapshot {
             file_title: note.title(),
             file_path: note.path_string().unwrap_or_default(),
-            document_text: document_text_for_editor(note),
-            line_numbers: line_numbers(stats.line_count),
+            editor_lines: editor_lines(note),
             document_tabs: self.document_tabs(),
             status_text: if note.is_open() {
                 format!(
@@ -427,13 +434,6 @@ fn is_printable_editor_text(text: &str) -> bool {
     !text.is_empty() && text.chars().all(|ch| !ch.is_control())
 }
 
-fn line_numbers(line_count: usize) -> String {
-    (1..=line_count.max(1))
-        .map(|line| line.to_string())
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 fn migrate_old_default_theme(paths: &AppDataPaths, config: &mut AppConfig) {
     if config.active_theme.as_deref() == Some("catppuccin-mocha") {
         config.active_theme = Some("neovim-dark".to_string());
@@ -474,8 +474,30 @@ fn cursor_snapshot(note: &NoteDocument) -> CursorSnapshot {
     }
 }
 
-fn document_text_for_editor(note: &NoteDocument) -> String {
-    note.content().to_string()
+fn editor_lines(note: &NoteDocument) -> Vec<EditorLineSnapshot> {
+    let cursor_line = note.cursor_line();
+    let cursor_column = note.display_cursor_col() as i32;
+    let cursor_block = note.mode() == VimMode::Normal;
+
+    content_lines(note)
+        .into_iter()
+        .enumerate()
+        .map(|(index, text)| EditorLineSnapshot {
+            number: (index + 1) as i32,
+            text,
+            is_cursor_line: index == cursor_line,
+            cursor_column,
+            cursor_block,
+        })
+        .collect()
+}
+
+fn content_lines(note: &NoteDocument) -> Vec<String> {
+    if note.content().is_empty() {
+        vec![String::new()]
+    } else {
+        note.content().split('\n').map(ToOwned::to_owned).collect()
+    }
 }
 
 #[cfg(test)]
@@ -534,7 +556,7 @@ mod tests {
     }
 
     #[test]
-    fn document_text_keeps_active_line_for_cursor_overlay() {
+    fn editor_lines_preserve_content_and_cursor_row() {
         let mut controller = AppController::new();
         controller.new_file();
         controller.handle_editor_key("i");
@@ -543,9 +565,75 @@ mod tests {
         }
 
         let snapshot = controller.snapshot();
-        assert_eq!(snapshot.document_text, "one\ntwo");
+        assert_eq!(
+            snapshot.editor_lines,
+            vec![
+                EditorLineSnapshot {
+                    number: 1,
+                    text: "one".to_string(),
+                    is_cursor_line: false,
+                    cursor_column: 2,
+                    cursor_block: true,
+                },
+                EditorLineSnapshot {
+                    number: 2,
+                    text: "two".to_string(),
+                    is_cursor_line: true,
+                    cursor_column: 2,
+                    cursor_block: true,
+                },
+            ]
+        );
         assert_eq!(snapshot.cursor_prefix, "tw");
         assert_eq!(snapshot.cursor_cell, "o");
         assert_eq!(snapshot.cursor_suffix, "");
+    }
+
+    #[test]
+    fn editor_lines_handle_column_zero_middle_end_and_empty_lines() {
+        let mut controller = AppController::new();
+        controller.new_file();
+        controller.handle_editor_key("i");
+        for key in [
+            "a", "b", "c", "return", "return", "d", "e", "f", "escape",
+        ] {
+            controller.handle_editor_key(key);
+        }
+
+        let snapshot = controller.snapshot();
+        assert_eq!(snapshot.editor_lines.len(), 3);
+        assert_eq!(snapshot.editor_lines[2].cursor_column, 2);
+        assert!(snapshot.editor_lines[2].is_cursor_line);
+
+        controller.handle_editor_key("0");
+        let snapshot = controller.snapshot();
+        assert_eq!(snapshot.editor_lines[2].cursor_column, 0);
+
+        controller.handle_editor_key("k");
+        let snapshot = controller.snapshot();
+        assert_eq!(snapshot.editor_lines[1].text, "");
+        assert_eq!(snapshot.editor_lines[1].cursor_column, 0);
+        assert!(snapshot.editor_lines[1].is_cursor_line);
+
+        controller.handle_editor_key("k");
+        controller.handle_editor_key("$");
+        let snapshot = controller.snapshot();
+        assert_eq!(snapshot.editor_lines[0].cursor_column, 2);
+        assert!(snapshot.editor_lines[0].is_cursor_line);
+    }
+
+    #[test]
+    fn editor_lines_allow_insert_cursor_after_line_end() {
+        let mut controller = AppController::new();
+        controller.new_file();
+        controller.handle_editor_key("i");
+        for key in ["a", "b", "c"] {
+            controller.handle_editor_key(key);
+        }
+
+        let snapshot = controller.snapshot();
+        assert_eq!(snapshot.editor_lines[0].text, "abc");
+        assert_eq!(snapshot.editor_lines[0].cursor_column, 3);
+        assert!(!snapshot.editor_lines[0].cursor_block);
     }
 }

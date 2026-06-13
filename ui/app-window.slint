@@ -28,6 +28,14 @@ component CommandButton inherits Rectangle {
     }
 }
 
+export struct EditorLine {
+    number: int,
+    text: string,
+    is-cursor-line: bool,
+    cursor-column: int,
+    cursor-block: bool,
+}
+
 export component AppWindow inherits Window {
     title: "NeoNote";
     width: 1280px;
@@ -35,8 +43,7 @@ export component AppWindow inherits Window {
 
     in property <string> file-title: "Untitled";
     in property <string> file-path: "";
-    in property <string> document-text: "";
-    in property <string> line-numbers: "1";
+    in property <[EditorLine]> editor-lines;
     in property <string> document-tabs: "";
     in property <string> status-text: "No note open";
     in property <string> status-right: "";
@@ -259,49 +266,28 @@ export component AppWindow inherits Window {
                     return accept;
                 }
 
-                HorizontalLayout {
-                    padding-top: 14px;
-                    padding-bottom: 14px;
-                    padding-left: 0px;
-                    padding-right: 0px;
-                    spacing: 0px;
+                editor-viewport := Rectangle {
+                    x: 0px;
+                    y: 14px;
+                    width: 100%;
+                    height: parent.height - 28px;
 
                     Rectangle {
+                        x: 0px;
+                        y: 0px;
                         width: 58px;
+                        height: 100%;
                         background: root.theme-background-alt;
-                        border-color: root.theme-border;
-                        border-width: 0px;
-
-                        Text {
-                            x: 0px;
-                            y: 0px;
-                            width: parent.width - 10px;
-                            height: parent.height;
-                            text: root.has-document ? root.line-numbers : "~";
-                            color: root.theme-text-muted;
-                            font-family: root.editor-font-family;
-                            font-size: 14px;
-                            horizontal-alignment: right;
-                        }
                     }
 
                     Rectangle {
+                        x: 58px;
+                        y: 0px;
+                        width: parent.width - 58px;
+                        height: 100%;
                         background: root.theme-background;
-                        horizontal-stretch: 1;
 
-                        Text {
-                            x: root.editor-left-padding;
-                            y: 0px;
-                            width: parent.width - (root.editor-left-padding * 2);
-                            height: parent.height;
-                            text: root.has-document ? root.document-text : "New File\nOpen File";
-                            color: root.has-document ? root.theme-text : root.theme-text-muted;
-                            font-family: root.editor-font-family;
-                            font-size: root.editor-font-size;
-                            wrap: no-wrap;
-                        }
-
-                        line-measure-single := Text {
+                        cell-measure := Text {
                             x: 0px;
                             y: 0px;
                             text: "M";
@@ -310,41 +296,65 @@ export component AppWindow inherits Window {
                             font-size: root.editor-font-size;
                             wrap: no-wrap;
                         }
+                    }
 
-                        line-measure-double := Text {
-                            x: 0px;
-                            y: 0px;
-                            text: "M\nM";
-                            color: transparent;
-                            font-family: root.editor-font-family;
-                            font-size: root.editor-font-size;
-                            wrap: no-wrap;
-                        }
+                    Text {
+                        x: 58px + root.editor-left-padding;
+                        y: 0px;
+                        width: parent.width - 58px - (root.editor-left-padding * 2);
+                        height: parent.height;
+                        text: "New File\nOpen File";
+                        color: root.theme-text-muted;
+                        font-family: root.editor-font-family;
+                        font-size: root.editor-font-size;
+                        visible: !root.has-document;
+                    }
 
-                        active-line := Rectangle {
-                            x: root.editor-left-padding;
-                            y: root.cursor-line * (line-measure-double.preferred-height - line-measure-single.preferred-height);
-                            width: parent.width - (root.editor-left-padding * 2);
-                            height: line-measure-double.preferred-height - line-measure-single.preferred-height;
-                            background: transparent;
+                    VerticalLayout {
+                        x: 0px;
+                        y: 0px;
+                        width: 100%;
+                        height: 100%;
+                        spacing: 0px;
+                        visible: root.has-document;
 
-                            prefix-measure := Text {
+                        for line in root.editor-lines: Rectangle {
+                            height: root.editor-line-height;
+                            width: 100%;
+                            background: line.is-cursor-line ? root.theme-surface.with_alpha(0.28) : transparent;
+
+                            Text {
                                 x: 0px;
                                 y: 0px;
-                                height: parent.height;
-                                text: root.has-document ? "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM" : "";
-                                color: transparent;
+                                width: 48px;
+                                height: root.editor-line-height;
+                                text: line.number;
+                                color: root.theme-text-muted;
                                 font-family: root.editor-font-family;
                                 font-size: root.editor-font-size;
+                                horizontal-alignment: right;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                x: 58px + root.editor-left-padding;
+                                y: 0px;
+                                width: parent.width - 58px - (root.editor-left-padding * 2);
+                                height: root.editor-line-height;
+                                text: line.text;
+                                color: root.theme-text;
+                                font-family: root.editor-font-family;
+                                font-size: root.editor-font-size;
+                                vertical-alignment: center;
                                 wrap: no-wrap;
                             }
 
-                            Rectangle {
-                                x: (prefix-measure.preferred-width / 64) * root.cursor-column;
+                            cursor-cell := Rectangle {
+                                x: 58px + root.editor-left-padding + (cell-measure.preferred-width * line.cursor-column);
                                 y: 0px;
-                                height: parent.height;
-                                width: root.has-document ? (root.cursor-block ? max(prefix-measure.preferred-width / 64, 2px) : 2px) : 0px;
-                                background: root.cursor-block ? root.theme-cursor.with_alpha(0.55) : root.mode-color;
+                                width: line.is-cursor-line ? (line.cursor-block ? max(cell-measure.preferred-width, 2px) : 2px) : 0px;
+                                height: root.editor-line-height;
+                                background: line.cursor-block ? root.theme-cursor.with_alpha(0.50) : root.mode-color;
                             }
                         }
                     }
