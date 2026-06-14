@@ -252,12 +252,16 @@ impl NoteDocument {
             return false;
         }
 
-        if let Some(PendingCommand::Search { reverse, query }) = self.pending.take() {
-            return self.handle_pending_search(reverse, query, input);
+        if let Some(PendingCommand::Search { .. }) = &self.pending {
+            if let Some(PendingCommand::Search { reverse, query }) = self.pending.take() {
+                return self.handle_pending_search(reverse, query, input);
+            }
         }
 
-        if let Some(PendingCommand::ExCommand { command }) = self.pending.take() {
-            return self.handle_pending_ex_command(command, input);
+        if let Some(PendingCommand::ExCommand { .. }) = &self.pending {
+            if let Some(PendingCommand::ExCommand { command }) = self.pending.take() {
+                return self.handle_pending_ex_command(command, input);
+            }
         }
 
         if input == "ctrl+r" {
@@ -2510,6 +2514,16 @@ mod tests {
 
         doc.enter_normal();
         assert_eq!(doc.content_with_cursor_marker(), "hell|o");
+    }
+
+    #[test]
+    fn test_dd_twice() {
+        let mut doc = NoteDocument::default();
+        doc.content = "line1\nline2\nline3".to_string();
+        doc.enter_normal();
+        doc.handle_normal_input("d");
+        doc.handle_normal_input("d");
+        assert_eq!(doc.content(), "line2\nline3");
     }
 
     #[test]
