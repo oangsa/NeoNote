@@ -338,6 +338,7 @@ fn apply_editor_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
                     text: SharedString::from(line.text.as_str()),
                     is_cursor_line: line.is_cursor_line,
                     is_selected: line.is_selected,
+                    is_search_match: line.is_search_match,
                     cursor_column: line.cursor_column,
                     cursor_prefix: SharedString::from(line.cursor_prefix.as_str()),
                     cursor_cell: SharedString::from(line.cursor_cell.as_str()),

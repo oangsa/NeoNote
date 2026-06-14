@@ -178,6 +178,7 @@ export struct EditorLine {
     text: string,
     is-cursor-line: bool,
     is-selected: bool,
+    is-search-match: bool,
     cursor-column: int,
     cursor-prefix: string,
     cursor-cell: string,
@@ -524,7 +525,7 @@ export component AppWindow inherits Window {
                             for line in root.editor-lines: Rectangle {
                                 height: root.editor-line-height * 1px;
                                 width: 100%;
-                                background: line.is-selected ? root.theme-accent-primary.with_alpha(0.18) : (line.is-cursor-line ? root.theme-surface.with_alpha(0.28) : transparent);
+                                background: line.is-selected ? root.theme-accent-primary.with_alpha(0.18) : (line.is-search-match ? root.theme-warning.with_alpha(0.16) : (line.is-cursor-line ? root.theme-surface.with_alpha(0.28) : transparent));
 
                                 Text {
                                     x: 0px;

@@ -22,7 +22,8 @@ pub fn normalize_normal_key(key: &str) -> NormalKey<'_> {
         "right" => NormalKey::Input("l"),
         "up" => NormalKey::Input("k"),
         "down" => NormalKey::Input("j"),
-        "return" | "backspace" | "delete" => NormalKey::Ignore,
+        "return" | "backspace" => NormalKey::Input(key),
+        "delete" => NormalKey::Ignore,
         value => NormalKey::Input(value),
     }
 }
@@ -54,7 +55,11 @@ mod tests {
         assert_eq!(normalize_normal_key("right"), NormalKey::Input("l"));
         assert_eq!(normalize_normal_key("up"), NormalKey::Input("k"));
         assert_eq!(normalize_normal_key("down"), NormalKey::Input("j"));
-        assert_eq!(normalize_normal_key("return"), NormalKey::Ignore);
+        assert_eq!(normalize_normal_key("return"), NormalKey::Input("return"));
+        assert_eq!(
+            normalize_normal_key("backspace"),
+            NormalKey::Input("backspace")
+        );
         assert_eq!(normalize_normal_key("x"), NormalKey::Input("x"));
     }
 

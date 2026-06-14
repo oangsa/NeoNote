@@ -511,6 +511,8 @@ Acceptance:
 
 ### Phase 8 - Visual Mode And Search
 
+Status: complete.
+
 Scope:
 
 - `v`

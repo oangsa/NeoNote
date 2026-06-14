@@ -27,4 +27,7 @@ Core rules:
 - Undo/redo snapshots are editor-state transactions recorded before buffer mutations. Restore clears pending operators/counts/register prefixes and clamps the cursor for the restored mode.
 - Dot repeat should only remember repeatable buffer changes. Do not let `u`, `Ctrl+r`, or yank-only commands replace the last repeat target.
 - Phase 6 text objects currently include words, quotes, brackets, paragraphs, and line objects. Paragraph objects are linewise and use blank lines as paragraph boundaries.
+- Visual mode is represented in the Vim layer as explicit mode state plus a flattened anchor offset. Slint receives row-level selection flags from Rust; do not let Slint compute selection ranges.
+- Search state stores the last pattern, direction, and flattened match ranges. `:noh` clears highlight ranges but keeps the pattern so `n`/`N` can still repeat the last search.
+- Pending search and ex-command input are represented as pending Vim commands. Normal key normalization should pass `return` and `backspace` through so those pending commands can accept or edit user input.
 - Key normalization belongs in `src/vim/key.rs`. Keep it pure: convert app/Slint key strings into normal-mode and insert-mode intents, and let the app controller perform platform/UI side effects.

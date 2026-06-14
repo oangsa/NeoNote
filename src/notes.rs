@@ -21,6 +21,12 @@ pub struct NoteDocument {
     redo_stack: Vec<DocumentSnapshot>,
     last_change: Option<String>,
     replaying_change: bool,
+    visual_anchor: Option<usize>,
+    last_visual_selection: Option<(TextRange, VisualKind)>,
+    search: SearchState,
+    marks: BTreeMap<char, CursorPosition>,
+    jump_list: Vec<CursorPosition>,
+    jump_index: Option<usize>,
 }
 
 impl NoteDocument {
@@ -40,6 +46,12 @@ impl NoteDocument {
         self.redo_stack.clear();
         self.last_change = None;
         self.replaying_change = false;
+        self.visual_anchor = None;
+        self.last_visual_selection = None;
+        self.search = SearchState::default();
+        self.marks.clear();
+        self.jump_list.clear();
+        self.jump_index = None;
     }
 
     pub fn open(&mut self, path: impl AsRef<Path>) -> std::io::Result<()> {
@@ -59,6 +71,12 @@ impl NoteDocument {
         self.redo_stack.clear();
         self.last_change = None;
         self.replaying_change = false;
+        self.visual_anchor = None;
+        self.last_visual_selection = None;
+        self.search = SearchState::default();
+        self.marks.clear();
+        self.jump_list.clear();
+        self.jump_index = None;
         Ok(())
     }
 
@@ -127,9 +145,30 @@ impl NoteDocument {
 
     pub fn display_cursor_col(&self) -> usize {
         match self.mode {
-            VimMode::Normal => self.cursor_col(),
+            VimMode::Normal | VimMode::Visual | VimMode::VisualLine => self.cursor_col(),
             VimMode::Insert => self.cursor_col.min(self.current_line_char_count()),
         }
+    }
+
+    pub fn line_is_visually_selected(&self, line: usize) -> bool {
+        self.visual_selection_range()
+            .map(|range| {
+                let start_line = self.line_for_flat(range.start);
+                let end_line = self.line_for_flat(range.end.saturating_sub(1));
+                (start_line.min(end_line)..=start_line.max(end_line)).contains(&line)
+            })
+            .unwrap_or(false)
+    }
+
+    pub fn line_has_search_match(&self, line: usize) -> bool {
+        self.search
+            .matches
+            .iter()
+            .any(|range| self.line_for_flat(range.start) == line)
+    }
+
+    pub fn search_pattern(&self) -> Option<&str> {
+        (!self.search.pattern.is_empty()).then_some(self.search.pattern.as_str())
     }
 
     pub fn unnamed_register_text(&self) -> &str {
@@ -179,9 +218,15 @@ impl NoteDocument {
     pub fn set_cursor_from_pointer(&mut self, line: usize, column: usize) {
         self.pending = None;
         self.count = None;
+        self.visual_anchor = None;
+        if matches!(self.mode, VimMode::Visual | VimMode::VisualLine) {
+            self.mode = VimMode::Normal;
+        }
         self.cursor_line = line.min(self.line_count().saturating_sub(1));
         self.cursor_col = match self.mode {
-            VimMode::Normal => column.min(self.current_line_max_col()),
+            VimMode::Normal | VimMode::Visual | VimMode::VisualLine => {
+                column.min(self.current_line_max_col())
+            }
             VimMode::Insert => column.min(self.current_line_char_count()),
         };
     }
@@ -190,22 +235,40 @@ impl NoteDocument {
         self.mode = VimMode::Insert;
         self.pending = None;
         self.count = None;
+        self.visual_anchor = None;
     }
 
     pub fn enter_normal(&mut self) {
         self.mode = VimMode::Normal;
         self.pending = None;
         self.count = None;
+        self.visual_anchor = None;
         self.clamp_cursor_normal();
     }
 
     pub fn handle_normal_input(&mut self, input: &str) -> bool {
-        if self.mode != VimMode::Normal {
+        if self.mode == VimMode::Insert {
             return false;
+        }
+
+        if let Some(PendingCommand::Search { reverse, query }) = self.pending.take() {
+            return self.handle_pending_search(reverse, query, input);
+        }
+
+        if let Some(PendingCommand::ExCommand { command }) = self.pending.take() {
+            return self.handle_pending_ex_command(command, input);
         }
 
         if input == "ctrl+r" {
             return self.redo();
+        }
+
+        if input == "ctrl+o" {
+            return self.jump_history(-1);
+        }
+
+        if input == "ctrl+i" {
+            return self.jump_history(1);
         }
 
         if input == "." {
@@ -214,7 +277,11 @@ impl NoteDocument {
 
         let mut changed = false;
         for ch in input.chars() {
-            changed |= self.handle_normal_char(ch);
+            changed |= match self.mode {
+                VimMode::Visual | VimMode::VisualLine => self.handle_visual_char(ch),
+                VimMode::Normal => self.handle_normal_char(ch),
+                VimMode::Insert => false,
+            };
         }
         if changed && !self.replaying_change {
             if is_repeatable_change(input) {
@@ -328,8 +395,16 @@ impl NoteDocument {
             return false;
         }
 
-        if let Some(pending) = self.pending {
-            return self.handle_pending_normal_char(pending, ch);
+        if let Some(pending) = self.pending.take() {
+            return match pending {
+                PendingCommand::Search { reverse, query } => {
+                    self.handle_pending_search(reverse, query, &ch.to_string())
+                }
+                PendingCommand::ExCommand { command } => {
+                    self.handle_pending_ex_command(command, &ch.to_string())
+                }
+                other => self.handle_pending_normal_char(other, ch),
+            };
         }
 
         let explicit_count = self.count.take();
@@ -337,6 +412,45 @@ impl NoteDocument {
         match ch {
             '"' => {
                 self.pending = Some(PendingCommand::RegisterPrefix);
+                false
+            }
+            ':' => {
+                self.pending = Some(PendingCommand::ExCommand {
+                    command: String::new(),
+                });
+                false
+            }
+            '/' | '?' => {
+                self.pending = Some(PendingCommand::Search {
+                    reverse: ch == '?',
+                    query: String::new(),
+                });
+                false
+            }
+            'n' => self.repeat_search(false),
+            'N' => self.repeat_search(true),
+            '*' => self.search_word_under_cursor(false),
+            '#' => self.search_word_under_cursor(true),
+            'm' => {
+                self.pending = Some(PendingCommand::MarkSet);
+                false
+            }
+            '\'' => {
+                self.pending = Some(PendingCommand::MarkJump);
+                false
+            }
+            'v' => {
+                self.enter_visual(VisualKind::Character);
+                false
+            }
+            'V' => {
+                self.enter_visual(VisualKind::Line);
+                false
+            }
+            'g' if explicit_count.is_none() => {
+                self.pending = Some(PendingCommand::Goto {
+                    count: explicit_count,
+                });
                 false
             }
             'u' => self.undo(),
@@ -479,6 +593,21 @@ impl NoteDocument {
             (PendingCommand::RegisterPrefix, register) => {
                 self.pending = None;
                 self.selected_register = RegisterTarget::from_prefix(register);
+                false
+            }
+            (PendingCommand::MarkSet, mark) if mark.is_ascii_alphabetic() => {
+                self.marks
+                    .insert(mark.to_ascii_lowercase(), self.cursor_position());
+                false
+            }
+            (PendingCommand::MarkJump, mark) if mark.is_ascii_alphabetic() => {
+                let Some(position) = self.marks.get(&mark.to_ascii_lowercase()).copied() else {
+                    return false;
+                };
+                self.push_jump();
+                self.cursor_line = position.line;
+                self.cursor_col = position.col;
+                self.clamp_cursor_normal();
                 false
             }
             (
@@ -678,6 +807,10 @@ impl NoteDocument {
                 self.clamp_cursor_normal();
                 false
             }
+            (PendingCommand::Goto { count: _ }, 'v') => {
+                self.pending = None;
+                self.restore_last_visual_selection()
+            }
             (PendingCommand::OperatorOrCaseGoto { operator, count: _ }, 'g') => {
                 let target_line = self.count.take().unwrap_or(1).saturating_sub(1);
                 self.pending = None;
@@ -705,6 +838,177 @@ impl NoteDocument {
                 self.count = None;
                 self.selected_register = None;
                 false
+            }
+        }
+    }
+
+    fn handle_visual_char(&mut self, ch: char) -> bool {
+        match ch {
+            'v' if self.mode == VimMode::Visual => {
+                self.enter_normal();
+                false
+            }
+            'V' if self.mode == VimMode::VisualLine => {
+                self.enter_normal();
+                false
+            }
+            'v' => {
+                self.mode = VimMode::Visual;
+                false
+            }
+            'V' => {
+                self.mode = VimMode::VisualLine;
+                false
+            }
+            'o' => {
+                let Some(anchor) = self.visual_anchor else {
+                    return false;
+                };
+                let cursor = self.flattened_cursor();
+                self.visual_anchor = Some(cursor);
+                self.set_cursor_from_flat(anchor);
+                false
+            }
+            'h' => {
+                self.move_cursor_col(-1);
+                false
+            }
+            'j' => {
+                self.move_cursor_line(1);
+                false
+            }
+            'k' => {
+                self.move_cursor_line(-1);
+                false
+            }
+            'l' => {
+                self.move_cursor_col(1);
+                false
+            }
+            'w' | 'W' => {
+                self.move_word_forward(1, ch == 'W');
+                false
+            }
+            'b' | 'B' => {
+                self.move_word_backward(1, ch == 'B');
+                false
+            }
+            'e' | 'E' => {
+                self.move_word_end(1, ch == 'E');
+                false
+            }
+            '0' => {
+                self.cursor_col = 0;
+                false
+            }
+            '^' => {
+                self.cursor_col = self.first_non_blank_col();
+                false
+            }
+            '$' => {
+                self.cursor_col = self.current_line_max_col();
+                false
+            }
+            'G' => {
+                self.cursor_line = self.line_count().saturating_sub(1);
+                self.clamp_cursor_normal();
+                false
+            }
+            'd' | 'x' => self.apply_visual_operator(Operator::Delete),
+            'c' => self.apply_visual_operator(Operator::Change),
+            'y' => self.apply_visual_operator(Operator::Yank),
+            '>' => self.apply_visual_operator(Operator::Indent),
+            '<' => self.apply_visual_operator(Operator::Outdent),
+            '=' => self.apply_visual_operator(Operator::Format),
+            '~' => {
+                let Some(range) = self.visual_selection_range() else {
+                    return false;
+                };
+                self.last_visual_selection = Some((range, self.visual_kind()));
+                self.visual_anchor = None;
+                self.mode = VimMode::Normal;
+                self.toggle_case_range(range)
+            }
+            'u' => {
+                let Some(range) = self.visual_selection_range() else {
+                    return false;
+                };
+                self.last_visual_selection = Some((range, self.visual_kind()));
+                self.visual_anchor = None;
+                self.mode = VimMode::Normal;
+                self.apply_case_range(range, false)
+            }
+            'U' => {
+                let Some(range) = self.visual_selection_range() else {
+                    return false;
+                };
+                self.last_visual_selection = Some((range, self.visual_kind()));
+                self.visual_anchor = None;
+                self.mode = VimMode::Normal;
+                self.apply_case_range(range, true)
+            }
+            ':' => {
+                self.pending = Some(PendingCommand::ExCommand {
+                    command: String::new(),
+                });
+                false
+            }
+            '/' | '?' => {
+                self.pending = Some(PendingCommand::Search {
+                    reverse: ch == '?',
+                    query: String::new(),
+                });
+                false
+            }
+            _ => false,
+        }
+    }
+
+    fn handle_pending_search(&mut self, reverse: bool, mut query: String, input: &str) -> bool {
+        match input {
+            "escape" => {
+                self.pending = None;
+                false
+            }
+            "backspace" => {
+                query.pop();
+                self.pending = Some(PendingCommand::Search { reverse, query });
+                false
+            }
+            "return" => {
+                if query.is_empty() {
+                    return false;
+                }
+                self.search.pattern = query;
+                self.search.reverse = reverse;
+                self.refresh_search_matches();
+                self.repeat_search(false)
+            }
+            text => {
+                query.push_str(text);
+                self.pending = Some(PendingCommand::Search { reverse, query });
+                false
+            }
+        }
+    }
+
+    fn handle_pending_ex_command(&mut self, mut command: String, input: &str) -> bool {
+        match input {
+            "escape" => false,
+            "backspace" => {
+                command.pop();
+                self.pending = Some(PendingCommand::ExCommand { command });
+                false
+            }
+            "return" => self.execute_ex_command(&command),
+            text => {
+                command.push_str(text);
+                if command == "noh" || command == "nohlsearch" {
+                    self.execute_ex_command(&command)
+                } else {
+                    self.pending = Some(PendingCommand::ExCommand { command });
+                    false
+                }
             }
         }
     }
@@ -789,7 +1093,7 @@ impl NoteDocument {
         self.selected_register = None;
         self.dirty = true;
         match self.mode {
-            VimMode::Normal => self.clamp_cursor_normal(),
+            VimMode::Normal | VimMode::Visual | VimMode::VisualLine => self.clamp_cursor_normal(),
             VimMode::Insert => {
                 self.cursor_line = self.cursor_line.min(self.line_count().saturating_sub(1));
                 self.cursor_col = self.cursor_col.min(self.current_line_char_count());
@@ -841,6 +1145,185 @@ impl NoteDocument {
         self.selected_register
             .take()
             .unwrap_or(RegisterTarget::Unnamed)
+    }
+
+    fn cursor_position(&self) -> CursorPosition {
+        CursorPosition {
+            line: self.cursor_line(),
+            col: self.cursor_col(),
+        }
+    }
+
+    fn push_jump(&mut self) {
+        let position = self.cursor_position();
+        if self.jump_list.last().copied() != Some(position) {
+            self.jump_list.push(position);
+            self.jump_index = Some(self.jump_list.len().saturating_sub(1));
+        }
+    }
+
+    fn jump_history(&mut self, delta: isize) -> bool {
+        if self.jump_list.is_empty() {
+            return false;
+        }
+
+        let current =
+            self.jump_index
+                .unwrap_or_else(|| self.jump_list.len().saturating_sub(1)) as isize;
+        let next = (current + delta).clamp(0, self.jump_list.len().saturating_sub(1) as isize);
+        if next == current {
+            return false;
+        }
+
+        let position = self.jump_list[next as usize];
+        self.jump_index = Some(next as usize);
+        self.cursor_line = position.line;
+        self.cursor_col = position.col;
+        self.clamp_cursor_normal();
+        true
+    }
+
+    fn enter_visual(&mut self, kind: VisualKind) {
+        self.visual_anchor = Some(self.flattened_cursor());
+        self.mode = match kind {
+            VisualKind::Character => VimMode::Visual,
+            VisualKind::Line => VimMode::VisualLine,
+        };
+        self.pending = None;
+        self.count = None;
+    }
+
+    fn visual_kind(&self) -> VisualKind {
+        match self.mode {
+            VimMode::VisualLine => VisualKind::Line,
+            _ => VisualKind::Character,
+        }
+    }
+
+    fn visual_selection_range(&self) -> Option<TextRange> {
+        let anchor = self.visual_anchor?;
+        let cursor = self.flattened_cursor();
+        match self.mode {
+            VimMode::Visual => {
+                let start = anchor.min(cursor);
+                let end = anchor.max(cursor).saturating_add(1);
+                Some(TextRange::new(start, end))
+            }
+            VimMode::VisualLine => {
+                let anchor_line = self.line_for_flat(anchor);
+                let cursor_line = self.cursor_line();
+                Some(self.linewise_range(anchor_line, cursor_line))
+            }
+            _ => None,
+        }
+    }
+
+    fn apply_visual_operator(&mut self, operator: Operator) -> bool {
+        let Some(range) = self.visual_selection_range() else {
+            return false;
+        };
+        self.last_visual_selection = Some((range, self.visual_kind()));
+        self.visual_anchor = None;
+        self.mode = VimMode::Normal;
+        self.apply_operator_range(operator, range)
+    }
+
+    fn restore_last_visual_selection(&mut self) -> bool {
+        let Some((range, kind)) = self.last_visual_selection else {
+            return false;
+        };
+        self.visual_anchor = Some(range.start);
+        match kind {
+            VisualKind::Character => {
+                self.mode = VimMode::Visual;
+                self.set_cursor_from_flat(range.end.saturating_sub(1));
+            }
+            VisualKind::Line => {
+                self.mode = VimMode::VisualLine;
+                self.set_cursor_from_flat(range.end.saturating_sub(1));
+            }
+        }
+        true
+    }
+
+    fn execute_ex_command(&mut self, command: &str) -> bool {
+        self.pending = None;
+        match command.trim() {
+            "noh" | "nohlsearch" => {
+                self.search.matches.clear();
+                false
+            }
+            _ => false,
+        }
+    }
+
+    fn refresh_search_matches(&mut self) {
+        self.search.matches.clear();
+        if self.search.pattern.is_empty() {
+            return;
+        }
+
+        let chars: Vec<char> = self.content.chars().collect();
+        let pattern: Vec<char> = self.search.pattern.chars().collect();
+        if chars.is_empty() || pattern.is_empty() || pattern.len() > chars.len() {
+            return;
+        }
+
+        for start in 0..=chars.len() - pattern.len() {
+            if chars[start..start + pattern.len()] == pattern[..] {
+                self.search
+                    .matches
+                    .push(TextRange::new(start, start + pattern.len()));
+            }
+        }
+    }
+
+    fn repeat_search(&mut self, opposite: bool) -> bool {
+        if self.search.pattern.is_empty() {
+            return false;
+        }
+        self.refresh_search_matches();
+        if self.search.matches.is_empty() {
+            return false;
+        }
+
+        let reverse = self.search.reverse ^ opposite;
+        let cursor = self.flattened_cursor();
+        let target = if reverse {
+            self.search
+                .matches
+                .iter()
+                .rev()
+                .find(|range| range.start < cursor)
+                .or_else(|| self.search.matches.last())
+        } else {
+            self.search
+                .matches
+                .iter()
+                .find(|range| range.start > cursor)
+                .or_else(|| self.search.matches.first())
+        };
+        let Some(target) = target.copied() else {
+            return false;
+        };
+
+        self.push_jump();
+        self.set_cursor_from_flat(target.start);
+        true
+    }
+
+    fn search_word_under_cursor(&mut self, reverse: bool) -> bool {
+        let Some(range) = self.word_text_object_range(1, false, false) else {
+            return false;
+        };
+        let pattern = self.text_for_range(range);
+        if pattern.is_empty() {
+            return false;
+        }
+        self.search.pattern = pattern;
+        self.search.reverse = reverse;
+        self.refresh_search_matches();
+        self.repeat_search(false)
     }
 
     fn insert_blank_line(&mut self, index: usize) {
@@ -1384,6 +1867,30 @@ impl NoteDocument {
         true
     }
 
+    fn toggle_case_range(&mut self, range: TextRange) -> bool {
+        let range = range.normalized().clamped(self.content_char_len());
+        if range.start >= range.end {
+            return false;
+        }
+
+        let replacement = self
+            .text_for_range(range)
+            .chars()
+            .flat_map(|ch| {
+                if ch.is_lowercase() {
+                    ch.to_uppercase().collect::<Vec<_>>()
+                } else if ch.is_uppercase() {
+                    ch.to_lowercase().collect::<Vec<_>>()
+                } else {
+                    vec![ch]
+                }
+            })
+            .collect::<String>();
+        self.replace_flat_range(range, &replacement);
+        self.set_cursor_from_flat(range.start);
+        true
+    }
+
     fn apply_case_range(&mut self, range: TextRange, upper: bool) -> bool {
         let range = range.normalized().clamped(self.content_char_len());
         if range.start >= range.end {
@@ -1638,6 +2145,8 @@ pub enum VimMode {
     #[default]
     Normal,
     Insert,
+    Visual,
+    VisualLine,
 }
 
 impl VimMode {
@@ -1645,13 +2154,24 @@ impl VimMode {
         match self {
             Self::Normal => "NORMAL",
             Self::Insert => "INSERT",
+            Self::Visual => "VISUAL",
+            Self::VisualLine => "V-LINE",
         }
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum PendingCommand {
     RegisterPrefix,
+    Search {
+        reverse: bool,
+        query: String,
+    },
+    ExCommand {
+        command: String,
+    },
+    MarkSet,
+    MarkJump,
     Operator {
         operator: Operator,
         count: usize,
@@ -1718,6 +2238,25 @@ struct DocumentSnapshot {
     mode: VimMode,
     cursor_line: usize,
     cursor_col: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct CursorPosition {
+    line: usize,
+    col: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum VisualKind {
+    Character,
+    Line,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct SearchState {
+    pattern: String,
+    reverse: bool,
+    matches: Vec<TextRange>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2469,5 +3008,95 @@ mod tests {
 
         assert!(line.handle_normal_input("dil"));
         assert_eq!(line.content(), "one\nthree");
+    }
+
+    #[test]
+    fn visual_char_mode_yanks_and_deletes_selection() {
+        let mut yank = NoteDocument::default();
+        yank.content = "abcdef".to_string();
+        yank.enter_normal();
+
+        yank.handle_normal_input("vlly");
+
+        assert_eq!(yank.mode(), VimMode::Normal);
+        assert_eq!(yank.content(), "abcdef");
+        assert_eq!(yank.yank_register_text(), "abc");
+
+        let mut delete = NoteDocument::default();
+        delete.content = "abcdef".to_string();
+        delete.enter_normal();
+
+        assert!(delete.handle_normal_input("vlld"));
+
+        assert_eq!(delete.content(), "def");
+        assert_eq!(delete.unnamed_register_text(), "abc");
+    }
+
+    #[test]
+    fn visual_line_mode_operators_gv_and_o_work() {
+        let mut doc = NoteDocument::default();
+        doc.content = "one\ntwo\nthree".to_string();
+        doc.enter_normal();
+
+        doc.handle_normal_input("Vjy");
+
+        assert_eq!(doc.mode(), VimMode::Normal);
+        assert_eq!(doc.yank_register_text(), "one\ntwo\n");
+        assert!(doc.handle_normal_input("gv"));
+        assert_eq!(doc.mode(), VimMode::VisualLine);
+        assert!(doc.line_is_visually_selected(0));
+        assert!(doc.line_is_visually_selected(1));
+
+        doc.handle_normal_input("o");
+        assert_eq!(doc.cursor_line(), 0);
+
+        assert!(doc.handle_normal_input("d"));
+        assert_eq!(doc.content(), "three");
+    }
+
+    #[test]
+    fn search_navigation_highlights_noh_and_word_search_work() {
+        let mut doc = NoteDocument::default();
+        doc.content = "one two\nthree two\nfour".to_string();
+        doc.enter_normal();
+
+        doc.handle_normal_input("/");
+        doc.handle_normal_input("two");
+        assert!(doc.handle_normal_input("return"));
+
+        assert_eq!(doc.cursor_line(), 0);
+        assert_eq!(doc.cursor_col(), 4);
+        assert!(doc.line_has_search_match(0));
+        assert!(doc.line_has_search_match(1));
+
+        assert!(doc.handle_normal_input("n"));
+        assert_eq!(doc.cursor_line(), 1);
+        assert_eq!(doc.cursor_col(), 6);
+
+        assert!(doc.handle_normal_input("N"));
+        assert_eq!(doc.cursor_line(), 0);
+
+        doc.handle_normal_input(":noh");
+        assert!(!doc.line_has_search_match(0));
+        assert_eq!(doc.search_pattern(), Some("two"));
+
+        doc.handle_normal_input("0*");
+        assert_eq!(doc.search_pattern(), Some("one"));
+        assert!(doc.line_has_search_match(0));
+    }
+
+    #[test]
+    fn marks_jump_to_saved_positions() {
+        let mut doc = NoteDocument::default();
+        doc.content = "one\ntwo\nthree".to_string();
+        doc.enter_normal();
+
+        doc.handle_normal_input("jmaG");
+        assert_eq!(doc.cursor_line(), 2);
+
+        doc.handle_normal_input("'a");
+
+        assert_eq!(doc.cursor_line(), 1);
+        assert_eq!(doc.cursor_col(), 0);
     }
 }

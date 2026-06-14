@@ -114,6 +114,7 @@ pub struct EditorLineSnapshot {
     pub text: String,
     pub is_cursor_line: bool,
     pub is_selected: bool,
+    pub is_search_match: bool,
     pub cursor_column: i32,
     pub cursor_prefix: String,
     pub cursor_cell: String,
@@ -382,8 +383,10 @@ impl AppController {
 
         self.mouse_selection = None;
         match self.active_note().mode() {
-            VimMode::Normal => self.handle_normal_editor_key(key),
             VimMode::Insert => self.handle_insert_editor_key(key),
+            VimMode::Normal | VimMode::Visual | VimMode::VisualLine => {
+                self.handle_normal_editor_key(key)
+            }
         }
     }
 
@@ -473,11 +476,14 @@ impl AppController {
             },
             status_right: if note.is_open() {
                 format!(
-                    "Doc {}/{}  |  Ln {}, Col {}  |  {} lines, {} words, {} chars  ",
+                    "Doc {}/{}  |  Ln {}, Col {}{}  |  {} lines, {} words, {} chars  ",
                     self.active_document + 1,
                     self.open_document_count(),
                     note.cursor_line() + 1,
                     note.display_cursor_col() + 1,
+                    note.search_pattern()
+                        .map(|pattern| format!("  |  /{pattern}"))
+                        .unwrap_or_default(),
                     stats.line_count,
                     stats.word_count,
                     stats.char_count
@@ -491,7 +497,7 @@ impl AppController {
             cursor_prefix: cursor.prefix,
             cursor_cell: cursor.cell,
             cursor_suffix: cursor.suffix,
-            cursor_block: note.mode() == VimMode::Normal,
+            cursor_block: note.mode() != VimMode::Insert,
             mode_text,
             message: self.last_message.clone(),
             has_document: note.is_open(),
@@ -608,7 +614,7 @@ impl AppController {
         match mode {
             "NORMAL" => theme.vim_modes.normal.clone(),
             "INSERT" => theme.vim_modes.insert.clone(),
-            "VISUAL" => theme.vim_modes.visual.clone(),
+            "VISUAL" | "V-LINE" => theme.vim_modes.visual.clone(),
             "COMMAND" => theme.vim_modes.command.clone(),
             "REPLACE" => theme.vim_modes.replace.clone(),
             _ => theme.colors.accent_primary.clone(),
@@ -783,7 +789,7 @@ fn editor_lines(
 ) -> Vec<EditorLineSnapshot> {
     let cursor_line = note.cursor_line();
     let cursor_column = note.display_cursor_col() as i32;
-    let cursor_block = note.mode() == VimMode::Normal;
+    let cursor_block = note.mode() != VimMode::Insert;
     let cursor = cursor_snapshot(note);
 
     content_lines(note)
@@ -794,7 +800,9 @@ fn editor_lines(
             is_cursor_line: index == cursor_line,
             is_selected: mouse_selection
                 .map(|selection| selection.includes(index))
-                .unwrap_or(false),
+                .unwrap_or(false)
+                || note.line_is_visually_selected(index),
+            is_search_match: note.line_has_search_match(index),
             cursor_column,
             cursor_prefix: if index == cursor_line {
                 cursor.prefix.clone()
@@ -898,6 +906,7 @@ mod tests {
                     text: "one".to_string(),
                     is_cursor_line: false,
                     is_selected: false,
+                    is_search_match: false,
                     cursor_column: 2,
                     cursor_prefix: String::new(),
                     cursor_cell: String::new(),
@@ -909,6 +918,7 @@ mod tests {
                     text: "two".to_string(),
                     is_cursor_line: true,
                     is_selected: false,
+                    is_search_match: false,
                     cursor_column: 2,
                     cursor_prefix: "tw".to_string(),
                     cursor_cell: "o".to_string(),
@@ -1023,6 +1033,33 @@ mod tests {
             .editor_lines
             .iter()
             .all(|line| !line.is_selected));
+    }
+
+    #[test]
+    fn editor_lines_render_visual_selection_and_search_matches() {
+        let mut controller = AppController::new();
+        controller.new_file();
+        *controller.active_note_mut().content_mut() = "one\ntwo\nthree".to_string();
+        controller.active_note_mut().enter_normal();
+
+        controller.handle_editor_key("g");
+        controller.handle_editor_key("g");
+        controller.handle_editor_key("V");
+        controller.handle_editor_key("j");
+
+        let snapshot = controller.snapshot();
+        assert_eq!(snapshot.mode_text, "V-LINE");
+        assert!(snapshot.editor_lines[0].is_selected);
+        assert!(snapshot.editor_lines[1].is_selected);
+
+        controller.handle_editor_key("escape");
+        for key in ["/", "t", "w", "o", "return"] {
+            controller.handle_editor_key(key);
+        }
+
+        let snapshot = controller.snapshot();
+        assert!(snapshot.editor_lines[1].is_search_match);
+        assert!(snapshot.status_right.contains("/two"));
     }
 
     #[test]
