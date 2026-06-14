@@ -5,7 +5,6 @@ use crate::{
     persistence::{AppConfig, AppDataPaths, RecentFiles, SessionState},
     platform::clipboard,
     theme::ThemeStore,
-    vim::key::EditorKey,
 };
 
 pub struct AppController {
