@@ -184,13 +184,16 @@ impl AppController {
         let recent_files = RecentFiles::load_or_default(&paths);
         let themes = ThemeStore::load(&paths, config.active_theme.as_deref());
 
+        let mut initial_doc = NoteDocument::default();
+        initial_doc.defer_enabled = true;
+
         Self {
             paths,
             config,
             session,
             recent_files,
             themes,
-            documents: vec![NoteDocument::default()],
+            documents: vec![initial_doc],
             active_document: 0,
             mouse_selection: None,
             theme_panel_open: false,
@@ -201,6 +204,7 @@ impl AppController {
 
     pub fn new_file(&mut self) {
         let mut note = NoteDocument::default();
+        note.defer_enabled = true;
         note.new_blank();
         if self.documents.len() == 1 && !self.active_note().is_open() {
             self.documents[0] = note;
@@ -376,12 +380,31 @@ impl AppController {
         self.save_config_message("Window blur setting updated.");
     }
 
+    pub fn flush_deferred_action(&mut self) -> bool {
+        if !self.active_note().is_open() {
+            return false;
+        }
+
+        let before_register = self
+            .config
+            .sync_clipboard
+            .then(|| self.active_note().unnamed_register_snapshot());
+
+        let result = self.active_note_mut().flush_deferred_action();
+        if result {
+            self.export_unnamed_register_if_changed(before_register);
+        }
+        result
+    }
+
     pub fn handle_editor_key(&mut self, key: &str) {
         if !self.active_note().is_open() {
             return;
         }
 
         self.mouse_selection = None;
+        self.flush_deferred_action();
+        self.active_note_mut().clear_yank_highlight();
         match self.active_note().mode() {
             VimMode::Insert => self.handle_insert_editor_key(key),
             VimMode::Normal | VimMode::Visual | VimMode::VisualLine => {
@@ -395,6 +418,8 @@ impl AppController {
             return;
         }
 
+        self.flush_deferred_action();
+        self.active_note_mut().clear_yank_highlight();
         let line = line as usize;
         let column = pointer_column_from_x(x_pixels, self.config.font_size);
         self.active_note_mut().set_cursor_from_pointer(line, column);
@@ -560,6 +585,7 @@ impl AppController {
         }
 
         let mut note = NoteDocument::default();
+        note.defer_enabled = true;
         match note.open(&path) {
             Ok(()) => {
                 if self.documents.len() == 1 && !self.active_note().is_open() {
@@ -674,13 +700,13 @@ impl AppController {
         }
     }
 
-    fn active_note(&self) -> &NoteDocument {
+    pub(crate) fn active_note(&self) -> &NoteDocument {
         &self.documents[self
             .active_document
             .min(self.documents.len().saturating_sub(1))]
     }
 
-    fn active_note_mut(&mut self) -> &mut NoteDocument {
+    pub(crate) fn active_note_mut(&mut self) -> &mut NoteDocument {
         let index = self
             .active_document
             .min(self.documents.len().saturating_sub(1));

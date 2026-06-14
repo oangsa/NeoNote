@@ -252,9 +252,29 @@ fn install_callbacks(window: &AppWindow, controller: Rc<RefCell<AppController>>)
         controller_for_editor
             .borrow_mut()
             .handle_editor_key(key.as_str());
+
+        let has_highlight = {
+            let ctrl = controller_for_editor.borrow();
+            let note = ctrl.active_note();
+            note.has_yank_highlight() || note.has_deferred_action()
+        };
+
         if let Some(window) = weak_window.upgrade() {
             apply_editor_snapshot(&window, &controller_for_editor.borrow().snapshot());
             window.invoke_focus_editor();
+
+            if has_highlight {
+                let weak_window_inner = window.as_weak();
+                let controller_inner = Rc::clone(&controller_for_editor);
+                slint::Timer::single_shot(std::time::Duration::from_millis(200), move || {
+                    if let Some(w) = weak_window_inner.upgrade() {
+                        let mut ctrl = controller_inner.borrow_mut();
+                        ctrl.flush_deferred_action();
+                        ctrl.active_note_mut().clear_yank_highlight();
+                        apply_editor_snapshot(&w, &ctrl.snapshot());
+                    }
+                });
+            }
         }
     });
 

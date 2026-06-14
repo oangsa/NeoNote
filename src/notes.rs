@@ -27,6 +27,9 @@ pub struct NoteDocument {
     marks: BTreeMap<char, CursorPosition>,
     jump_list: Vec<CursorPosition>,
     jump_index: Option<usize>,
+    yank_highlight: Option<TextRange>,
+    deferred_action: Option<DeferredAction>,
+    pub(crate) defer_enabled: bool,
 }
 
 impl NoteDocument {
@@ -52,6 +55,8 @@ impl NoteDocument {
         self.marks.clear();
         self.jump_list.clear();
         self.jump_index = None;
+        self.yank_highlight = None;
+        self.deferred_action = None;
     }
 
     pub fn open(&mut self, path: impl AsRef<Path>) -> std::io::Result<()> {
@@ -77,6 +82,8 @@ impl NoteDocument {
         self.marks.clear();
         self.jump_list.clear();
         self.jump_index = None;
+        self.yank_highlight = None;
+        self.deferred_action = None;
         Ok(())
     }
 
@@ -151,6 +158,13 @@ impl NoteDocument {
     }
 
     pub fn line_is_visually_selected(&self, line: usize) -> bool {
+        if let Some(range) = self.yank_highlight {
+            let start_line = self.line_for_flat(range.start);
+            let end_line = self.line_for_flat(range.end.saturating_sub(1));
+            if (start_line.min(end_line)..=start_line.max(end_line)).contains(&line) {
+                return true;
+            }
+        }
         self.visual_selection_range()
             .map(|range| {
                 let start_line = self.line_for_flat(range.start);
@@ -158,6 +172,27 @@ impl NoteDocument {
                 (start_line.min(end_line)..=start_line.max(end_line)).contains(&line)
             })
             .unwrap_or(false)
+    }
+
+    pub fn has_yank_highlight(&self) -> bool {
+        self.yank_highlight.is_some()
+    }
+
+    pub fn clear_yank_highlight(&mut self) {
+        self.yank_highlight = None;
+    }
+
+    pub fn has_deferred_action(&self) -> bool {
+        self.deferred_action.is_some()
+    }
+
+    pub fn flush_deferred_action(&mut self) -> bool {
+        if let Some(action) = self.deferred_action.take() {
+            self.yank_highlight = None;
+            self.apply_operator_range_direct(action.operator, action.range)
+        } else {
+            false
+        }
     }
 
     pub fn line_has_search_match(&self, line: usize) -> bool {
@@ -217,6 +252,8 @@ impl NoteDocument {
     }
 
     pub fn set_cursor_from_pointer(&mut self, line: usize, column: usize) {
+        self.flush_deferred_action();
+        self.clear_yank_highlight();
         self.pending = None;
         self.count = None;
         self.visual_anchor = None;
@@ -240,6 +277,8 @@ impl NoteDocument {
     }
 
     pub fn enter_normal(&mut self) {
+        self.flush_deferred_action();
+        self.clear_yank_highlight();
         self.mode = VimMode::Normal;
         self.pending = None;
         self.count = None;
@@ -248,6 +287,8 @@ impl NoteDocument {
     }
 
     pub fn handle_normal_input(&mut self, input: &str) -> bool {
+        self.flush_deferred_action();
+        self.clear_yank_highlight();
         if self.mode == VimMode::Insert {
             return false;
         }
@@ -297,6 +338,8 @@ impl NoteDocument {
     }
 
     pub fn handle_insert_text(&mut self, text: &str) {
+        self.flush_deferred_action();
+        self.clear_yank_highlight();
         if self.mode != VimMode::Insert || text.is_empty() {
             return;
         }
@@ -311,6 +354,8 @@ impl NoteDocument {
     }
 
     pub fn insert_newline(&mut self) {
+        self.flush_deferred_action();
+        self.clear_yank_highlight();
         if self.mode != VimMode::Insert {
             return;
         }
@@ -326,6 +371,8 @@ impl NoteDocument {
     }
 
     pub fn backspace(&mut self) {
+        self.flush_deferred_action();
+        self.clear_yank_highlight();
         if self.mode != VimMode::Insert {
             return;
         }
@@ -346,6 +393,8 @@ impl NoteDocument {
     }
 
     pub fn delete_at_cursor(&mut self) {
+        self.flush_deferred_action();
+        self.clear_yank_highlight();
         if self.mode != VimMode::Insert {
             return;
         }
@@ -1498,6 +1547,16 @@ impl NoteDocument {
             return false;
         }
 
+        if self.defer_enabled && (operator == Operator::Delete || operator == Operator::Change) && range.linewise {
+            self.yank_highlight = Some(range);
+            self.deferred_action = Some(DeferredAction { operator, range });
+            return false;
+        }
+
+        self.apply_operator_range_direct(operator, range)
+    }
+
+    fn apply_operator_range_direct(&mut self, operator: Operator, range: TextRange) -> bool {
         match operator {
             Operator::Delete => {
                 let text = self.text_for_range(range);
@@ -1552,6 +1611,7 @@ impl NoteDocument {
                     self.set_cursor_from_flat(range.start);
                 }
                 self.clamp_cursor_normal();
+                self.yank_highlight = Some(range);
                 false
             }
             Operator::Indent => self.indent_range(range, 1),
@@ -2237,6 +2297,12 @@ struct SearchState {
 enum PastePlacement {
     After,
     Before,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct DeferredAction {
+    operator: Operator,
+    range: TextRange,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -3086,5 +3152,50 @@ mod tests {
 
         assert_eq!(doc.cursor_line(), 1);
         assert_eq!(doc.cursor_col(), 0);
+    }
+
+    #[test]
+    fn test_visual_feedback_yank_and_delete() {
+        let mut doc = NoteDocument::default();
+        doc.defer_enabled = true;
+        doc.content = "line one\nline two\nline three".to_string();
+        doc.enter_normal();
+
+        // 1. Test linewise yank (yy)
+        doc.handle_normal_input("yy");
+        assert!(doc.has_yank_highlight());
+        assert!(doc.line_is_visually_selected(0));
+        assert!(!doc.line_is_visually_selected(1));
+        assert_eq!(doc.cursor_line(), 0);
+
+        // 2. Clear highlight
+        doc.clear_yank_highlight();
+        assert!(!doc.has_yank_highlight());
+
+        // 3. Test linewise delete (dd)
+        doc.handle_normal_input("dd");
+        assert!(doc.has_deferred_action());
+        assert!(doc.has_yank_highlight());
+        assert!(doc.line_is_visually_selected(0));
+        assert_eq!(doc.content(), "line one\nline two\nline three");
+
+        // 4. Flush deferred action
+        assert!(doc.flush_deferred_action());
+        assert!(!doc.has_deferred_action());
+        assert!(!doc.has_yank_highlight());
+        assert_eq!(doc.content(), "line two\nline three");
+
+        // 5. Test another key input automatically flushes deferred action
+        let mut doc2 = NoteDocument::default();
+        doc2.defer_enabled = true;
+        doc2.content = "line one\nline two\nline three".to_string();
+        doc2.enter_normal();
+        
+        doc2.handle_normal_input("dd");
+        assert!(doc2.has_deferred_action());
+        
+        doc2.handle_normal_input("p");
+        assert!(!doc2.has_deferred_action());
+        assert_eq!(doc2.content(), "line two\nline one\nline three");
     }
 }
