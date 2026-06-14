@@ -191,6 +191,7 @@ impl NoteDocument {
         RegisterSnapshot {
             text: self.registers.unnamed.text.clone(),
             linewise: self.registers.unnamed.linewise,
+            version: self.registers.version,
         }
     }
 
@@ -618,8 +619,8 @@ impl NoteDocument {
                 'd',
             ) => {
                 self.pending = None;
-                self.count = None;
-                self.delete_current_lines(count);
+                let multiplier = self.count.take().unwrap_or(1).max(1);
+                self.delete_current_lines(count.saturating_mul(multiplier));
                 true
             }
             (
@@ -630,8 +631,8 @@ impl NoteDocument {
                 'c',
             ) => {
                 self.pending = None;
-                self.count = None;
-                self.change_current_lines(count);
+                let multiplier = self.count.take().unwrap_or(1).max(1);
+                self.change_current_lines(count.saturating_mul(multiplier));
                 true
             }
             (
@@ -642,8 +643,8 @@ impl NoteDocument {
                 'y',
             ) => {
                 self.pending = None;
-                self.count = None;
-                self.yank_current_lines(count);
+                let multiplier = self.count.take().unwrap_or(1).max(1);
+                self.yank_current_lines(count.saturating_mul(multiplier));
                 false
             }
             (
@@ -654,8 +655,8 @@ impl NoteDocument {
                 '>',
             ) => {
                 self.pending = None;
-                self.count = None;
-                self.indent_current_lines(count, 1)
+                let multiplier = self.count.take().unwrap_or(1).max(1);
+                self.indent_current_lines(count.saturating_mul(multiplier), 1)
             }
             (
                 PendingCommand::Operator {
@@ -665,8 +666,8 @@ impl NoteDocument {
                 '<',
             ) => {
                 self.pending = None;
-                self.count = None;
-                self.indent_current_lines(count, -1)
+                let multiplier = self.count.take().unwrap_or(1).max(1);
+                self.indent_current_lines(count.saturating_mul(multiplier), -1)
             }
             (
                 PendingCommand::Operator {
@@ -676,11 +677,12 @@ impl NoteDocument {
                 '=',
             ) => {
                 self.pending = None;
-                self.count = None;
+                let multiplier = self.count.take().unwrap_or(1).max(1);
+                let total_count = count.saturating_mul(multiplier);
                 let range = self.linewise_range(
                     self.cursor_line(),
                     self.cursor_line()
-                        .saturating_add(count.max(1).saturating_sub(1)),
+                        .saturating_add(total_count.max(1).saturating_sub(1)),
                 );
                 self.format_range(range)
             }
@@ -2316,6 +2318,7 @@ struct Registers {
     yank: RegisterValue,
     clipboard: RegisterValue,
     named: BTreeMap<char, RegisterValue>,
+    version: usize,
 }
 
 impl Registers {
@@ -2344,6 +2347,7 @@ impl Registers {
     }
 
     fn store_target(&mut self, target: RegisterTarget, value: RegisterValue) {
+        self.version = self.version.wrapping_add(1);
         match target {
             RegisterTarget::Unnamed => self.unnamed = value,
             RegisterTarget::Clipboard => {
@@ -2434,6 +2438,7 @@ pub struct NoteStats {
 pub struct RegisterSnapshot {
     pub text: String,
     pub linewise: bool,
+    pub version: usize,
 }
 
 #[cfg(test)]
@@ -2680,6 +2685,7 @@ mod tests {
             RegisterSnapshot {
                 text: "clip\n".to_string(),
                 linewise: true,
+                version: 0,
             }
         );
         assert_eq!(doc.unnamed_register_text(), "clip\n");

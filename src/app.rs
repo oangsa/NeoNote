@@ -647,6 +647,7 @@ impl AppController {
     fn import_clipboard_to_unnamed_register(&mut self) {
         match clipboard::read_text() {
             Ok(text) => {
+                let text = text.replace("\r\n", "\n");
                 let linewise = text.ends_with('\n');
                 self.active_note_mut()
                     .set_clipboard_register(text, linewise);
