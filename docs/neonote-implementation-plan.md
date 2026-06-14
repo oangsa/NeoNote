@@ -536,6 +536,8 @@ Acceptance:
 
 ### Phase 9 - Command Mode
 
+Status: complete.
+
 Scope:
 
 - command-line state
@@ -553,6 +555,13 @@ Scope:
 - `:s/foo/bar/g`
 - `:%s/foo/bar/g`
 - `:%s/foo/bar/gc`
+- `:wa`
+- `:wall`
+- command-line cursor movement and history
+- `:reg`
+- `:marks`
+- `:jumps`
+- `:changes`
 
 Acceptance:
 
@@ -561,6 +570,8 @@ Acceptance:
 - Substitute works for line and whole-file ranges.
 
 ### Phase 10 - Advanced Motions And Viewport
+
+Status: complete.
 
 Scope:
 
@@ -581,6 +592,8 @@ Acceptance:
 
 ### Phase 11 - Macros, Changelist, Visual Block
 
+Status: in progress.
+
 Scope:
 
 - `q{a-z}`
@@ -599,6 +612,13 @@ Acceptance:
 - Macro playback is deterministic and guarded against recursion.
 - Changelist navigation works for edits.
 - Visual block supports virtual columns and pads short lines when needed.
+
+Current implementation note:
+
+- `g;` and `g,` are implemented on top of a Rust-owned changelist.
+- Visual block selection, delete, yank, change, block insert/append, and blockwise paste are implemented in the current `NoteDocument`.
+- Block registers carry `blockwise` metadata and paste through a dedicated blockwise path.
+- Macro state is only scaffolded at the moment. `q{a-z}`, `q`, `@{a-z}`, and `@@` are not complete yet and should still be treated as pending work.
 
 ### Phase 12 - Surround
 
@@ -708,6 +728,9 @@ Manual checks:
 - Open File and Save As default to `.txt`.
 - Typing after `i`, `a`, `o`, or `O` works without clicking.
 - `Esc`, `hjkl`, counts, word motions, line motions, `dd`, and `x` work.
+- Verify `R`, `r{char}`, `s`, `S`, `D`, `C`, `X`, `J`, and `gJ`.
+- Verify visual counts, backtick mark jumps, changelist navigation, and blockwise paste.
+- Verify command-line cursor movement/history and insert-mode `Ctrl-r {register}`.
 - Status bar shows mode, file title/path, cursor line/column, and document stats.
 - Theme switching affects Slint wrapper/editor UI and mode colors.
 
