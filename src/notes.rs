@@ -620,8 +620,7 @@ impl NoteDocument {
             ) => {
                 self.pending = None;
                 let multiplier = self.count.take().unwrap_or(1).max(1);
-                self.delete_current_lines(count.saturating_mul(multiplier));
-                true
+                self.apply_current_lines_operator(Operator::Delete, count.saturating_mul(multiplier))
             }
             (
                 PendingCommand::Operator {
@@ -632,8 +631,7 @@ impl NoteDocument {
             ) => {
                 self.pending = None;
                 let multiplier = self.count.take().unwrap_or(1).max(1);
-                self.change_current_lines(count.saturating_mul(multiplier));
-                true
+                self.apply_current_lines_operator(Operator::Change, count.saturating_mul(multiplier))
             }
             (
                 PendingCommand::Operator {
@@ -644,8 +642,7 @@ impl NoteDocument {
             ) => {
                 self.pending = None;
                 let multiplier = self.count.take().unwrap_or(1).max(1);
-                self.yank_current_lines(count.saturating_mul(multiplier));
-                false
+                self.apply_current_lines_operator(Operator::Yank, count.saturating_mul(multiplier))
             }
             (
                 PendingCommand::Operator {
@@ -656,7 +653,7 @@ impl NoteDocument {
             ) => {
                 self.pending = None;
                 let multiplier = self.count.take().unwrap_or(1).max(1);
-                self.indent_current_lines(count.saturating_mul(multiplier), 1)
+                self.apply_current_lines_operator(Operator::Indent, count.saturating_mul(multiplier))
             }
             (
                 PendingCommand::Operator {
@@ -667,7 +664,7 @@ impl NoteDocument {
             ) => {
                 self.pending = None;
                 let multiplier = self.count.take().unwrap_or(1).max(1);
-                self.indent_current_lines(count.saturating_mul(multiplier), -1)
+                self.apply_current_lines_operator(Operator::Outdent, count.saturating_mul(multiplier))
             }
             (
                 PendingCommand::Operator {
@@ -678,13 +675,7 @@ impl NoteDocument {
             ) => {
                 self.pending = None;
                 let multiplier = self.count.take().unwrap_or(1).max(1);
-                let total_count = count.saturating_mul(multiplier);
-                let range = self.linewise_range(
-                    self.cursor_line(),
-                    self.cursor_line()
-                        .saturating_add(total_count.max(1).saturating_sub(1)),
-                );
-                self.format_range(range)
+                self.apply_current_lines_operator(Operator::Format, count.saturating_mul(multiplier))
             }
             (
                 PendingCommand::Operator {
@@ -1337,57 +1328,23 @@ impl NoteDocument {
     }
 
     fn delete_current_line(&mut self) {
-        self.delete_current_lines(1);
+        self.apply_current_lines_operator(Operator::Delete, 1);
     }
 
-    fn delete_current_lines(&mut self, count: usize) {
-        self.capture_line_register(count, false);
-        let mut lines = self.lines_vec();
-        if lines.len() <= 1 {
-            lines[0].clear();
-        } else {
-            let index = self.cursor_line();
-            let remove_count = count.max(1).min(lines.len().saturating_sub(index));
-            for _ in 0..remove_count {
-                lines.remove(index);
-                if lines.is_empty() {
-                    lines.push(String::new());
-                    break;
-                }
-            }
+    fn apply_current_lines_operator(&mut self, operator: Operator, count: usize) -> bool {
+        let original_cursor = self.flattened_cursor();
+        let original_col = self.cursor_col();
+        self.enter_visual(VisualKind::Line);
+        self.cursor_line = self.cursor_line().saturating_add(count.max(1).saturating_sub(1)).min(self.line_count().saturating_sub(1));
+        let result = self.apply_visual_operator(operator);
+        if operator == Operator::Yank {
+            self.set_cursor_from_flat(original_cursor);
+            self.cursor_col = original_col;
+            self.clamp_cursor_normal();
         }
-        self.replace_lines(lines);
+        result
     }
 
-    fn change_current_lines(&mut self, count: usize) {
-        self.capture_line_register(count, false);
-        self.record_undo();
-        let mut lines = self.lines_vec();
-        let index = self.cursor_line();
-        if lines.len() <= 1 {
-            lines[0].clear();
-        } else {
-            let remove_count = count.max(1).min(lines.len().saturating_sub(index));
-            for _ in 0..remove_count {
-                lines.remove(index);
-                if lines.is_empty() {
-                    break;
-                }
-            }
-            lines.insert(index.min(lines.len()), String::new());
-        }
-        self.content = lines.join("\n");
-        self.dirty = true;
-        self.cursor_line = index.min(self.line_count().saturating_sub(1));
-        self.cursor_col = 0;
-        self.enter_insert();
-    }
-
-    fn yank_current_lines(&mut self, count: usize) {
-        self.capture_line_register(count, true);
-        self.cursor_col = self.first_non_blank_col();
-        self.clamp_cursor_normal();
-    }
 
     fn delete_chars_on_current_line(&mut self, count: usize) -> bool {
         let mut lines = self.lines_vec();
@@ -1542,8 +1499,16 @@ impl NoteDocument {
                 let text = self.text_for_range(range);
                 let target = self.take_register_target();
                 self.registers.store_deleted(target, text, range.linewise);
-                self.delete_flat_range(range);
-                self.set_insert_cursor_from_flat(range.start);
+
+                let mut actual_delete_range = range;
+                if range.linewise && range.end == self.content_char_len() && range.start > 0 {
+                    if self.content.chars().nth(range.start - 1) == Some('\n') {
+                        actual_delete_range.start -= 1;
+                    }
+                }
+
+                self.delete_flat_range(actual_delete_range);
+                self.set_insert_cursor_from_flat(actual_delete_range.start);
                 self.enter_normal();
                 true
             }
@@ -1551,8 +1516,24 @@ impl NoteDocument {
                 let text = self.text_for_range(range);
                 let target = self.take_register_target();
                 self.registers.store_deleted(target, text, range.linewise);
-                self.delete_flat_range(range);
-                self.set_insert_cursor_from_flat(range.start);
+
+                let mut actual_delete_range = range;
+                if range.linewise && range.end == self.content_char_len() && range.start > 0 {
+                    if self.content.chars().nth(range.start - 1) == Some('\n') {
+                        actual_delete_range.start -= 1;
+                    }
+                }
+
+                self.delete_flat_range(actual_delete_range);
+
+                if range.linewise {
+                    insert_str_at_char(&mut self.content, actual_delete_range.start, "\n");
+                    self.dirty = true;
+                    self.set_insert_cursor_from_flat(actual_delete_range.start);
+                } else {
+                    self.set_insert_cursor_from_flat(actual_delete_range.start);
+                }
+
                 self.enter_insert();
                 true
             }
@@ -1770,12 +1751,6 @@ impl NoteDocument {
         )
     }
 
-    fn indent_current_lines(&mut self, count: usize, delta: isize) -> bool {
-        let end_line = self
-            .cursor_line()
-            .saturating_add(count.max(1).saturating_sub(1));
-        self.indent_lines(self.cursor_line(), end_line, delta)
-    }
 
     fn indent_range(&mut self, range: TextRange, delta: isize) -> bool {
         let start_line = self.line_for_flat(range.start);
@@ -1946,20 +1921,6 @@ impl NoteDocument {
             .collect()
     }
 
-    fn capture_line_register(&mut self, count: usize, yank: bool) {
-        let range = self.linewise_range(
-            self.cursor_line(),
-            self.cursor_line()
-                .saturating_add(count.max(1).saturating_sub(1)),
-        );
-        let text = self.text_for_range(range);
-        let target = self.take_register_target();
-        if yank {
-            self.registers.store_yank(target, text, true);
-        } else {
-            self.registers.store_deleted(target, text, true);
-        }
-    }
 
     fn paste_unnamed(&mut self, count: usize, placement: PastePlacement) -> bool {
         let target = self.take_register_target();
