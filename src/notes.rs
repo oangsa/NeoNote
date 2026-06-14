@@ -1385,6 +1385,7 @@ impl NoteDocument {
 
     fn yank_current_lines(&mut self, count: usize) {
         self.capture_line_register(count, true);
+        self.cursor_col = self.first_non_blank_col();
         self.clamp_cursor_normal();
     }
 
@@ -1559,6 +1560,12 @@ impl NoteDocument {
                 let text = self.text_for_range(range);
                 let target = self.take_register_target();
                 self.registers.store_yank(target, text, range.linewise);
+                if range.linewise {
+                    self.set_cursor_from_flat(range.start);
+                    self.cursor_col = self.first_non_blank_col();
+                } else {
+                    self.set_cursor_from_flat(range.start);
+                }
                 self.clamp_cursor_normal();
                 false
             }

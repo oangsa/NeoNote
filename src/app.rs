@@ -648,6 +648,9 @@ impl AppController {
         match clipboard::read_text() {
             Ok(text) => {
                 let text = text.replace("\r\n", "\n");
+                if self.active_note().clipboard_register_text() == text {
+                    return;
+                }
                 let linewise = text.ends_with('\n');
                 self.active_note_mut()
                     .set_clipboard_register(text, linewise);
