@@ -42,7 +42,13 @@ pub fn normalize_normal_key(key: &str) -> EditorKey {
         "down" => EditorKey::Input("j".to_string()),
         "return" | "backspace" => EditorKey::Input(key.to_string()),
         "delete" => EditorKey::Ignore,
-        value => EditorKey::Input(value.to_string()),
+        value => {
+            if value.is_empty() || value.chars().any(|c| c.is_control()) {
+                EditorKey::Ignore
+            } else {
+                EditorKey::Input(value.to_string())
+            }
+        }
     }
 }
 
@@ -78,7 +84,7 @@ pub fn normalize_command_key(key: &str) -> EditorKey {
         "right" => EditorKey::Input("right".to_string()),
         "ctrl+r" => EditorKey::Input("ctrl+r".to_string()),
         _ => {
-            if key.chars().count() == 1 {
+            if key.chars().count() == 1 && !key.chars().any(|c| c.is_control()) {
                 EditorKey::Input(key.to_string())
             } else {
                 EditorKey::Ignore
