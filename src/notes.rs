@@ -10,10 +10,9 @@ pub struct NoteDocument {
     path: Option<PathBuf>,
     dirty: bool,
     open: bool,
-    mode: VimMode,
+    pub vim_state: VimState,
     cursor_line: usize,
     cursor_col: usize,
-    pending: Option<PendingCommand>,
     count: Option<usize>,
     registers: Registers,
     selected_register: Option<RegisterTarget>,
@@ -30,6 +29,7 @@ pub struct NoteDocument {
     yank_highlight: Option<TextRange>,
     deferred_action: Option<DeferredAction>,
     pub(crate) defer_enabled: bool,
+    pub pending_ex_action: Option<ExCommandAction>,
 }
 
 impl NoteDocument {
@@ -38,10 +38,9 @@ impl NoteDocument {
         self.path = None;
         self.dirty = false;
         self.open = true;
-        self.mode = VimMode::Normal;
+        self.vim_state = VimState::default();
         self.cursor_line = 0;
         self.cursor_col = 0;
-        self.pending = None;
         self.count = None;
         self.registers = Registers::default();
         self.selected_register = None;
@@ -57,6 +56,7 @@ impl NoteDocument {
         self.jump_index = None;
         self.yank_highlight = None;
         self.deferred_action = None;
+        self.pending_ex_action = None;
     }
 
     pub fn open(&mut self, path: impl AsRef<Path>) -> std::io::Result<()> {
@@ -65,10 +65,9 @@ impl NoteDocument {
         self.path = Some(path.to_path_buf());
         self.dirty = false;
         self.open = true;
-        self.mode = VimMode::Normal;
+        self.vim_state = VimState::default();
         self.cursor_line = 0;
         self.cursor_col = 0;
-        self.pending = None;
         self.count = None;
         self.registers = Registers::default();
         self.selected_register = None;
@@ -84,6 +83,7 @@ impl NoteDocument {
         self.jump_index = None;
         self.yank_highlight = None;
         self.deferred_action = None;
+        self.pending_ex_action = None;
         Ok(())
     }
 
@@ -139,7 +139,7 @@ impl NoteDocument {
     }
 
     pub fn mode(&self) -> VimMode {
-        self.mode
+        self.vim_state.mode
     }
 
     pub fn cursor_line(&self) -> usize {
@@ -151,9 +151,10 @@ impl NoteDocument {
     }
 
     pub fn display_cursor_col(&self) -> usize {
-        match self.mode {
+        match self.vim_state.mode {
             VimMode::Normal | VimMode::Visual | VimMode::VisualLine => self.cursor_col(),
             VimMode::Insert => self.cursor_col.min(self.current_line_char_count()),
+            _ => self.cursor_col(),
         }
     }
 
@@ -254,24 +255,25 @@ impl NoteDocument {
     pub fn set_cursor_from_pointer(&mut self, line: usize, column: usize) {
         self.flush_deferred_action();
         self.clear_yank_highlight();
-        self.pending = None;
+        self.vim_state.pending_command = None;
         self.count = None;
         self.visual_anchor = None;
-        if matches!(self.mode, VimMode::Visual | VimMode::VisualLine) {
-            self.mode = VimMode::Normal;
+        if matches!(self.vim_state.mode, VimMode::Visual | VimMode::VisualLine) {
+            self.vim_state.mode = VimMode::Normal;
         }
         self.cursor_line = line.min(self.line_count().saturating_sub(1));
-        self.cursor_col = match self.mode {
+        self.cursor_col = match self.vim_state.mode {
             VimMode::Normal | VimMode::Visual | VimMode::VisualLine => {
                 column.min(self.current_line_max_col())
             }
             VimMode::Insert => column.min(self.current_line_char_count()),
+            _ => column.min(self.current_line_char_count()),
         };
     }
 
     pub fn enter_insert(&mut self) {
-        self.mode = VimMode::Insert;
-        self.pending = None;
+        self.vim_state.mode = VimMode::Insert;
+        self.vim_state.pending_command = None;
         self.count = None;
         self.visual_anchor = None;
     }
@@ -279,8 +281,9 @@ impl NoteDocument {
     pub fn enter_normal(&mut self) {
         self.flush_deferred_action();
         self.clear_yank_highlight();
-        self.mode = VimMode::Normal;
-        self.pending = None;
+        self.vim_state.mode = VimMode::Normal;
+        self.vim_state.pending_command = None;
+        self.vim_state.command_line.input.clear();
         self.count = None;
         self.visual_anchor = None;
         self.clamp_cursor_normal();
@@ -289,45 +292,49 @@ impl NoteDocument {
     pub fn handle_normal_input(&mut self, input: &str) -> bool {
         self.flush_deferred_action();
         self.clear_yank_highlight();
-        if self.mode == VimMode::Insert {
+        if self.vim_state.mode == VimMode::Insert {
             return false;
         }
 
-        if let Some(PendingCommand::Search { .. }) = &self.pending {
-            if let Some(PendingCommand::Search { reverse, query }) = self.pending.take() {
-                return self.handle_pending_search(reverse, query, input);
-            }
+        if let Some(PendingCommand::SubstituteConfirm { .. }) = &self.vim_state.pending_command {
+            return self.handle_substitute_confirm_input(input);
         }
 
-        if let Some(PendingCommand::ExCommand { .. }) = &self.pending {
-            if let Some(PendingCommand::ExCommand { command }) = self.pending.take() {
-                return self.handle_pending_ex_command(command, input);
-            }
+        let is_ignored = matches!(
+            input,
+            "shift"
+                | "control"
+                | "alt"
+                | "meta"
+                | "capslock"
+                | "tab"
+                | "insert"
+                | "delete"
+                | "home"
+                | "end"
+                | "pageup"
+                | "pagedown"
+                | "left"
+                | "right"
+                | "up"
+                | "down"
+        ) || (input.starts_with('f')
+            && input.len() > 1
+            && input[1..].chars().all(|c| c.is_ascii_digit()));
+
+        if is_ignored {
+            return false;
         }
 
-        if input == "ctrl+r" {
-            return self.redo();
-        }
-
-        if input == "ctrl+o" {
-            return self.jump_history(-1);
-        }
-
-        if input == "ctrl+i" {
-            return self.jump_history(1);
-        }
-
-        if input == "." {
-            return self.repeat_last_change();
+        if input == "escape" || input == "backspace" || input == "return"
+            || input.starts_with("ctrl+") || input.starts_with("alt+") || input.starts_with("shift+")
+        {
+            return self.handle_single_key_event(input);
         }
 
         let mut changed = false;
         for ch in input.chars() {
-            changed |= match self.mode {
-                VimMode::Visual | VimMode::VisualLine => self.handle_visual_char(ch),
-                VimMode::Normal => self.handle_normal_char(ch),
-                VimMode::Insert => false,
-            };
+            changed |= self.handle_single_key_event(&ch.to_string());
         }
         if changed && !self.replaying_change {
             if is_repeatable_change(input) {
@@ -337,10 +344,161 @@ impl NoteDocument {
         changed
     }
 
+    fn handle_substitute_confirm_input(&mut self, input: &str) -> bool {
+        if let Some(PendingCommand::SubstituteConfirm {
+            pattern,
+            replacement,
+            mut matches,
+            match_index,
+            flags,
+        }) = self.vim_state.pending_command.take() {
+            match input {
+                "y" => {
+                    let m = matches[match_index];
+                    let match_len = m.end - m.start;
+                    let chars: Vec<char> = self.content.chars().collect();
+                    let prefix: String = chars[..m.start].iter().collect();
+                    let suffix: String = chars[m.end..].iter().collect();
+                    self.content = format!("{}{}{}", prefix, replacement, suffix);
+                    self.dirty = true;
+
+                    let shift = replacement.chars().count() as isize - match_len as isize;
+                    for rem in matches.iter_mut().skip(match_index + 1) {
+                        rem.start = (rem.start as isize + shift) as usize;
+                        rem.end = (rem.end as isize + shift) as usize;
+                    }
+
+                    let next_index = match_index + 1;
+                    if next_index < matches.len() {
+                        let next_match = matches[next_index];
+                        self.yank_highlight = Some(next_match);
+                        self.set_cursor_from_flat(next_match.start);
+                        self.vim_state.pending_command = Some(PendingCommand::SubstituteConfirm {
+                            pattern,
+                            replacement,
+                            matches,
+                            match_index: next_index,
+                            flags,
+                        });
+                    } else {
+                        self.yank_highlight = None;
+                        self.search.pattern = pattern;
+                        self.refresh_search_matches();
+                    }
+                    true
+                }
+                "n" => {
+                    let next_index = match_index + 1;
+                    if next_index < matches.len() {
+                        let next_match = matches[next_index];
+                        self.yank_highlight = Some(next_match);
+                        self.set_cursor_from_flat(next_match.start);
+                        self.vim_state.pending_command = Some(PendingCommand::SubstituteConfirm {
+                            pattern,
+                            replacement,
+                            matches,
+                            match_index: next_index,
+                            flags,
+                        });
+                    } else {
+                        self.yank_highlight = None;
+                        self.search.pattern = pattern;
+                        self.refresh_search_matches();
+                    }
+                    false
+                }
+                "a" => {
+                    let mut content_chars: Vec<char> = self.content.chars().collect();
+                    for idx in (match_index..matches.len()).rev() {
+                        let m = matches[idx];
+                        let prefix: Vec<char> = content_chars[..m.start].to_vec();
+                        let suffix: Vec<char> = content_chars[m.end..].to_vec();
+                        let replacement_chars: Vec<char> = replacement.chars().collect();
+                        content_chars = [prefix, replacement_chars, suffix].concat();
+                    }
+                    self.content = content_chars.into_iter().collect();
+                    self.dirty = true;
+                    self.yank_highlight = None;
+                    self.search.pattern = pattern;
+                    self.refresh_search_matches();
+                    true
+                }
+                "l" => {
+                    let m = matches[match_index];
+                    let chars: Vec<char> = self.content.chars().collect();
+                    let prefix: String = chars[..m.start].iter().collect();
+                    let suffix: String = chars[m.end..].iter().collect();
+                    self.content = format!("{}{}{}", prefix, replacement, suffix);
+                    self.dirty = true;
+                    self.yank_highlight = None;
+                    self.search.pattern = pattern;
+                    self.refresh_search_matches();
+                    true
+                }
+                "q" | "escape" => {
+                    self.yank_highlight = None;
+                    self.search.pattern = pattern;
+                    self.refresh_search_matches();
+                    false
+                }
+                _ => {
+                    self.vim_state.pending_command = Some(PendingCommand::SubstituteConfirm {
+                        pattern,
+                        replacement,
+                        matches,
+                        match_index,
+                        flags,
+                    });
+                    false
+                }
+            }
+        } else {
+            false
+        }
+    }
+
+    fn handle_single_key_event(&mut self, key: &str) -> bool {
+        match self.vim_state.mode {
+            VimMode::Command => {
+                self.handle_command_mode_input(key)
+            }
+            VimMode::Search(dir) => {
+                self.handle_search_mode_input(dir, key)
+            }
+            VimMode::Visual | VimMode::VisualLine => {
+                let mut changed = false;
+                for ch in key.chars() {
+                    changed |= self.handle_visual_char(ch);
+                }
+                changed
+            }
+            VimMode::Normal => {
+                if key == "ctrl+r" {
+                    return self.redo();
+                }
+                if key == "ctrl+o" {
+                    return self.jump_history(-1);
+                }
+                if key == "ctrl+i" {
+                    return self.jump_history(1);
+                }
+                if key == "." {
+                    return self.repeat_last_change();
+                }
+                let mut changed = false;
+                for ch in key.chars() {
+                    changed |= self.handle_normal_char(ch);
+                }
+                changed
+            }
+            VimMode::Insert => false,
+        }
+    }
+
     pub fn handle_insert_text(&mut self, text: &str) {
         self.flush_deferred_action();
         self.clear_yank_highlight();
-        if self.mode != VimMode::Insert || text.is_empty() {
+        if self.vim_state.mode != VimMode::Insert || text.is_empty() {
             return;
         }
 
@@ -356,7 +514,7 @@ impl NoteDocument {
     pub fn insert_newline(&mut self) {
         self.flush_deferred_action();
         self.clear_yank_highlight();
-        if self.mode != VimMode::Insert {
+        if self.vim_state.mode != VimMode::Insert {
             return;
         }
 
@@ -373,7 +531,7 @@ impl NoteDocument {
     pub fn backspace(&mut self) {
         self.flush_deferred_action();
         self.clear_yank_highlight();
-        if self.mode != VimMode::Insert {
+        if self.vim_state.mode != VimMode::Insert {
             return;
         }
 
@@ -395,7 +553,7 @@ impl NoteDocument {
     pub fn delete_at_cursor(&mut self) {
         self.flush_deferred_action();
         self.clear_yank_highlight();
-        if self.mode != VimMode::Insert {
+        if self.vim_state.mode != VimMode::Insert {
             return;
         }
 
@@ -449,36 +607,37 @@ impl NoteDocument {
             return false;
         }
 
-        if let Some(pending) = self.pending.take() {
-            return match pending {
-                PendingCommand::Search { reverse, query } => {
-                    self.handle_pending_search(reverse, query, &ch.to_string())
+        if let Some(pending) = self.vim_state.pending_command.take() {
+            if pending == PendingCommand::ZPrefix {
+                if ch == 'Z' {
+                    self.pending_ex_action = Some(ExCommandAction::SaveAndQuit);
                 }
-                PendingCommand::ExCommand { command } => {
-                    self.handle_pending_ex_command(command, &ch.to_string())
-                }
-                other => self.handle_pending_normal_char(other, ch),
-            };
+                return false;
+            }
+            return self.handle_pending_normal_char(pending, ch);
         }
-
+ 
         let explicit_count = self.count.take();
         let count = explicit_count.unwrap_or(1).max(1);
         match ch {
             '"' => {
-                self.pending = Some(PendingCommand::RegisterPrefix);
+                self.vim_state.pending_command = Some(PendingCommand::RegisterPrefix);
                 false
             }
             ':' => {
-                self.pending = Some(PendingCommand::ExCommand {
-                    command: String::new(),
-                });
+                self.vim_state.mode = VimMode::Command;
+                self.vim_state.command_line.input.clear();
+                self.vim_state.pending_command = None;
                 false
             }
             '/' | '?' => {
-                self.pending = Some(PendingCommand::Search {
-                    reverse: ch == '?',
-                    query: String::new(),
-                });
+                self.vim_state.mode = VimMode::Search(if ch == '/' { SearchDirection::Forward } else { SearchDirection::Backward });
+                self.vim_state.command_line.input.clear();
+                self.vim_state.pending_command = None;
+                false
+            }
+            'Z' => {
+                self.vim_state.pending_command = Some(PendingCommand::ZPrefix);
                 false
             }
             'n' => self.repeat_search(false),
@@ -486,11 +645,11 @@ impl NoteDocument {
             '*' => self.search_word_under_cursor(false),
             '#' => self.search_word_under_cursor(true),
             'm' => {
-                self.pending = Some(PendingCommand::MarkSet);
+                self.vim_state.pending_command = Some(PendingCommand::MarkSet);
                 false
             }
             '\'' => {
-                self.pending = Some(PendingCommand::MarkJump);
+                self.vim_state.pending_command = Some(PendingCommand::MarkJump);
                 false
             }
             'v' => {
@@ -502,7 +661,7 @@ impl NoteDocument {
                 false
             }
             'g' if explicit_count.is_none() => {
-                self.pending = Some(PendingCommand::Goto {
+                self.vim_state.pending_command = Some(PendingCommand::Goto {
                     count: explicit_count,
                 });
                 false
@@ -587,48 +746,48 @@ impl NoteDocument {
                 false
             }
             'g' => {
-                self.pending = Some(PendingCommand::Goto {
+                self.vim_state.pending_command = Some(PendingCommand::Goto {
                     count: explicit_count,
                 });
                 false
             }
             'd' => {
-                self.pending = Some(PendingCommand::Operator {
+                self.vim_state.pending_command = Some(PendingCommand::Operator {
                     operator: Operator::Delete,
                     count,
                 });
                 false
             }
             'c' => {
-                self.pending = Some(PendingCommand::Operator {
+                self.vim_state.pending_command = Some(PendingCommand::Operator {
                     operator: Operator::Change,
                     count,
                 });
                 false
             }
             'y' => {
-                self.pending = Some(PendingCommand::Operator {
+                self.vim_state.pending_command = Some(PendingCommand::Operator {
                     operator: Operator::Yank,
                     count,
                 });
                 false
             }
             '>' => {
-                self.pending = Some(PendingCommand::Operator {
+                self.vim_state.pending_command = Some(PendingCommand::Operator {
                     operator: Operator::Indent,
                     count,
                 });
                 false
             }
             '<' => {
-                self.pending = Some(PendingCommand::Operator {
+                self.vim_state.pending_command = Some(PendingCommand::Operator {
                     operator: Operator::Outdent,
                     count,
                 });
                 false
             }
             '=' => {
-                self.pending = Some(PendingCommand::Operator {
+                self.vim_state.pending_command = Some(PendingCommand::Operator {
                     operator: Operator::Format,
                     count,
                 });
@@ -645,7 +804,7 @@ impl NoteDocument {
     fn handle_pending_normal_char(&mut self, pending: PendingCommand, ch: char) -> bool {
         match (pending, ch) {
             (PendingCommand::RegisterPrefix, register) => {
-                self.pending = None;
+                self.vim_state.pending_command = None;
                 self.selected_register = RegisterTarget::from_prefix(register);
                 false
             }
@@ -671,7 +830,7 @@ impl NoteDocument {
                 },
                 'd',
             ) => {
-                self.pending = None;
+                self.vim_state.pending_command = None;
                 let multiplier = self.count.take().unwrap_or(1).max(1);
                 self.apply_current_lines_operator(Operator::Delete, count.saturating_mul(multiplier))
             }
@@ -682,7 +841,7 @@ impl NoteDocument {
                 },
                 'c',
             ) => {
-                self.pending = None;
+                self.vim_state.pending_command = None;
                 let multiplier = self.count.take().unwrap_or(1).max(1);
                 self.apply_current_lines_operator(Operator::Change, count.saturating_mul(multiplier))
             }
@@ -693,7 +852,7 @@ impl NoteDocument {
                 },
                 'y',
             ) => {
-                self.pending = None;
+                self.vim_state.pending_command = None;
                 let multiplier = self.count.take().unwrap_or(1).max(1);
                 self.apply_current_lines_operator(Operator::Yank, count.saturating_mul(multiplier))
             }
@@ -704,7 +863,7 @@ impl NoteDocument {
                 },
                 '>',
             ) => {
-                self.pending = None;
+                self.vim_state.pending_command = None;
                 let multiplier = self.count.take().unwrap_or(1).max(1);
                 self.apply_current_lines_operator(Operator::Indent, count.saturating_mul(multiplier))
             }
@@ -715,7 +874,7 @@ impl NoteDocument {
                 },
                 '<',
             ) => {
-                self.pending = None;
+                self.vim_state.pending_command = None;
                 let multiplier = self.count.take().unwrap_or(1).max(1);
                 self.apply_current_lines_operator(Operator::Outdent, count.saturating_mul(multiplier))
             }
@@ -726,7 +885,7 @@ impl NoteDocument {
                 },
                 '=',
             ) => {
-                self.pending = None;
+                self.vim_state.pending_command = None;
                 let multiplier = self.count.take().unwrap_or(1).max(1);
                 self.apply_current_lines_operator(Operator::Format, count.saturating_mul(multiplier))
             }
@@ -737,12 +896,12 @@ impl NoteDocument {
                 },
                 'w',
             ) => {
-                self.pending = None;
+                self.vim_state.pending_command = None;
                 self.count = None;
                 self.apply_operator_motion(Operator::Change, count, 'w')
             }
             (PendingCommand::Operator { operator, count }, 'i') => {
-                self.pending = Some(PendingCommand::TextObject {
+                self.vim_state.pending_command = Some(PendingCommand::TextObject {
                     operator,
                     count,
                     around: false,
@@ -751,7 +910,7 @@ impl NoteDocument {
                 false
             }
             (PendingCommand::Operator { operator, count }, 'a') => {
-                self.pending = Some(PendingCommand::TextObject {
+                self.vim_state.pending_command = Some(PendingCommand::TextObject {
                     operator,
                     count,
                     around: true,
@@ -760,18 +919,18 @@ impl NoteDocument {
                 false
             }
             (PendingCommand::Operator { operator, count }, 'g') => {
-                self.pending = Some(PendingCommand::OperatorOrCaseGoto { operator, count });
+                self.vim_state.pending_command = Some(PendingCommand::OperatorOrCaseGoto { operator, count });
                 false
             }
             (PendingCommand::Goto { count }, 'u') => {
-                self.pending = Some(PendingCommand::CaseOperator {
+                self.vim_state.pending_command = Some(PendingCommand::CaseOperator {
                     upper: false,
                     count: count.unwrap_or(1),
                 });
                 false
             }
             (PendingCommand::Goto { count }, 'U') => {
-                self.pending = Some(PendingCommand::CaseOperator {
+                self.vim_state.pending_command = Some(PendingCommand::CaseOperator {
                     upper: true,
                     count: count.unwrap_or(1),
                 });
@@ -783,7 +942,7 @@ impl NoteDocument {
                 | '$' | 'G'),
             ) => {
                 let motion_count = self.count.take().unwrap_or(1).max(1);
-                self.pending = None;
+                self.vim_state.pending_command = None;
                 self.apply_operator_motion(operator, count.saturating_mul(motion_count), motion)
             }
             (
@@ -795,7 +954,7 @@ impl NoteDocument {
                 object @ ('w' | 'W'),
             ) => {
                 let motion_count = self.count.take().unwrap_or(1).max(1);
-                self.pending = None;
+                self.vim_state.pending_command = None;
                 self.apply_text_object_operator(
                     operator,
                     count.saturating_mul(motion_count),
@@ -814,7 +973,7 @@ impl NoteDocument {
                 object @ ('\'' | '"' | '(' | ')' | '[' | ']' | '{' | '}'),
             ) => {
                 let motion_count = self.count.take().unwrap_or(1).max(1);
-                self.pending = None;
+                self.vim_state.pending_command = None;
                 self.apply_text_object_operator(
                     operator,
                     count.saturating_mul(motion_count),
@@ -831,7 +990,7 @@ impl NoteDocument {
                 object @ ('p' | 'l'),
             ) => {
                 let motion_count = self.count.take().unwrap_or(1).max(1);
-                self.pending = None;
+                self.vim_state.pending_command = None;
                 let object = if object == 'p' {
                     TextObject::Paragraph
                 } else {
@@ -845,7 +1004,7 @@ impl NoteDocument {
                 )
             }
             (PendingCommand::Goto { count }, 'g') => {
-                self.pending = None;
+                self.vim_state.pending_command = None;
                 self.cursor_line = count
                     .or_else(|| self.count.take())
                     .unwrap_or(1)
@@ -854,12 +1013,12 @@ impl NoteDocument {
                 false
             }
             (PendingCommand::Goto { count: _ }, 'v') => {
-                self.pending = None;
+                self.vim_state.pending_command = None;
                 self.restore_last_visual_selection()
             }
             (PendingCommand::OperatorOrCaseGoto { operator, count: _ }, 'g') => {
                 let target_line = self.count.take().unwrap_or(1).saturating_sub(1);
-                self.pending = None;
+                self.vim_state.pending_command = None;
                 self.apply_operator_range(
                     operator,
                     self.linewise_range(self.cursor_line(), target_line),
@@ -871,7 +1030,7 @@ impl NoteDocument {
                 | '$' | 'G'),
             ) => {
                 let motion_count = self.count.take().unwrap_or(1).max(1);
-                self.pending = None;
+                self.vim_state.pending_command = None;
                 let Some(range) =
                     self.operator_motion_range(count.saturating_mul(motion_count), motion)
                 else {
@@ -880,7 +1039,7 @@ impl NoteDocument {
                 self.apply_case_range(range, upper)
             }
             _ => {
-                self.pending = None;
+                self.vim_state.pending_command = None;
                 self.count = None;
                 self.selected_register = None;
                 false
@@ -890,20 +1049,20 @@ impl NoteDocument {
 
     fn handle_visual_char(&mut self, ch: char) -> bool {
         match ch {
-            'v' if self.mode == VimMode::Visual => {
+            'v' if self.vim_state.mode == VimMode::Visual => {
                 self.enter_normal();
                 false
             }
-            'V' if self.mode == VimMode::VisualLine => {
+            'V' if self.vim_state.mode == VimMode::VisualLine => {
                 self.enter_normal();
                 false
             }
             'v' => {
-                self.mode = VimMode::Visual;
+                self.vim_state.mode = VimMode::Visual;
                 false
             }
             'V' => {
-                self.mode = VimMode::VisualLine;
+                self.vim_state.mode = VimMode::VisualLine;
                 false
             }
             'o' => {
@@ -972,7 +1131,7 @@ impl NoteDocument {
                 };
                 self.last_visual_selection = Some((range, self.visual_kind()));
                 self.visual_anchor = None;
-                self.mode = VimMode::Normal;
+                self.vim_state.mode = VimMode::Normal;
                 self.toggle_case_range(range)
             }
             'u' => {
@@ -981,7 +1140,7 @@ impl NoteDocument {
                 };
                 self.last_visual_selection = Some((range, self.visual_kind()));
                 self.visual_anchor = None;
-                self.mode = VimMode::Normal;
+                self.vim_state.mode = VimMode::Normal;
                 self.apply_case_range(range, false)
             }
             'U' => {
@@ -990,72 +1149,22 @@ impl NoteDocument {
                 };
                 self.last_visual_selection = Some((range, self.visual_kind()));
                 self.visual_anchor = None;
-                self.mode = VimMode::Normal;
+                self.vim_state.mode = VimMode::Normal;
                 self.apply_case_range(range, true)
             }
             ':' => {
-                self.pending = Some(PendingCommand::ExCommand {
-                    command: String::new(),
-                });
+                self.vim_state.mode = VimMode::Command;
+                self.vim_state.command_line.input.clear();
+                self.vim_state.pending_command = None;
                 false
             }
             '/' | '?' => {
-                self.pending = Some(PendingCommand::Search {
-                    reverse: ch == '?',
-                    query: String::new(),
-                });
+                self.vim_state.mode = VimMode::Search(if ch == '/' { SearchDirection::Forward } else { SearchDirection::Backward });
+                self.vim_state.command_line.input.clear();
+                self.vim_state.pending_command = None;
                 false
             }
             _ => false,
-        }
-    }
-
-    fn handle_pending_search(&mut self, reverse: bool, mut query: String, input: &str) -> bool {
-        match input {
-            "escape" => {
-                self.pending = None;
-                false
-            }
-            "backspace" => {
-                query.pop();
-                self.pending = Some(PendingCommand::Search { reverse, query });
-                false
-            }
-            "return" => {
-                if query.is_empty() {
-                    return false;
-                }
-                self.search.pattern = query;
-                self.search.reverse = reverse;
-                self.refresh_search_matches();
-                self.repeat_search(false)
-            }
-            text => {
-                query.push_str(text);
-                self.pending = Some(PendingCommand::Search { reverse, query });
-                false
-            }
-        }
-    }
-
-    fn handle_pending_ex_command(&mut self, mut command: String, input: &str) -> bool {
-        match input {
-            "escape" => false,
-            "backspace" => {
-                command.pop();
-                self.pending = Some(PendingCommand::ExCommand { command });
-                false
-            }
-            "return" => self.execute_ex_command(&command),
-            text => {
-                command.push_str(text);
-                if command == "noh" || command == "nohlsearch" {
-                    self.execute_ex_command(&command)
-                } else {
-                    self.pending = Some(PendingCommand::ExCommand { command });
-                    false
-                }
-            }
         }
     }
 
@@ -1123,7 +1232,7 @@ impl NoteDocument {
     fn snapshot_document(&self) -> DocumentSnapshot {
         DocumentSnapshot {
             content: self.content.clone(),
-            mode: self.mode,
+            mode: self.vim_state.mode,
             cursor_line: self.cursor_line,
             cursor_col: self.cursor_col,
         }
@@ -1131,19 +1240,20 @@ impl NoteDocument {
 
     fn restore_snapshot(&mut self, snapshot: DocumentSnapshot) {
         self.content = snapshot.content;
-        self.mode = snapshot.mode;
+        self.vim_state.mode = snapshot.mode;
         self.cursor_line = snapshot.cursor_line;
         self.cursor_col = snapshot.cursor_col;
-        self.pending = None;
+        self.vim_state.pending_command = None;
         self.count = None;
         self.selected_register = None;
         self.dirty = true;
-        match self.mode {
+        match self.vim_state.mode {
             VimMode::Normal | VimMode::Visual | VimMode::VisualLine => self.clamp_cursor_normal(),
             VimMode::Insert => {
                 self.cursor_line = self.cursor_line.min(self.line_count().saturating_sub(1));
                 self.cursor_col = self.cursor_col.min(self.current_line_char_count());
             }
+            _ => self.clamp_cursor_normal(),
         }
     }
 
@@ -1231,16 +1341,16 @@ impl NoteDocument {
 
     fn enter_visual(&mut self, kind: VisualKind) {
         self.visual_anchor = Some(self.flattened_cursor());
-        self.mode = match kind {
+        self.vim_state.mode = match kind {
             VisualKind::Character => VimMode::Visual,
             VisualKind::Line => VimMode::VisualLine,
         };
-        self.pending = None;
+        self.vim_state.pending_command = None;
         self.count = None;
     }
 
     fn visual_kind(&self) -> VisualKind {
-        match self.mode {
+        match self.vim_state.mode {
             VimMode::VisualLine => VisualKind::Line,
             _ => VisualKind::Character,
         }
@@ -1249,7 +1359,7 @@ impl NoteDocument {
     fn visual_selection_range(&self) -> Option<TextRange> {
         let anchor = self.visual_anchor?;
         let cursor = self.flattened_cursor();
-        match self.mode {
+        match self.vim_state.mode {
             VimMode::Visual => {
                 let start = anchor.min(cursor);
                 let end = anchor.max(cursor).saturating_add(1);
@@ -1270,7 +1380,7 @@ impl NoteDocument {
         };
         self.last_visual_selection = Some((range, self.visual_kind()));
         self.visual_anchor = None;
-        self.mode = VimMode::Normal;
+        self.vim_state.mode = VimMode::Normal;
         self.apply_operator_range(operator, range)
     }
 
@@ -1281,27 +1391,18 @@ impl NoteDocument {
         self.visual_anchor = Some(range.start);
         match kind {
             VisualKind::Character => {
-                self.mode = VimMode::Visual;
+                self.vim_state.mode = VimMode::Visual;
                 self.set_cursor_from_flat(range.end.saturating_sub(1));
             }
             VisualKind::Line => {
-                self.mode = VimMode::VisualLine;
+                self.vim_state.mode = VimMode::VisualLine;
                 self.set_cursor_from_flat(range.end.saturating_sub(1));
             }
         }
         true
     }
 
-    fn execute_ex_command(&mut self, command: &str) -> bool {
-        self.pending = None;
-        match command.trim() {
-            "noh" | "nohlsearch" => {
-                self.search.matches.clear();
-                false
-            }
-            _ => false,
-        }
-    }
+
 
     fn refresh_search_matches(&mut self) {
         self.search.matches.clear();
@@ -2151,7 +2252,7 @@ impl NoteDocument {
     }
 
     fn line_with_cursor_marker(&self, line: &str, line_index: usize) -> String {
-        if self.mode == VimMode::Normal {
+        if self.vim_state.mode == VimMode::Normal {
             return self.normal_mode_line_with_cursor(line, line_index);
         }
 
@@ -2172,6 +2273,290 @@ impl NoteDocument {
         }
         output
     }
+
+    fn handle_command_mode_input(&mut self, input: &str) -> bool {
+        match input {
+            "escape" => {
+                self.enter_normal();
+                false
+            }
+            "backspace" => {
+                if self.vim_state.command_line.input.is_empty() {
+                    self.enter_normal();
+                } else {
+                    self.vim_state.command_line.input.pop();
+                }
+                false
+            }
+            "return" => {
+                let cmd = self.vim_state.command_line.input.clone();
+                self.enter_normal();
+                self.execute_ex_command(&cmd)
+            }
+            other => {
+                let is_ignored = matches!(
+                    other,
+                    "shift"
+                        | "control"
+                        | "alt"
+                        | "meta"
+                        | "capslock"
+                        | "tab"
+                        | "insert"
+                        | "delete"
+                        | "home"
+                        | "end"
+                        | "pageup"
+                        | "pagedown"
+                        | "left"
+                        | "right"
+                        | "up"
+                        | "down"
+                ) || (other.starts_with('f')
+                    && other.len() > 1
+                    && other[1..].chars().all(|c| c.is_ascii_digit()));
+
+                if !is_ignored {
+                    self.vim_state.command_line.input.push_str(other);
+                    if self.vim_state.command_line.input == "noh" || self.vim_state.command_line.input == "nohlsearch" {
+                        let cmd = self.vim_state.command_line.input.clone();
+                        self.enter_normal();
+                        return self.execute_ex_command(&cmd);
+                    }
+                }
+                false
+            }
+        }
+    }
+
+    fn handle_search_mode_input(&mut self, dir: SearchDirection, input: &str) -> bool {
+        match input {
+            "escape" => {
+                self.enter_normal();
+                false
+            }
+            "backspace" => {
+                if self.vim_state.command_line.input.is_empty() {
+                    self.enter_normal();
+                } else {
+                    self.vim_state.command_line.input.pop();
+                }
+                false
+            }
+            "return" => {
+                let query = self.vim_state.command_line.input.clone();
+                self.enter_normal();
+                if !query.is_empty() {
+                    self.search.pattern = query;
+                    self.search.reverse = dir == SearchDirection::Backward;
+                    self.refresh_search_matches();
+                    self.repeat_search(false)
+                } else {
+                    false
+                }
+            }
+            other => {
+                let is_ignored = matches!(
+                    other,
+                    "shift"
+                        | "control"
+                        | "alt"
+                        | "meta"
+                        | "capslock"
+                        | "tab"
+                        | "insert"
+                        | "delete"
+                        | "home"
+                        | "end"
+                        | "pageup"
+                        | "pagedown"
+                        | "left"
+                        | "right"
+                        | "up"
+                        | "down"
+                ) || (other.starts_with('f')
+                    && other.len() > 1
+                    && other[1..].chars().all(|c| c.is_ascii_digit()));
+
+                if !is_ignored {
+                    self.vim_state.command_line.input.push_str(other);
+                }
+                false
+            }
+        }
+    }
+
+    fn find_substitution_matches(
+        &self,
+        start_line: usize,
+        end_line: usize,
+        pattern: &str,
+        flags: &str,
+    ) -> Vec<TextRange> {
+        let mut matches = Vec::new();
+        if pattern.is_empty() {
+            return matches;
+        }
+
+        let is_case_insensitive = flags.contains('i');
+        let is_global_on_line = flags.contains('g');
+
+        let lines = self.lines_vec();
+        let pat_len = pattern.chars().count();
+        let pat_chars: Vec<char> = if is_case_insensitive {
+            pattern.to_lowercase().chars().collect()
+        } else {
+            pattern.chars().collect()
+        };
+
+        let mut current_flat_offset = 0;
+        for line_idx in 0..lines.len() {
+            let line = &lines[line_idx];
+            let line_len = line.chars().count();
+
+            if line_idx >= start_line && line_idx <= end_line {
+                let line_chars: Vec<char> = if is_case_insensitive {
+                    line.to_lowercase().chars().collect()
+                } else {
+                    line.chars().collect()
+                };
+
+                let mut col = 0;
+                while col + pat_len <= line_len {
+                    if line_chars[col..col + pat_len] == pat_chars[..] {
+                        matches.push(TextRange::new(
+                            current_flat_offset + col,
+                            current_flat_offset + col + pat_len,
+                        ));
+                        if !is_global_on_line {
+                            break;
+                        }
+                        col += pat_len;
+                    } else {
+                        col += 1;
+                    }
+                }
+            }
+
+            current_flat_offset += line_len + 1; // +1 for the '\n'
+        }
+
+        matches
+    }
+
+    fn execute_substitution_direct(
+        &mut self,
+        start_line: usize,
+        end_line: usize,
+        pattern: &str,
+        replacement: &str,
+        flags: &str,
+    ) -> bool {
+        let matches = self.find_substitution_matches(start_line, end_line, pattern, flags);
+        if matches.is_empty() {
+            return false;
+        }
+
+        let mut content_chars: Vec<char> = self.content.chars().collect();
+        for m in matches.iter().rev() {
+            let prefix: Vec<char> = content_chars[..m.start].to_vec();
+            let suffix: Vec<char> = content_chars[m.end..].to_vec();
+            let replacement_chars: Vec<char> = replacement.chars().collect();
+            content_chars = [prefix, replacement_chars, suffix].concat();
+        }
+
+        self.content = content_chars.into_iter().collect();
+        self.dirty = true;
+
+        self.search.pattern = pattern.to_string();
+        self.refresh_search_matches();
+
+        true
+    }
+
+    fn execute_substitution(
+        &mut self,
+        start_line: usize,
+        end_line: usize,
+        pattern: &str,
+        replacement: &str,
+        flags: &str,
+    ) -> bool {
+        let matches = self.find_substitution_matches(start_line, end_line, pattern, flags);
+        if matches.is_empty() {
+            return false;
+        }
+
+        if flags.contains('c') {
+            let first_match = matches[0];
+            self.yank_highlight = Some(first_match);
+            self.set_cursor_from_flat(first_match.start);
+            self.vim_state.pending_command = Some(PendingCommand::SubstituteConfirm {
+                pattern: pattern.to_string(),
+                replacement: replacement.to_string(),
+                matches,
+                match_index: 0,
+                flags: flags.to_string(),
+            });
+            false
+        } else {
+            self.execute_substitution_direct(start_line, end_line, pattern, replacement, flags)
+        }
+    }
+
+    pub fn take_ex_action(&mut self) -> Option<ExCommandAction> {
+        self.pending_ex_action.take()
+    }
+
+    fn execute_ex_command(&mut self, command: &str) -> bool {
+        self.vim_state.pending_command = None;
+        match parse_ex_command(command) {
+            Ok(ExCommand::None) => false,
+            Ok(ExCommand::Save(path)) => {
+                self.pending_ex_action = Some(ExCommandAction::Save(path));
+                false
+            }
+            Ok(ExCommand::Quit { force }) => {
+                self.pending_ex_action = Some(ExCommandAction::Quit { force });
+                false
+            }
+            Ok(ExCommand::SaveAndQuit) => {
+                self.pending_ex_action = Some(ExCommandAction::SaveAndQuit);
+                false
+            }
+            Ok(ExCommand::Edit(path)) => {
+                self.pending_ex_action = Some(ExCommandAction::Edit(path));
+                false
+            }
+            Ok(ExCommand::EditNew) => {
+                self.pending_ex_action = Some(ExCommandAction::EditNew);
+                false
+            }
+            Ok(ExCommand::LineJump(line_num)) => {
+                let target = line_num.clamp(1, self.line_count());
+                self.cursor_line = target - 1;
+                self.cursor_col = 0;
+                self.clamp_cursor_normal();
+                false
+            }
+            Ok(ExCommand::Substitute { global_range, pattern, replacement, flags }) => {
+                let start_line = if global_range { 0 } else { self.cursor_line() };
+                let end_line = if global_range { self.line_count().saturating_sub(1) } else { self.cursor_line() };
+                self.execute_substitution(start_line, end_line, &pattern, &replacement, &flags)
+            }
+            Ok(ExCommand::NoHLSearch) => {
+                self.search.matches.clear();
+                false
+            }
+            Err(_) => false,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SearchDirection {
+    Forward,
+    Backward,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -2181,6 +2566,8 @@ pub enum VimMode {
     Insert,
     Visual,
     VisualLine,
+    Command,
+    Search(SearchDirection),
 }
 
 impl VimMode {
@@ -2190,20 +2577,34 @@ impl VimMode {
             Self::Insert => "INSERT",
             Self::Visual => "VISUAL",
             Self::VisualLine => "V-LINE",
+            Self::Command => "COMMAND",
+            Self::Search(SearchDirection::Forward) => "/",
+            Self::Search(SearchDirection::Backward) => "?",
         }
     }
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct CommandLineState {
+    pub input: String,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct VimState {
+    pub mode: VimMode,
+    pub pending_command: Option<PendingCommand>,
+    pub command_line: CommandLineState,
+}
+
+impl VimState {
+    pub fn pending_command_line(&self) -> String {
+        self.command_line.input.clone()
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
-enum PendingCommand {
+pub enum PendingCommand {
     RegisterPrefix,
-    Search {
-        reverse: bool,
-        query: String,
-    },
-    ExCommand {
-        command: String,
-    },
     MarkSet,
     MarkJump,
     Operator {
@@ -2226,16 +2627,133 @@ enum PendingCommand {
     Goto {
         count: Option<usize>,
     },
+    ZPrefix,
+    SubstituteConfirm {
+        pattern: String,
+        replacement: String,
+        matches: Vec<TextRange>,
+        match_index: usize,
+        flags: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Operator {
+pub enum Operator {
     Delete,
     Change,
     Yank,
     Indent,
     Outdent,
     Format,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ExCommandAction {
+    Save(Option<String>),
+    Quit { force: bool },
+    SaveAndQuit,
+    Edit(String),
+    EditNew,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum ExCommand {
+    None,
+    Save(Option<String>),
+    Quit { force: bool },
+    SaveAndQuit,
+    Edit(String),
+    EditNew,
+    LineJump(usize),
+    Substitute {
+        global_range: bool,
+        pattern: String,
+        replacement: String,
+        flags: String,
+    },
+    NoHLSearch,
+}
+
+fn split_unescaped(s: &str, delim: char) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let mut chars = s.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            if let Some(&next_ch) = chars.peek() {
+                if next_ch == delim {
+                    current.push('\\');
+                    current.push(delim);
+                    chars.next();
+                    continue;
+                }
+            }
+        }
+        if ch == delim {
+            parts.push(current);
+            current = String::new();
+        } else {
+            current.push(ch);
+        }
+    }
+    parts.push(current);
+    parts
+}
+
+fn parse_ex_command(input: &str) -> Result<ExCommand, String> {
+    let input = input.trim();
+    if input.is_empty() {
+        return Ok(ExCommand::None);
+    }
+
+    if let Ok(line_num) = input.parse::<usize>() {
+        return Ok(ExCommand::LineJump(line_num));
+    }
+
+    if input.starts_with('s') || input.starts_with("%s") {
+        let (global_range, rest) = if input.starts_with('%') {
+            (true, &input[2..])
+        } else {
+            (false, &input[1..])
+        };
+
+        if rest.starts_with('/') {
+            let parts = split_unescaped(rest, '/');
+            if parts.len() >= 3 {
+                let pattern = parts[1].replace("\\/", "/");
+                let replacement = parts[2].replace("\\/", "/");
+                let flags = if parts.len() > 3 { parts[3].clone() } else { String::new() };
+                return Ok(ExCommand::Substitute {
+                    global_range,
+                    pattern,
+                    replacement,
+                    flags,
+                });
+            }
+        }
+    }
+
+    if input == "w" {
+        return Ok(ExCommand::Save(None));
+    } else if input.starts_with("w ") {
+        let path = input[2..].trim().to_string();
+        return Ok(ExCommand::Save(Some(path)));
+    } else if input == "q" {
+        return Ok(ExCommand::Quit { force: false });
+    } else if input == "q!" {
+        return Ok(ExCommand::Quit { force: true });
+    } else if input == "wq" {
+        return Ok(ExCommand::SaveAndQuit);
+    } else if input.starts_with("e ") {
+        let path = input[2..].trim().to_string();
+        return Ok(ExCommand::Edit(path));
+    } else if input == "enew" {
+        return Ok(ExCommand::EditNew);
+    } else if input == "noh" || input == "nohlsearch" {
+        return Ok(ExCommand::NoHLSearch);
+    }
+
+    Err(format!("Not an editor command: {}", input))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2306,14 +2824,14 @@ struct DeferredAction {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct TextRange {
-    start: usize,
-    end: usize,
-    linewise: bool,
+pub struct TextRange {
+    pub start: usize,
+    pub end: usize,
+    pub linewise: bool,
 }
 
 impl TextRange {
-    fn new(start: usize, end: usize) -> Self {
+    pub fn new(start: usize, end: usize) -> Self {
         Self {
             start,
             end,
@@ -2321,7 +2839,7 @@ impl TextRange {
         }
     }
 
-    fn linewise(start: usize, end: usize) -> Self {
+    pub fn linewise(start: usize, end: usize) -> Self {
         Self {
             start,
             end,
@@ -2459,7 +2977,7 @@ fn is_word_char(ch: char, big_word: bool) -> bool {
 }
 
 fn is_repeatable_change(input: &str) -> bool {
-    input != "u" && input != "ctrl+r" && !input.starts_with('y')
+    input != "u" && input != "ctrl+r" && input != "." && !input.starts_with('y')
 }
 
 fn delimiter_pair(delimiter: char) -> Option<(char, char)> {
@@ -3239,5 +3757,100 @@ mod tests {
         doc.flush_deferred_action();
         assert_eq!(doc.content(), "line1");
         assert_eq!(doc.cursor_line(), 0);
+    }
+    #[test]
+    fn test_zz_command_maps_to_save_and_quit() {
+        let mut doc = NoteDocument::default();
+        doc.content = "line1\nline2".to_string();
+        doc.enter_normal();
+
+        // Z prefix sets pending_command to ZPrefix
+        doc.handle_normal_input("Z");
+        assert_eq!(doc.vim_state.pending_command, Some(PendingCommand::ZPrefix));
+
+        // Another Z maps to SaveAndQuit
+        doc.handle_normal_input("Z");
+        assert_eq!(doc.pending_ex_action, Some(ExCommandAction::SaveAndQuit));
+    }
+
+    #[test]
+    fn test_substitution_confirm_prompt() {
+        let mut doc = NoteDocument::default();
+        doc.content = "one two three two five".to_string();
+        doc.enter_normal();
+
+        doc.handle_normal_input(":%s/two/new/gc");
+        doc.handle_normal_input("return");
+
+        match &doc.vim_state.pending_command {
+            Some(PendingCommand::SubstituteConfirm { pattern, replacement, matches, match_index, .. }) => {
+                assert_eq!(pattern, "two");
+                assert_eq!(replacement, "new");
+                assert_eq!(matches.len(), 2);
+                assert_eq!(*match_index, 0);
+            }
+            _ => panic!("Expected SubstituteConfirm"),
+        }
+
+        doc.handle_normal_input("y");
+        assert_eq!(doc.content(), "one new three two five");
+
+        match &doc.vim_state.pending_command {
+            Some(PendingCommand::SubstituteConfirm { match_index, .. }) => {
+                assert_eq!(*match_index, 1);
+            }
+            _ => panic!("Expected SubstituteConfirm"),
+        }
+
+        doc.handle_normal_input("n");
+        assert_eq!(doc.content(), "one new three two five");
+        assert_eq!(doc.vim_state.mode, VimMode::Normal);
+        assert!(doc.vim_state.pending_command.is_none());
+        assert_eq!(doc.search_pattern(), Some("two"));
+    }
+
+    #[test]
+    fn test_substitution_confirm_all() {
+        let mut doc = NoteDocument::default();
+        doc.content = "one two three two five".to_string();
+        doc.enter_normal();
+
+        doc.handle_normal_input(":%s/two/new/gc");
+        doc.handle_normal_input("return");
+
+        doc.handle_normal_input("a");
+        assert_eq!(doc.content(), "one new three new five");
+        assert_eq!(doc.vim_state.mode, VimMode::Normal);
+        assert_eq!(doc.search_pattern(), Some("two"));
+    }
+
+    #[test]
+    fn test_substitution_confirm_last() {
+        let mut doc = NoteDocument::default();
+        doc.content = "one two three two five".to_string();
+        doc.enter_normal();
+
+        doc.handle_normal_input(":%s/two/new/gc");
+        doc.handle_normal_input("return");
+
+        doc.handle_normal_input("l");
+        assert_eq!(doc.content(), "one new three two five");
+        assert_eq!(doc.vim_state.mode, VimMode::Normal);
+        assert_eq!(doc.search_pattern(), Some("two"));
+    }
+
+    #[test]
+    fn test_substitution_confirm_quit() {
+        let mut doc = NoteDocument::default();
+        doc.content = "one two three two five".to_string();
+        doc.enter_normal();
+
+        doc.handle_normal_input(":%s/two/new/gc");
+        doc.handle_normal_input("return");
+
+        doc.handle_normal_input("q");
+        assert_eq!(doc.content(), "one two three two five");
+        assert_eq!(doc.vim_state.mode, VimMode::Normal);
+        assert_eq!(doc.search_pattern(), Some("two"));
     }
 }

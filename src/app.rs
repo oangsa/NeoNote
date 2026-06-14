@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::{
-    notes::{NoteDocument, RegisterSnapshot, VimMode},
+    notes::{NoteDocument, RegisterSnapshot, VimMode, PendingCommand, ExCommandAction},
     persistence::{AppConfig, AppDataPaths, RecentFiles, SessionState},
     platform::clipboard,
     theme::ThemeStore,
@@ -407,9 +407,7 @@ impl AppController {
         self.active_note_mut().clear_yank_highlight();
         match self.active_note().mode() {
             VimMode::Insert => self.handle_insert_editor_key(key),
-            VimMode::Normal | VimMode::Visual | VimMode::VisualLine => {
-                self.handle_normal_editor_key(key)
-            }
+            _ => self.handle_normal_editor_key(key),
         }
     }
 
@@ -491,11 +489,25 @@ impl AppController {
             editor_lines: editor_lines(note, self.mouse_selection),
             document_tabs: self.document_tabs(),
             status_text: if note.is_open() {
-                format!(
-                    " {}{}",
-                    note.title(),
-                    if note.dirty() { " [+]" } else { "" },
-                )
+                match note.vim_state.mode {
+                    VimMode::Command => {
+                        format!(":{}", note.vim_state.command_line.input)
+                    }
+                    VimMode::Search(_) => {
+                        note.vim_state.command_line.input.clone()
+                    }
+                    _ => {
+                        if let Some(PendingCommand::SubstituteConfirm { replacement, .. }) = &note.vim_state.pending_command {
+                            format!("replace with {} (y/n/a/q/l)?", replacement)
+                        } else {
+                            format!(
+                                " {}{}",
+                                note.title(),
+                                if note.dirty() { " [+]" } else { "" },
+                            )
+                        }
+                    }
+                }
             } else {
                 " [No Name]".to_string()
             },
@@ -563,6 +575,62 @@ impl AppController {
         }
 
         self.export_unnamed_register_if_changed(before_register);
+
+        if let Some(action) = self.active_note_mut().take_ex_action() {
+            self.handle_ex_action(action);
+        }
+    }
+
+    fn close_active_document(&mut self, force: bool) -> bool {
+        if self.active_note().dirty() && !force {
+            self.last_message = "No write since last change (add ! to override)".to_string();
+            return false;
+        }
+
+        if self.documents.len() <= 1 {
+            slint::quit_event_loop().ok();
+            true
+        } else {
+            self.documents.remove(self.active_document);
+            self.active_document = self.active_document.min(self.documents.len() - 1);
+            self.last_message = "Closed note.".to_string();
+            self.mouse_selection = None;
+            true
+        }
+    }
+
+    fn handle_ex_action(&mut self, action: ExCommandAction) {
+        match action {
+            ExCommandAction::Save(Some(path_str)) => {
+                let path = PathBuf::from(path_str);
+                match self.active_note_mut().save_as(&path) {
+                    Ok(()) => {
+                        self.remember_recent(path);
+                        self.last_message = "Saved.".to_string();
+                    }
+                    Err(error) => self.last_message = format!("Could not save note: {error}"),
+                }
+            }
+            ExCommandAction::Save(None) => {
+                self.save();
+            }
+            ExCommandAction::Quit { force } => {
+                self.close_active_document(force);
+            }
+            ExCommandAction::SaveAndQuit => {
+                self.save();
+                if !self.active_note().dirty() {
+                    self.close_active_document(false);
+                }
+            }
+            ExCommandAction::Edit(path_str) => {
+                let path = PathBuf::from(path_str);
+                self.open_path(path);
+            }
+            ExCommandAction::EditNew => {
+                self.new_file();
+            }
+        }
     }
 
     fn handle_insert_editor_key(&mut self, key: &str) {
@@ -641,7 +709,7 @@ impl AppController {
             "NORMAL" => theme.vim_modes.normal.clone(),
             "INSERT" => theme.vim_modes.insert.clone(),
             "VISUAL" | "V-LINE" => theme.vim_modes.visual.clone(),
-            "COMMAND" => theme.vim_modes.command.clone(),
+            "COMMAND" | "/" | "?" => theme.vim_modes.command.clone(),
             "REPLACE" => theme.vim_modes.replace.clone(),
             _ => theme.colors.accent_primary.clone(),
         }
