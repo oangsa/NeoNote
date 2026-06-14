@@ -66,6 +66,7 @@ pub struct NoteDocument {
     command_history: Vec<String>,
     search_history: Vec<String>,
     last_substitute: Option<LastSubstitute>,
+    macro_depth: usize,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -468,6 +469,80 @@ impl NoteDocument {
         self.vim_state.command_line.is_search = is_search;
         self.vim_state.pending_command = None;
         self.count = None;
+    }
+
+    pub fn handle_editor_key(&mut self, key: crate::vim::key::EditorKey) -> bool {
+        self.flush_deferred_action();
+        self.clear_yank_highlight();
+        
+        let is_insert = self.vim_state.mode == VimMode::Insert || self.vim_state.mode == VimMode::Replace;
+        
+        if let Some(reg) = self.vim_state.recording_macro {
+            if self.macro_depth == 0 {
+                let is_stop_key = key == crate::vim::key::EditorKey::Input("q".to_string()) 
+                    && !is_insert 
+                    && self.vim_state.pending_command.is_none();
+                if !is_stop_key {
+                    self.vim_state.macros.entry(reg).or_default().push(key.clone());
+                }
+            }
+        }
+        
+        if is_insert {
+            match key {
+                crate::vim::key::EditorKey::EnterNormal => {
+                    self.enter_normal();
+                    true
+                }
+                crate::vim::key::EditorKey::Cancel => {
+                    self.cancel_insert();
+                    true
+                }
+                crate::vim::key::EditorKey::RegisterPaste => {
+                    self.begin_insert_register_paste();
+                    true
+                }
+                crate::vim::key::EditorKey::Newline => {
+                    self.insert_newline();
+                    true
+                }
+                crate::vim::key::EditorKey::Backspace => {
+                    self.backspace();
+                    true
+                }
+                crate::vim::key::EditorKey::Delete => {
+                    self.delete_at_cursor();
+                    true
+                }
+                crate::vim::key::EditorKey::DeleteWord => {
+                    self.delete_word_insert();
+                    true
+                }
+                crate::vim::key::EditorKey::DeleteLine => {
+                    self.delete_line_insert();
+                    true
+                }
+                crate::vim::key::EditorKey::Input(text) => {
+                    if self.resolve_insert_register_paste(&text) {
+                        return true;
+                    }
+                    self.handle_insert_text(&text);
+                    true
+                }
+                crate::vim::key::EditorKey::Ignore => false,
+            }
+        } else {
+            match key {
+                crate::vim::key::EditorKey::EnterNormal => {
+                    self.enter_normal();
+                    true
+                }
+                crate::vim::key::EditorKey::Input(text) => {
+                    self.handle_normal_input(&text)
+                }
+                _ => false,
+            }
+        }
     }
 
     pub fn handle_normal_input(&mut self, input: &str) -> bool {
@@ -1195,7 +1270,11 @@ impl NoteDocument {
             'C' => self.apply_operator_motion(Operator::Change, count, '$'),
             'J' => self.join_lines(count, true),
             'q' => {
-                self.vim_state.pending_command = Some(PendingCommand::MacroRecordPrefix);
+                if self.vim_state.recording_macro.is_some() {
+                    self.stop_macro_recording();
+                } else {
+                    self.vim_state.pending_command = Some(PendingCommand::MacroRecordPrefix);
+                }
                 false
             }
             '@' => {
@@ -1253,6 +1332,18 @@ impl NoteDocument {
             }
             (
                 PendingCommand::Operator {
+                    operator: Operator::Delete,
+                    count: _,
+                },
+                's',
+            ) => {
+                self.vim_state.pending_command = Some(PendingCommand::SurroundWaitDelete {
+                    buffer: String::new(),
+                });
+                false
+            }
+            (
+                PendingCommand::Operator {
                     operator: Operator::Change,
                     count,
                 },
@@ -1264,6 +1355,18 @@ impl NoteDocument {
             }
             (
                 PendingCommand::Operator {
+                    operator: Operator::Change,
+                    count: _,
+                },
+                's',
+            ) => {
+                self.vim_state.pending_command = Some(PendingCommand::SurroundWaitChange {
+                    buffer: String::new(),
+                });
+                false
+            }
+            (
+                PendingCommand::Operator {
                     operator: Operator::Yank,
                     count,
                 },
@@ -1272,6 +1375,19 @@ impl NoteDocument {
                 self.vim_state.pending_command = None;
                 let multiplier = self.count.take().unwrap_or(1).max(1);
                 self.apply_current_lines_operator(Operator::Yank, count.saturating_mul(multiplier))
+            }
+            (
+                PendingCommand::Operator {
+                    operator: Operator::Yank,
+                    count,
+                },
+                's',
+            ) => {
+                self.vim_state.pending_command = Some(PendingCommand::Operator {
+                    operator: Operator::SurroundAdd,
+                    count,
+                });
+                false
             }
             (
                 PendingCommand::Operator {
@@ -1391,6 +1507,102 @@ impl NoteDocument {
                 self.vim_state.pending_command = None;
                 self.execute_operator_find_char(operator, operator_count, find_ch, is_t, is_forward, find_count)
             }
+            (PendingCommand::SurroundWaitAdd { range, mut buffer }, ch) => {
+                buffer.push(ch);
+                match crate::vim::surround::SurroundSpec::parse(&buffer) {
+                    crate::vim::surround::ParseResult::Complete(spec) => {
+                        self.vim_state.pending_command = None;
+                        self.apply_surround_add(range, spec);
+                        true
+                    }
+                    crate::vim::surround::ParseResult::Incomplete => {
+                        self.vim_state.pending_command = Some(PendingCommand::SurroundWaitAdd { range, buffer });
+                        false
+                    }
+                    crate::vim::surround::ParseResult::Invalid => {
+                        self.vim_state.pending_command = None;
+                        false
+                    }
+                }
+            }
+            (PendingCommand::SurroundWaitDelete { mut buffer }, ch) => {
+                buffer.push(ch);
+                match crate::vim::surround::SurroundSpec::parse(&buffer) {
+                    crate::vim::surround::ParseResult::Complete(spec) => {
+                        self.vim_state.pending_command = None;
+                        self.apply_surround_delete(spec);
+                        true
+                    }
+                    crate::vim::surround::ParseResult::Incomplete => {
+                        self.vim_state.pending_command = Some(PendingCommand::SurroundWaitDelete { buffer });
+                        false
+                    }
+                    crate::vim::surround::ParseResult::Invalid => {
+                        self.vim_state.pending_command = None;
+                        false
+                    }
+                }
+            }
+            (PendingCommand::SurroundWaitChange { mut buffer }, ch) => {
+                buffer.push(ch);
+                
+                // For change, we need TWO specs: the old one to delete, and the new one to add!
+                // Let's implement a simple parser for two specs, or just wait.
+                // Wait! The user types `cs"'` which means `buffer` will contain `"'`.
+                // We could parse it by attempting to parse a prefix, then if complete, parse the rest!
+                // To keep it simple, `cs` is always two single characters, or `cst<span>` (char then tag).
+                // Let's do this: we first parse the `old` spec. If incomplete, we wait.
+                // If complete, we check if there's more text. If there is, we parse the `new` spec.
+                // If the new spec is complete, we apply it. If incomplete, we wait.
+                
+                let mut parsed_old = None;
+                let mut old_len = 0;
+                
+                // Find the boundary
+                for i in 1..=buffer.len() {
+                    let old_part = &buffer[0..i];
+                    match crate::vim::surround::SurroundSpec::parse(old_part) {
+                        crate::vim::surround::ParseResult::Complete(spec) => {
+                            parsed_old = Some(spec);
+                            old_len = i;
+                            break;
+                        }
+                        crate::vim::surround::ParseResult::Invalid => break,
+                        crate::vim::surround::ParseResult::Incomplete => continue,
+                    }
+                }
+                
+                if let Some(old_spec) = parsed_old {
+                    let new_part = &buffer[old_len..];
+                    match crate::vim::surround::SurroundSpec::parse(new_part) {
+                        crate::vim::surround::ParseResult::Complete(new_spec) => {
+                            self.vim_state.pending_command = None;
+                            self.apply_surround_change(old_spec, new_spec);
+                            return true;
+                        }
+                        crate::vim::surround::ParseResult::Incomplete => {
+                            self.vim_state.pending_command = Some(PendingCommand::SurroundWaitChange { buffer });
+                            return false;
+                        }
+                        crate::vim::surround::ParseResult::Invalid => {
+                            self.vim_state.pending_command = None;
+                            return false;
+                        }
+                    }
+                } else {
+                    // Still parsing old spec
+                    match crate::vim::surround::SurroundSpec::parse(&buffer) {
+                        crate::vim::surround::ParseResult::Incomplete => {
+                            self.vim_state.pending_command = Some(PendingCommand::SurroundWaitChange { buffer });
+                            return false;
+                        }
+                        _ => {
+                            self.vim_state.pending_command = None;
+                            return false;
+                        }
+                    }
+                }
+            }
             (
                 PendingCommand::TextObject {
                     operator,
@@ -1445,6 +1657,49 @@ impl NoteDocument {
                 self.apply_text_object_operator(
                     operator,
                     count.saturating_mul(motion_count),
+                    around,
+                    object,
+                )
+            }
+            (
+                PendingCommand::VisualTextObject { around },
+                object @ ('w' | 'W'),
+            ) => {
+                let motion_count = self.count.take().unwrap_or(1).max(1);
+                self.vim_state.pending_command = None;
+                self.apply_visual_text_object(
+                    motion_count,
+                    around,
+                    TextObject::Word {
+                        big_word: object == 'W',
+                    },
+                )
+            }
+            (
+                PendingCommand::VisualTextObject { around },
+                object @ ('\'' | '"' | '(' | ')' | '[' | ']' | '{' | '}'),
+            ) => {
+                let motion_count = self.count.take().unwrap_or(1).max(1);
+                self.vim_state.pending_command = None;
+                self.apply_visual_text_object(
+                    motion_count,
+                    around,
+                    TextObject::Delimited(object),
+                )
+            }
+            (
+                PendingCommand::VisualTextObject { around },
+                object @ ('p' | 'l'),
+            ) => {
+                let motion_count = self.count.take().unwrap_or(1).max(1);
+                self.vim_state.pending_command = None;
+                let object = if object == 'p' {
+                    TextObject::Paragraph
+                } else {
+                    TextObject::Line
+                };
+                self.apply_visual_text_object(
+                    motion_count,
                     around,
                     object,
                 )
@@ -1573,6 +1828,11 @@ impl NoteDocument {
             );
             return false;
         }
+
+        if let Some(pending) = self.vim_state.pending_command.take() {
+            return self.handle_pending_normal_char(pending, ch);
+        }
+
         let count = self.count.take().unwrap_or(1).max(1);
         match ch {
             'v' if self.vim_state.mode == VimMode::Visual => {
@@ -1595,6 +1855,14 @@ impl NoteDocument {
             }
             'V' => {
                 self.vim_state.mode = VimMode::VisualLine;
+                false
+            }
+            'i' => {
+                self.vim_state.pending_command = Some(PendingCommand::VisualTextObject { around: false });
+                false
+            }
+            'a' => {
+                self.vim_state.pending_command = Some(PendingCommand::VisualTextObject { around: true });
                 false
             }
             'o' => {
@@ -1721,10 +1989,21 @@ impl NoteDocument {
             }
             'd' | 'x' => self.apply_visual_operator(Operator::Delete),
             'c' => self.apply_visual_operator(Operator::Change),
+            's' | 'S' => self.apply_visual_operator(Operator::SurroundAdd),
             'y' => self.apply_visual_operator(Operator::Yank),
             '>' => self.apply_visual_operator(Operator::Indent),
             '<' => self.apply_visual_operator(Operator::Outdent),
             '=' => self.apply_visual_operator(Operator::Format),
+            'J' => {
+                if let Some(range) = self.visual_selection_range() {
+                    self.enter_normal();
+                    let count = self.line_for_flat(range.end.saturating_sub(1)) - self.line_for_flat(range.start);
+                    self.set_cursor_from_flat(range.start);
+                    self.join_lines(count, true)
+                } else {
+                    false
+                }
+            }
             '~' => {
                 let Some(range) = self.visual_selection_range() else {
                     return false;
@@ -2494,6 +2773,46 @@ impl NoteDocument {
         self.apply_operator_range(operator, range)
     }
 
+    fn apply_visual_text_object(
+        &mut self,
+        count: usize,
+        around: bool,
+        object: TextObject,
+    ) -> bool {
+        let range = match object {
+            TextObject::Word { big_word } => {
+                self.word_text_object_range(count.max(1), around, big_word)
+            }
+            TextObject::Delimited(delimiter) => self.delimited_text_object_range(delimiter, around),
+            TextObject::Paragraph => self.paragraph_text_object_range(count.max(1), around),
+            TextObject::Line => self.line_text_object_range(count.max(1)),
+        };
+        let Some(range) = range else {
+            return false;
+        };
+
+        if range.linewise && self.vim_state.mode == VimMode::Visual {
+            self.vim_state.mode = VimMode::VisualLine;
+        } else if !range.linewise && self.vim_state.mode == VimMode::VisualLine {
+            self.vim_state.mode = VimMode::Visual;
+        }
+
+        let current_anchor = self.visual_anchor_flat.unwrap_or(range.start);
+        let cursor_flat = self.flattened_cursor();
+        if current_anchor == cursor_flat {
+            self.visual_anchor_flat = Some(range.start);
+            self.set_cursor_from_flat(range.end.saturating_sub(1));
+        } else if cursor_flat >= current_anchor {
+            self.visual_anchor_flat = Some(current_anchor.min(range.start));
+            self.set_cursor_from_flat(range.end.saturating_sub(1).max(cursor_flat));
+        } else {
+            self.visual_anchor_flat = Some(current_anchor.max(range.end.saturating_sub(1)));
+            self.set_cursor_from_flat(range.start.min(cursor_flat));
+        }
+
+        true
+    }
+
     fn apply_operator_range(&mut self, operator: Operator, range: TextRange) -> bool {
         let range = range.normalized().clamped(self.content_char_len());
         if !range.linewise && range.start >= range.end && !range.blockwise {
@@ -2647,6 +2966,13 @@ impl NoteDocument {
             return self.apply_blockwise_operator(operator, range);
         }
         match operator {
+            Operator::SurroundAdd => {
+                self.vim_state.pending_command = Some(PendingCommand::SurroundWaitAdd {
+                    range,
+                    buffer: String::new(),
+                });
+                false
+            }
             Operator::Delete => {
                 let text = self.text_for_range(range);
                 let target = self.take_register_target();
@@ -2707,6 +3033,152 @@ impl NoteDocument {
             Operator::Outdent => self.indent_range(range, -1),
             Operator::Format => self.format_range(range),
             Operator::BlockInsert | Operator::BlockAppend => false,
+        }
+    }
+
+    fn apply_surround_add(&mut self, range: TextRange, spec: crate::vim::surround::SurroundSpec) {
+        let (left, right) = spec.strings();
+        let mut actual_range = range;
+        if !actual_range.linewise && actual_range.end == self.content_char_len() && actual_range.start > 0 {
+            if self.content.chars().nth(actual_range.start - 1) == Some('\n') {
+                actual_range.start -= 1;
+            }
+        }
+        
+        self.record_undo();
+        self.push_change_location();
+        
+        // Insert right first so it doesn't mess up the start index
+        insert_str_at_char(&mut self.content, actual_range.end, &right);
+        insert_str_at_char(&mut self.content, actual_range.start, &left);
+        
+        self.dirty = true;
+        self.set_cursor_from_flat(actual_range.start);
+        self.clamp_cursor_normal();
+    }
+
+    fn find_surround_target(&self, spec: &crate::vim::surround::SurroundSpec) -> Option<(TextRange, TextRange)> {
+        match spec {
+            crate::vim::surround::SurroundSpec::Pair(open, close) => {
+                let chars: Vec<char> = self.content.chars().collect();
+                if chars.is_empty() {
+                    return None;
+                }
+                let cursor = self.flattened_cursor().min(chars.len().saturating_sub(1));
+                
+                // Find nearest open backwards
+                let mut start = None;
+                let mut depth = 0;
+                for i in (0..=cursor).rev() {
+                    if chars[i] == *close && open != close {
+                        depth += 1;
+                    } else if chars[i] == *open {
+                        if depth == 0 {
+                            start = Some(i);
+                            break;
+                        } else {
+                            depth -= 1;
+                        }
+                    }
+                }
+                
+                // Find nearest close forwards
+                let mut end = None;
+                depth = 0;
+                for i in cursor..chars.len() {
+                    if chars[i] == *open && open != close {
+                        depth += 1;
+                    } else if chars[i] == *close {
+                        if depth == 0 {
+                            end = Some(i);
+                            break;
+                        } else {
+                            depth -= 1;
+                        }
+                    }
+                }
+                
+                let start = start?;
+                let end = end?;
+                if start >= end {
+                    return None;
+                }
+                Some((TextRange::new(start, start + 1), TextRange::new(end, end + 1)))
+            }
+            crate::vim::surround::SurroundSpec::Tag { .. } | crate::vim::surround::SurroundSpec::AnyTag => {
+                let chars: Vec<char> = self.content.chars().collect();
+                if chars.is_empty() {
+                    return None;
+                }
+                let cursor = self.flattened_cursor().min(chars.len().saturating_sub(1));
+                
+                // Find backwards for `<`
+                let mut start = None;
+                for i in (0..=cursor).rev() {
+                    if chars[i] == '<' {
+                        // Check if it's an opening tag
+                        if i + 1 < chars.len() && chars[i + 1] != '/' {
+                            start = Some(i);
+                            break;
+                        }
+                    }
+                }
+                
+                let mut end = None;
+                for i in cursor..chars.len() {
+                    if chars[i] == '<' {
+                        // Check if it's a closing tag
+                        if i + 1 < chars.len() && chars[i + 1] == '/' {
+                            end = Some(i);
+                            break;
+                        }
+                    }
+                }
+                
+                let start = start?;
+                let end = end?;
+                
+                // Find the > for start
+                let start_end = (start..chars.len()).find(|&i| chars[i] == '>')?;
+                // Find the > for end
+                let end_end = (end..chars.len()).find(|&i| chars[i] == '>')?;
+                
+                Some((TextRange::new(start, start_end + 1), TextRange::new(end, end_end + 1)))
+            }
+        }
+    }
+
+    fn apply_surround_delete(&mut self, spec: crate::vim::surround::SurroundSpec) {
+        if let Some((left, right)) = self.find_surround_target(&spec) {
+            self.record_undo();
+            self.push_change_location();
+            
+            self.delete_flat_range(right.clone());
+            self.delete_flat_range(left.clone());
+            
+            self.dirty = true;
+            self.set_cursor_from_flat(left.start);
+            self.clamp_cursor_normal();
+        }
+    }
+
+    fn apply_surround_change(&mut self, old_spec: crate::vim::surround::SurroundSpec, new_spec: crate::vim::surround::SurroundSpec) {
+        if let Some((left, right)) = self.find_surround_target(&old_spec) {
+            let (new_left, new_right) = new_spec.strings();
+            self.record_undo();
+            self.push_change_location();
+            
+            // Right side
+            self.delete_flat_range(right.clone());
+            insert_str_at_char(&mut self.content, right.start, &new_right);
+            
+            // Left side
+            self.delete_flat_range(left.clone());
+            insert_str_at_char(&mut self.content, left.start, &new_left);
+            
+            self.dirty = true;
+            self.set_cursor_from_flat(left.start);
+            self.clamp_cursor_normal();
         }
     }
 
@@ -4309,16 +4781,38 @@ impl NoteDocument {
             .join(" | ")
     }
 
-    fn start_macro_recording(&mut self, _register: char) {}
+    fn start_macro_recording(&mut self, register: char) {
+        self.vim_state.recording_macro = Some(register);
+        self.vim_state.macros.entry(register).or_default().clear();
+    }
 
-    fn stop_macro_recording(&mut self) {}
+    fn stop_macro_recording(&mut self) {
+        self.vim_state.recording_macro = None;
+    }
 
-    fn play_macro(&mut self, _register: char, _count: usize) -> bool {
-        false
+    fn play_macro(&mut self, register: char, count: usize) -> bool {
+        if self.macro_depth > 100 {
+            return false; // prevent infinite recursion
+        }
+        self.macro_depth += 1;
+        self.vim_state.last_played_macro = Some(register);
+        
+        let mut changed = false;
+        let keys = self.vim_state.macros.get(&register).cloned().unwrap_or_default();
+        let actual_count = count.max(1);
+        
+        for _ in 0..actual_count {
+            for key in &keys {
+                changed |= self.handle_editor_key(key.clone());
+            }
+        }
+        
+        self.macro_depth -= 1;
+        changed
     }
 
     fn last_played_macro(&self) -> Option<char> {
-        None
+        self.vim_state.last_played_macro
     }
 }
 
@@ -4375,6 +4869,9 @@ pub struct VimState {
     pub insert_start_pos: Option<usize>,
     pub macro_insert_start_index: Option<usize>,
     pub current_macro: Vec<String>,
+    pub macros: std::collections::HashMap<char, Vec<crate::vim::key::EditorKey>>,
+    pub recording_macro: Option<char>,
+    pub last_played_macro: Option<char>,
     pub last_find: Option<(char, bool, bool)>, // (char, is_f_or_t, is_forward)
     pub insert_pending: Option<InsertPending>,
 }
@@ -4405,6 +4902,9 @@ pub enum PendingCommand {
     TextObject {
         operator: Operator,
         count: usize,
+        around: bool,
+    },
+    VisualTextObject {
         around: bool,
     },
     OperatorOrCaseGoto {
@@ -4446,6 +4946,16 @@ pub enum PendingCommand {
     MacroReplayPrefix {
         count: usize,
     },
+    SurroundWaitAdd {
+        range: TextRange,
+        buffer: String,
+    },
+    SurroundWaitDelete {
+        buffer: String,
+    },
+    SurroundWaitChange {
+        buffer: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -4458,6 +4968,7 @@ pub enum Operator {
     Format,
     BlockInsert,
     BlockAppend,
+    SurroundAdd,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -4981,7 +5492,7 @@ pub struct RegisterSnapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vim::key::{normalize_insert_key, InsertKey};
+    use crate::vim::key::EditorKey;
 
     fn mk_doc(text: &str) -> NoteDocument {
         let mut doc = NoteDocument::default();
@@ -4992,29 +5503,19 @@ mod tests {
     }
 
     fn feed(doc: &mut NoteDocument, keys: &[&str]) {
-        for key in keys {
-            match doc.mode() {
+        for &key in keys {
+            let editor_key = match doc.mode() {
                 VimMode::Insert | VimMode::Replace => {
-                    if doc.resolve_insert_register_paste(key) {
-                        continue;
-                    }
-                    match normalize_insert_key(key) {
-                        InsertKey::EnterNormal => doc.enter_normal(),
-                        InsertKey::Cancel => doc.cancel_insert(),
-                        InsertKey::RegisterPaste => doc.begin_insert_register_paste(),
-                        InsertKey::DeleteWord => doc.delete_word_insert(),
-                        InsertKey::DeleteLine => doc.delete_line_insert(),
-                        InsertKey::Newline => doc.insert_newline(),
-                        InsertKey::Backspace => doc.backspace(),
-                        InsertKey::Delete => doc.delete_at_cursor(),
-                        InsertKey::Text(text) => doc.handle_insert_text(text),
-                        InsertKey::Ignore => {}
-                    }
+                    crate::vim::key::normalize_insert_key(key)
+                }
+                VimMode::Command | VimMode::Search(_) => {
+                    crate::vim::key::normalize_command_key(key)
                 }
                 _ => {
-                    doc.handle_normal_input(key);
+                    crate::vim::key::normalize_normal_key(key)
                 }
-            }
+            };
+            doc.handle_editor_key(editor_key);
         }
     }
 
@@ -6044,5 +6545,80 @@ mod tests {
         assert_eq!(doc.named_register_text('a').unwrap_or(""), "one\ntwo\n");
         feed(&mut doc, &[":", "r", "e", "g", "return"]);
         assert!(matches!(doc.take_ex_action(), Some(ExCommandAction::ShowMessage(message)) if message.contains("a")));
+    }
+
+    #[test]
+    fn test_macro_recording() {
+        let mut doc = NoteDocument::default();
+        doc.content = "hello\n".to_string();
+        doc.open = true;
+        
+        // Start recording macro 'a'
+        feed(&mut doc, &["q", "a", "A", " ", "w", "o", "r", "l", "d", "escape", "q"]);
+        
+        assert_eq!(doc.content, "hello world\n");
+        
+        // Add a line "greeting"
+        feed(&mut doc, &["o", "g", "r", "e", "e", "t", "i", "n", "g", "escape"]);
+        
+        assert_eq!(doc.content, "hello world\ngreeting\n");
+        
+        // Move to start of second line and play macro
+        feed(&mut doc, &["0", "@", "a"]);
+        
+        assert_eq!(doc.content, "hello world\ngreeting world\n");
+        
+        // Add third line and test @@
+        feed(&mut doc, &["o", "h", "i", "escape", "0", "@", "@"]);
+        
+        assert_eq!(doc.content, "hello world\ngreeting world\nhi world\n");
+    }
+
+    #[test]
+    fn test_surround_add_quotes() {
+        let mut doc = NoteDocument::default();
+        doc.content = "hello world\n".to_string();
+        doc.open = true;
+        
+        // Move to 'world', apply ysiw"
+        feed(&mut doc, &["w", "y", "s", "i", "w", "\""]);
+        
+        assert_eq!(doc.content, "hello \"world\"\n");
+    }
+
+    #[test]
+    fn test_surround_delete_tag() {
+        let mut doc = NoteDocument::default();
+        doc.content = "hello <div>world</div>\n".to_string();
+        doc.open = true;
+        
+        // Move to 'world', apply dst
+        feed(&mut doc, &["w", "d", "s", "t"]);
+        
+        assert_eq!(doc.content, "hello world\n");
+    }
+
+    #[test]
+    fn test_surround_change_tag() {
+        let mut doc = NoteDocument::default();
+        doc.content = "hello <div>world</div>\n".to_string();
+        doc.open = true;
+        
+        // Move to 'world', apply cst<span>
+        feed(&mut doc, &["w", "c", "s", "t", "<", "s", "p", "a", "n", ">"]);
+        
+        assert_eq!(doc.content, "hello <span>world</span>\n");
+    }
+
+    #[test]
+    fn test_surround_visual() {
+        let mut doc = NoteDocument::default();
+        doc.content = "hello world\n".to_string();
+        doc.open = true;
+        
+        // Move to 'world', visual select 'world', apply S(
+        feed(&mut doc, &["w", "v", "e", "S", "("]);
+        
+        assert_eq!(doc.content, "hello (world)\n");
     }
 }

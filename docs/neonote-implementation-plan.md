@@ -645,7 +645,23 @@ Acceptance:
 - Surround changes are undoable.
 - Surround parser is unit-tested.
 
-### Phase 13 - Splits
+### Phase 13 - File Context Menu And Open With
+
+Scope:
+
+- Add a Windows-style right-click context menu for files.
+- Add an “Open with” submenu like File Explorer.
+- Show available apps such as Notepad, VS Code, Zed, and “Choose another app”.
+- Support “Open with” for one file, multiple selected files, and unsaved/untitled files when applicable.
+- Preserve dirty-check prompts before replacing, closing, or exporting unsaved content.
+
+Acceptance:
+
+- Right-clicking a file shows Open, Open with, Rename, Delete, Properties-style actions.
+- “Open with” opens the selected file or files in the chosen external app.
+- Unsaved notes are not lost and are clearly marked dirty/untitled.
+
+### Phase 14 - Splits
 
 Scope:
 
@@ -666,7 +682,7 @@ Acceptance:
 - Split commands create, close, and focus panes.
 - Multiple panes can reference the same buffer.
 
-### Phase 14 - Remove Legacy egui / eframe
+### Phase 15 - Remove Legacy egui / eframe
 
 Scope:
 

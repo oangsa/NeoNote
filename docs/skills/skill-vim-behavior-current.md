@@ -1,18 +1,18 @@
 # skill-vim-behavior-current
 
-This skill documents the Vim behavior that is implemented right now in NeoNote's Rust code.
+This skill inventories the Vim behavior currently implemented in NeoNote from code only.
 
-Source of truth:
+Code sources used:
 
 - `src/notes.rs`
 - `src/vim/key.rs`
 - `src/app.rs`
 
-This file is intentionally code-derived. It describes current behavior, current quirks, and still-missing gaps.
+No existing skill files were used to build this document.
 
-## Mode And State Model
+## Mode Model
 
-`NoteDocument` owns the current editor state. Implemented modes:
+Implemented modes:
 
 - `Normal`
 - `Insert`
@@ -24,36 +24,34 @@ This file is intentionally code-derived. It describes current behavior, current 
 - `Search(Backward)`
 - `Replace`
 
-The document currently owns:
+`NoteDocument` currently owns:
 
-- text content and dirty/open/path state
+- buffer text, path, dirty/open state
 - cursor line and column
-- count parsing
-- pending command/operator/find/goto state
-- registers and register routing
+- count prefix
+- pending commands/operators
+- registers
 - undo/redo stacks
 - last repeatable change
 - visual anchor and last visual selection
-- search pattern, direction, match list, and highlight toggle
-- named marks
-- jump list
+- search state
+- marks
+- jumplist
 - changelist
 - viewport state
-- command/search histories
-- document-local settings such as numbering, wrapping, tab widths, and search options
+- command/search history state
+- per-document settings
 
-## Input Boundary
+## Input Normalization
 
-`src/vim/key.rs` currently normalizes:
-
-Normal-side input:
+Normal-side normalization in `src/vim/key.rs`:
 
 - `escape`, `ctrl+[`
-- arrow keys -> `h`, `j`, `k`, `l`
-- `return`, `backspace`
+- arrows -> `h`, `j`, `k`, `l`
+- `return`, `backspace` forwarded as normal inputs
 - `delete` ignored
 
-Insert/replace-side input:
+Insert/replace-side normalization:
 
 - `escape`, `ctrl+[`
 - `ctrl+c`
@@ -64,13 +62,13 @@ Insert/replace-side input:
 - `backspace`
 - `delete`
 - printable text
-- arrow keys ignored
+- arrows ignored
 
-`AppController` routes `Insert` and `Replace` through the insert-key path.
+`AppController` routes both `Insert` and `Replace` through insert-key handling.
 
 ## Normal Mode
 
-Implemented entry and mode-switch commands:
+Implemented mode entry and switching:
 
 - `i`, `I`, `a`, `A`
 - `o`, `O`
@@ -94,7 +92,7 @@ Implemented motions:
 - `gg`
 - `G`
 - `{count}G`
-- `f{char}`, `F{char}`, `t{char}`, `T{char}`
+- `f`, `F`, `t`, `T`
 - `;`, `,`
 - `%`
 - `{`, `}`
@@ -131,7 +129,17 @@ Implemented editing commands:
 - `ctrl+r`
 - `.`
 
-Implemented `g`-prefixed behavior:
+Implemented search and mark commands:
+
+- `n`, `N`
+- `*`, `#`
+- `m{a-z}`
+- `'{a-z}`
+- `` `{a-z} ``
+- `ctrl+o`
+- `ctrl+i`
+
+Implemented `g`-prefix behavior:
 
 - `gg`
 - `gv`
@@ -148,13 +156,16 @@ Implemented `g`-prefixed behavior:
 - `guu`
 - `g~~`
 
-Counts are parsed before normal commands. `0` is treated as a motion only when no count is in progress.
+Count handling:
+
+- counts parse before commands
+- `0` is a motion only when no count is in progress
 
 ## Insert And Replace
 
-Insert mode currently supports:
+Insert mode supports:
 
-- direct printable text insertion
+- direct text insertion
 - `return`
 - `backspace`
 - `delete`
@@ -165,26 +176,25 @@ Insert mode currently supports:
 - `ctrl+[`
 - `ctrl+c`
 
-Current insert details:
+Current insert behavior:
 
 - `backspace` joins upward at column `0`
-- `delete` joins downward at end of line
+- `delete` joins downward at line end
 - `ctrl+w` deletes the previous word segment
-- `ctrl+u` deletes to start of line or joins upward from column `0`
-- `ctrl+r {register}` inserts unnamed, clipboard, numbered, named, or small-delete register content without leaving insert mode
+- `ctrl+u` deletes to column `0` or joins upward
+- `ctrl+r {register}` inserts register text without leaving insert mode
 
-Replace mode currently supports:
+Replace mode supports:
 
 - normal-mode `R` entry
-- overwrite-on-type semantics
+- overwrite-on-type
 - append past line end
 - exit with `escape` or `ctrl+[`
 
 Repeat capture:
 
-- insert and replace sessions are stored as a net replay sequence
+- insert/replace replay stores net inserted text and edit controls
 - `last_insert_pos` is tracked for `gi`
-- insert-register paste participates in the same insert session
 
 ## Operators
 
@@ -200,7 +210,7 @@ Implemented operators:
 - `gU`
 - `g~`
 
-Implemented doubled operators:
+Implemented doubled forms:
 
 - `dd`
 - `cc`
@@ -244,9 +254,8 @@ Current semantics:
 
 - small words use `is_alphanumeric() || '_'`
 - big words use any non-whitespace, non-newline character
-- delimited text objects search backward for open and forward for close
 - paragraph objects are blank-line delimited
-- line objects expand linewise
+- line objects are linewise
 
 ## Visual, Visual Line, And Visual Block
 
@@ -256,7 +265,7 @@ Implemented visual entry:
 - `V`
 - `ctrl+v`
 
-Implemented visual movement:
+Implemented visual motions:
 
 - `h`, `j`, `k`, `l`
 - `w`, `W`, `b`, `B`, `e`, `E`
@@ -264,7 +273,7 @@ Implemented visual movement:
 - `|`
 - `+`, `-`, `_`
 - `G`
-- counted forms of the supported visual motions
+- counts on the supported visual motions
 - `o`
 
 Implemented visual operators:
@@ -280,37 +289,39 @@ Implemented visual operators:
 - `u`
 - `U`
 
-Implemented visual command/search entry:
+Visual command/search entry:
 
 - `:`
 - `/`
 - `?`
 
-Visual command-line entry:
+Visual command behavior:
 
-- stores the last visual selection
+- stores last visual selection
 - exits visual mode
 - prefills `'<,'>`
 
-Blockwise visual behavior:
+Visual block behavior:
 
-- block yank stores per-row slices and marks the register as `blockwise`
-- block delete removes the rectangular region
-- block change deletes the region and enters insert with deferred block replay
-- block `I` and `A` defer multi-line insert/append behavior
-- block paste uses a dedicated blockwise paste path
-- short target lines are space-padded to the target column
-- paste can extend past the end of the current document by creating lines
+- block yank
+- block delete
+- block change
+- block `I`
+- block `A`
+- deferred multi-line block insert/append replay
+- blockwise register metadata
+- dedicated blockwise paste path
+- pad short lines with spaces
+- create new lines if block paste extends past EOF
 
-Current rendering path exposed to Slint:
+Current Slint-facing selection model:
 
-- Rust computes `line_selection_cols()`
+- `line_selection_cols()` computes per-line spans
 - `AppController` exports `selected_prefix` and `selected_text`
-- visual and yank highlights render independently from search highlight
 
 ## Registers
 
-Implemented explicit register targets:
+Implemented register targets:
 
 - unnamed `"`
 - named `a-z`
@@ -320,42 +331,42 @@ Implemented explicit register targets:
 
 Implemented implicit registers:
 
-- yank register `0`
+- yank `0`
 - small delete `-`
-- numbered delete `1-9`
+- numbered deletes `1-9`
 
 Register metadata:
 
 - `linewise`
 - `blockwise`
 
-Current register behavior:
+Current behavior:
 
-- unnamed yanks also update `0`
-- unnamed small characterwise deletes update `-`
+- unnamed yanks also write `0`
+- unnamed small character deletes write `-`
 - unnamed non-small deletes rotate `1-9` and write `1`
-- named writes also update unnamed
-- uppercase named writes append into the lowercase target register and update unnamed
-- clipboard writes also update unnamed
+- named writes update unnamed
+- uppercase named writes append into lowercase named registers and update unnamed
+- clipboard writes update unnamed
 - black-hole drops the write
-- linewise writes normalize with a trailing `\n`
+- linewise text is normalized with trailing newline
 
 Paste behavior:
 
 - linewise registers paste linewise
 - blockwise registers paste blockwise
-- other registers paste charwise
+- others paste charwise
 
 ## Search
 
-Implemented search entry and navigation:
+Implemented search entry/navigation:
 
 - `/`
 - `?`
 - `return`
 - `backspace`
 - `delete`
-- cursor movement and history while entering the search
+- cursor movement/history while editing the prompt
 - `escape`
 - `ctrl+[`
 - `n`
@@ -363,28 +374,28 @@ Implemented search entry and navigation:
 - `*`
 - `#`
 
-Search options currently wired in document settings:
+Implemented search-related options:
 
 - `ignorecase`
 - `smartcase`
 - `hlsearch`
 - `incsearch`
 
-Current search semantics:
+Current semantics:
 
-- plain substring matching, not regex
+- plain substring search, not regex
 - case handling respects `ignorecase` and `smartcase`
 - `n` follows stored direction
 - `N` reverses stored direction
-- `*` and `#` use the current small-word text object
-- `incsearch` refreshes search state while editing the query
-- `hlsearch` controls whether matches are shown as active highlights
+- `*` and `#` search the current small-word text object
+- `incsearch` refreshes matches while editing
+- `hlsearch` controls visible highlighting
 
 ## Command Mode And Ex Commands
 
 Command-line editing currently supports:
 
-- printable insert at command cursor
+- insert at cursor
 - `backspace`
 - `delete`
 - `left`, `right`
@@ -397,7 +408,7 @@ Command-line editing currently supports:
 - `escape`
 - `ctrl+[`
 
-Separate histories are maintained for command mode and search mode.
+Separate histories exist for command and search prompts.
 
 Implemented ex commands:
 
@@ -447,7 +458,7 @@ Substitute flags:
 - `i`
 - `c`
 
-Substitute-confirm input:
+Substitute confirm input:
 
 - `y`
 - `n`
@@ -457,19 +468,19 @@ Substitute-confirm input:
 - `escape`
 - `ctrl+[`
 
-Ex actions emitted to `AppController`:
+Ex actions routed through `AppController`:
 
-- save current document
-- save all documents
-- quit current document or app
+- save current doc
+- save all docs
+- quit
 - save and quit
 - edit path
-- new blank document
-- show text output for inspection commands
+- new blank doc
+- show message output for inspection commands
 
 ## Marks, Jumps, Changelist, And Repeat
 
-Implemented marks and jumps:
+Implemented marks/jumps:
 
 - `m{a-z}`
 - `'{a-z}` line jump
@@ -477,25 +488,25 @@ Implemented marks and jumps:
 - `ctrl+o`
 - `ctrl+i`
 
-Current jump-list push sites include:
+Jump-list push sites currently include:
 
 - mark jumps
-- search execution and repeats
+- search execution/repeat
 - `%`, `{`, `}`, `(`, `)`
 - `G`, `gg`
 - `H`, `M`, `L`
 - `ctrl+d`, `ctrl+u`, `ctrl+f`, `ctrl+b`
 
-Implemented changelist behavior:
+Changelist:
 
-- mutation sites push into a Rust-owned changelist
-- `g;` moves backward through changes
-- `g,` moves forward through changes
+- mutation sites push change locations
+- `g;` moves backward
+- `g,` moves forward
 
-Repeat behavior:
+Repeat:
 
 - `.` replays `last_change`
-- pure yanks, `u`, `ctrl+r`, command entry, and search entry are excluded from repeat capture
+- yanks, `u`, `ctrl+r`, command entry, and search entry are excluded from repeat capture
 
 ## App-Level Integration
 
@@ -503,30 +514,33 @@ Repeat behavior:
 
 - clipboard import into unnamed before `p`/`P` when sync is enabled
 - clipboard export after unnamed-register changes
-- ex-action handling for save/open/quit/new/save-all/message display
-- pointer cursor placement and row-drag selection for the Slint view
-- status-bar output for command input, search input, substitution prompts, dirty state, and current search pattern
+- ex-action routing
+- pointer cursor placement
+- row-drag selection in the Slint view
+- status output for command/search/substitute prompts and document state
 
 Mode-to-theme mapping:
 
-- `NORMAL` -> normal color
-- `INSERT` -> insert color
-- `VISUAL`, `V-LINE`, `V-BLOCK` -> visual color
-- `COMMAND`, `/`, `?` -> command color
-- `REPLACE` -> replace color
+- `NORMAL`
+- `INSERT`
+- `VISUAL`
+- `V-LINE`
+- `V-BLOCK`
+- `COMMAND`
+- `/`
+- `?`
+- `REPLACE`
 
 ## Still Missing
 
-These are not complete yet even though some scaffolding exists:
+Not complete yet:
 
-- macro recording and replay (`q{a-z}`, `q`, `@{a-z}`, `@@`)
-- Unicode-aware separation of byte index, character column, and visual column
-- full Vim/Neovim regex search and substitute semantics
+- macro recording/replay is only scaffolded
+- Unicode-aware visual-column model is not implemented
+- regex search/substitute semantics are not implemented
 
 ## Current Quirks
 
-These are useful implementation reminders:
-
-- search is still substring-based, not regex-based
-- blockwise paste exists, but visual columns are still char-count based rather than true display-column aware
-- insert-register paste currently inserts register text directly through the existing insert path, including linewise text with trailing newlines
+- search is still substring-based
+- visual/block behavior is char-count based, not true display-column based
+- insert register paste inserts raw register text, including linewise trailing newlines

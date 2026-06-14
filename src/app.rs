@@ -5,7 +5,7 @@ use crate::{
     persistence::{AppConfig, AppDataPaths, RecentFiles, SessionState},
     platform::clipboard,
     theme::ThemeStore,
-    vim::key::{normalize_insert_key, normalize_normal_key, InsertKey, NormalKey},
+    vim::key::EditorKey,
 };
 
 pub struct AppController {
@@ -406,9 +406,50 @@ impl AppController {
         self.mouse_selection = None;
         self.flush_deferred_action();
         self.active_note_mut().clear_yank_highlight();
-        match self.active_note().mode() {
-            VimMode::Insert | VimMode::Replace => self.handle_insert_editor_key(key),
-            _ => self.handle_normal_editor_key(key),
+        
+        let is_insert = self.active_note().mode() == crate::notes::VimMode::Insert || self.active_note().mode() == crate::notes::VimMode::Replace;
+        
+        if is_insert {
+            if self.active_note_mut().resolve_insert_register_paste(key) {
+                return;
+            }
+        }
+        
+        let editor_key = match self.active_note().mode() {
+            crate::notes::VimMode::Insert | crate::notes::VimMode::Replace => {
+                crate::vim::key::normalize_insert_key(key)
+            }
+            crate::notes::VimMode::Command | crate::notes::VimMode::Search(_) => {
+                crate::vim::key::normalize_command_key(key)
+            }
+            _ => {
+                crate::vim::key::normalize_normal_key(key)
+            }
+        };
+
+        if !is_insert {
+            if self.config.sync_clipboard {
+                if let crate::vim::key::EditorKey::Input(ref s) = editor_key {
+                    if crate::app::is_clipboard_paste_key(s) {
+                        self.import_clipboard_to_unnamed_register();
+                    }
+                }
+            }
+        }
+
+        let before_register = self
+            .config
+            .sync_clipboard
+            .then(|| self.active_note().unnamed_register_snapshot());
+
+        if self.active_note_mut().handle_editor_key(editor_key) {
+            self.last_message.clear();
+        }
+
+        self.export_unnamed_register_if_changed(before_register);
+
+        if let Some(action) = self.active_note_mut().take_ex_action() {
+            self.handle_ex_action(action);
         }
     }
 
@@ -552,35 +593,6 @@ impl AppController {
         }
     }
 
-    fn handle_normal_editor_key(&mut self, key: &str) {
-        let normal_key = match normalize_normal_key(key) {
-            NormalKey::EnterNormal => {
-                self.active_note_mut().enter_normal();
-                return;
-            }
-            NormalKey::Input(normal_key) => normal_key,
-            NormalKey::Ignore => return,
-        };
-
-        if self.config.sync_clipboard && is_clipboard_paste_key(normal_key) {
-            self.import_clipboard_to_unnamed_register();
-        }
-
-        let before_register = self
-            .config
-            .sync_clipboard
-            .then(|| self.active_note().unnamed_register_snapshot());
-
-        if self.active_note_mut().handle_normal_input(normal_key) {
-            self.last_message.clear();
-        }
-
-        self.export_unnamed_register_if_changed(before_register);
-
-        if let Some(action) = self.active_note_mut().take_ex_action() {
-            self.handle_ex_action(action);
-        }
-    }
 
     fn close_active_document(&mut self, force: bool) -> bool {
         if self.active_note().dirty() && !force {
@@ -645,23 +657,6 @@ impl AppController {
         }
     }
 
-    fn handle_insert_editor_key(&mut self, key: &str) {
-        if self.active_note_mut().resolve_insert_register_paste(key) {
-            return;
-        }
-        match normalize_insert_key(key) {
-            InsertKey::EnterNormal => self.active_note_mut().enter_normal(),
-            InsertKey::Cancel => self.active_note_mut().cancel_insert(),
-            InsertKey::RegisterPaste => self.active_note_mut().begin_insert_register_paste(),
-            InsertKey::DeleteWord => self.active_note_mut().delete_word_insert(),
-            InsertKey::DeleteLine => self.active_note_mut().delete_line_insert(),
-            InsertKey::Newline => self.active_note_mut().insert_newline(),
-            InsertKey::Backspace => self.active_note_mut().backspace(),
-            InsertKey::Delete => self.active_note_mut().delete_at_cursor(),
-            InsertKey::Text(text) => self.active_note_mut().handle_insert_text(text),
-            InsertKey::Ignore => {}
-        }
-    }
 
     fn open_path(&mut self, path: PathBuf) {
         if let Some(index) = self.document_index_for_path(&path) {
