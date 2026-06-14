@@ -6,13 +6,31 @@ use super::AppDataPaths;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SessionState {
+    #[serde(default)]
     pub window: WindowState,
+    #[serde(default)]
     pub sidebar: SidebarState,
-    pub tabs: Vec<SessionTab>,
-    pub active_tab_index: usize,
+    #[serde(default = "default_version")]
+    pub version: u32,
+    #[serde(default)]
+    pub active_document: Option<std::path::PathBuf>,
+    #[serde(default)]
+    pub opened_files: Vec<SessionFile>,
+}
+
+fn default_version() -> u32 {
+    1
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SessionFile {
+    pub path: std::path::PathBuf,
+    pub cursor_line: usize,
+    pub cursor_col: usize,
+    pub viewport_top_line: usize,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, Default)]
 pub struct WindowState {
     pub x: i32,
     pub y: i32,
@@ -20,24 +38,20 @@ pub struct WindowState {
     pub height: u32,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, Default)]
 pub struct SidebarState {
     pub open: bool,
     pub width: f32,
     pub active_tab: SidebarTab,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum SidebarTab {
+    #[default]
     Explorer,
     Recent,
     Bookmarks,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct SessionTab {
-    pub file_path: String,
 }
 
 impl Default for SessionState {
@@ -54,8 +68,9 @@ impl Default for SessionState {
                 width: 220.0,
                 active_tab: SidebarTab::Explorer,
             },
-            tabs: Vec::new(),
-            active_tab_index: 0,
+            version: 1,
+            active_document: None,
+            opened_files: Vec::new(),
         }
     }
 }
@@ -66,6 +81,11 @@ impl SessionState {
             .ok()
             .and_then(|content| serde_json::from_str(&content).ok())
             .unwrap_or_default()
+    }
+
+    pub fn save(&self, paths: &AppDataPaths) -> std::io::Result<()> {
+        let json = serde_json::to_string_pretty(self)?;
+        fs::write(paths.session_path(), json)
     }
 }
 

@@ -19,6 +19,8 @@ pub struct AppController {
     theme_panel_open: bool,
     settings_panel_open: bool,
     last_message: String,
+    suppress_session_save: bool,
+    last_session_save: Option<std::time::Instant>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -199,6 +201,8 @@ impl AppController {
             theme_panel_open: false,
             settings_panel_open: false,
             last_message: String::new(),
+            suppress_session_save: false,
+            last_session_save: None,
         }
     }
 
@@ -248,6 +252,7 @@ impl AppController {
         } else {
             self.save_as();
         }
+        self.save_session_state(false);
     }
 
     pub fn save_as(&mut self) {
@@ -450,6 +455,7 @@ impl AppController {
         if let Some(action) = self.active_note_mut().take_ex_action() {
             self.handle_ex_action(action);
         }
+        self.save_session_state(false);
     }
 
     pub fn handle_editor_pointer(&mut self, line: i32, x_pixels: f32, event_kind: &str) {
@@ -607,6 +613,7 @@ impl AppController {
             self.active_document = self.active_document.min(self.documents.len() - 1);
             self.last_message = "Closed note.".to_string();
             self.mouse_selection = None;
+            self.save_session_state(false);
             true
         }
     }
@@ -657,6 +664,180 @@ impl AppController {
     }
 
 
+    pub fn run_startup_flow(&mut self, startup_args: crate::startup::StartupArgs) {
+        if startup_args.register_file_associations {
+            let config = self.file_association_config();
+            let _ = crate::platform::file_association::register_file_associations(&config);
+            crate::platform::file_association::notify_shell_association_changed();
+            std::process::exit(0);
+        }
+
+        if startup_args.unregister_file_associations {
+            let config = self.file_association_config();
+            let _ = crate::platform::file_association::unregister_file_associations(&config);
+            crate::platform::file_association::notify_shell_association_changed();
+            std::process::exit(0);
+        }
+
+        if !startup_args.files_to_open.is_empty() {
+            self.open_files(startup_args.files_to_open);
+            return;
+        }
+
+        if self.config.restore_last_session {
+            let restored_count = self.restore_last_session();
+            if restored_count > 0 {
+                return;
+            }
+        }
+
+        self.open_startup_fallback();
+    }
+
+    pub fn open_startup_fallback(&mut self) {
+        if self.config.show_launcher_on_startup {
+            self.last_message = "Ready.".to_string();
+            // Assuming launcher is shown by default if there's no open document or based on some state.
+            // In the original app, new_file() might be called.
+            // Let's ensure there is at least one blank document if needed, or clear.
+            if self.documents.is_empty() {
+                self.new_file();
+            } else if !self.active_note().is_open() {
+                // blank note
+            }
+        } else {
+            self.new_file();
+        }
+    }
+
+    fn file_association_config(&self) -> crate::platform::file_association::FileAssociationConfig {
+        let app_path = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("NeoNote.exe"));
+        crate::platform::file_association::FileAssociationConfig {
+            app_name: "NeoNote".to_string(),
+            app_exe_name: "NeoNote.exe".to_string(),
+            app_path,
+            prog_id: "NeoNote.File".to_string(),
+            friendly_file_type_name: "NeoNote Document".to_string(),
+            extensions: vec![
+                ".txt".to_string(),
+                ".md".to_string(),
+                ".markdown".to_string(),
+                ".log".to_string(),
+                ".note".to_string(),
+                ".neonote".to_string(),
+            ],
+        }
+    }
+
+    pub fn restore_last_session(&mut self) -> usize {
+        self.suppress_session_save = true;
+        let mut restored_count = 0;
+        let mut to_open = Vec::new();
+
+        // clone to avoid borrow checker issues
+        let opened_files = self.session.opened_files.clone();
+        let active_document = self.session.active_document.clone();
+
+        for session_file in opened_files {
+            if session_file.path.exists() {
+                to_open.push(session_file);
+            }
+        }
+
+        for session_file in to_open {
+            if self.open_file_or_focus_existing(session_file.path.clone()).is_ok() {
+                self.active_note_mut().set_cursor_line(session_file.cursor_line);
+                self.active_note_mut().set_cursor_col(session_file.cursor_col);
+                self.active_note_mut().set_viewport_top_line(session_file.viewport_top_line);
+                restored_count += 1;
+            }
+        }
+
+        if let Some(active_path) = active_document {
+            let _ = self.open_file_or_focus_existing(active_path);
+        }
+
+        self.suppress_session_save = false;
+        restored_count
+    }
+
+    pub fn open_files(&mut self, paths: Vec<PathBuf>) {
+        for path in paths {
+            if let Err(error) = self.open_file_or_focus_existing(path) {
+                self.last_message = format!("Failed to open file: {}", error);
+            }
+        }
+    }
+
+    pub fn open_file_or_focus_existing(&mut self, path: PathBuf) -> anyhow::Result<()> {
+        let canonical_path = std::fs::canonicalize(&path).unwrap_or_else(|_| path.to_path_buf());
+
+        if let Some(index) = self.find_open_document_by_path(&canonical_path) {
+            self.active_document = index;
+            self.last_message = format!("Focused existing file: {}", canonical_path.display());
+            return Ok(());
+        }
+
+        self.open_path(canonical_path);
+        Ok(())
+    }
+
+    fn find_open_document_by_path(&self, canonical_path: &std::path::Path) -> Option<usize> {
+        for (i, doc) in self.documents.iter().enumerate() {
+            if let Some(doc_path_str) = doc.path_string() {
+                let doc_path = PathBuf::from(doc_path_str);
+                let doc_canonical = std::fs::canonicalize(&doc_path).unwrap_or_else(|_| doc_path);
+                if doc_canonical == canonical_path {
+                    return Some(i);
+                }
+            }
+        }
+        None
+    }
+
+    pub fn save_session_state(&mut self, force: bool) {
+        if self.suppress_session_save {
+            return;
+        }
+
+        let now = std::time::Instant::now();
+        if !force {
+            if let Some(last) = self.last_session_save {
+                if now.duration_since(last).as_secs() < 2 {
+                    return;
+                }
+            }
+        }
+        self.last_session_save = Some(now);
+
+        let mut opened_files = Vec::new();
+        for doc in &self.documents {
+            if let Some(path_str) = doc.path_string() {
+                if doc.is_open() {
+                    let p = PathBuf::from(&path_str);
+                    let path = std::fs::canonicalize(&p).unwrap_or_else(|_| p);
+                    opened_files.push(crate::persistence::session::SessionFile {
+                        path,
+                        cursor_line: doc.cursor_line(),
+                        cursor_col: doc.cursor_col(),
+                        viewport_top_line: doc.viewport_top_line(),
+                    });
+                }
+            }
+        }
+
+        let active_document = self.active_note().path_string().map(|p| {
+            let p_buf = PathBuf::from(&p);
+            std::fs::canonicalize(&p_buf).unwrap_or_else(|_| p_buf)
+        });
+
+        self.session.version = 1;
+        self.session.opened_files = opened_files;
+        self.session.active_document = active_document;
+
+        let _ = self.session.save(&self.paths);
+    }
+
     fn open_path(&mut self, path: PathBuf) {
         if let Some(index) = self.document_index_for_path(&path) {
             self.active_document = index;
@@ -678,7 +859,9 @@ impl AppController {
                 }
                 self.mouse_selection = None;
                 self.remember_recent(path);
+
                 self.last_message = "Opened note.".to_string();
+                self.save_session_state(false);
             }
             Err(error) => self.last_message = format!("Could not open note: {error}"),
         }

@@ -7,6 +7,8 @@ mod platform;
 mod theme;
 mod vim;
 
+mod startup;
+
 use std::{cell::RefCell, rc::Rc};
 
 use app::{AppController, AppSnapshot};
@@ -15,11 +17,62 @@ use slint::{Brush, Color, ComponentHandle, SharedString, VecModel};
 slint::include_modules!();
 
 fn main() -> Result<(), slint::PlatformError> {
+    let startup_args = startup::parse_startup_args();
+
+    #[cfg(target_os = "windows")]
+    {
+        let msg = if !startup_args.files_to_open.is_empty() {
+            platform::ipc::IpcMessage::OpenFiles {
+                files: startup_args.files_to_open.clone(),
+            }
+        } else {
+            platform::ipc::IpcMessage::FocusWindow
+        };
+
+        if platform::ipc::try_send_ipc_message(&msg).is_ok() {
+            // Forwarded to existing instance successfully.
+            return Ok(());
+        }
+    }
+
     let window = AppWindow::new()?;
     let controller = Rc::new(RefCell::new(AppController::new()));
 
+    controller.borrow_mut().run_startup_flow(startup_args);
+
     install_callbacks(&window, Rc::clone(&controller));
     apply_snapshot(&window, &controller.borrow().snapshot());
+
+    #[cfg(target_os = "windows")]
+    let _ipc_timer = {
+        let weak_window = window.as_weak();
+        let ipc_controller = Rc::clone(&controller);
+        
+        let (tx, rx) = std::sync::mpsc::channel();
+        
+        platform::ipc::start_ipc_server(move |msg| {
+            let _ = tx.send(msg);
+        });
+
+        let timer = slint::Timer::default();
+        timer.start(slint::TimerMode::Repeated, std::time::Duration::from_millis(100), move || {
+            while let Ok(msg) = rx.try_recv() {
+                match msg {
+                    platform::ipc::IpcMessage::OpenFiles { files } => {
+                        ipc_controller.borrow_mut().open_files(files);
+                    }
+                    platform::ipc::IpcMessage::FocusWindow => {
+                        // Focus if possible
+                    }
+                }
+                if let Some(w) = weak_window.upgrade() {
+                    apply_snapshot(&w, &ipc_controller.borrow().snapshot());
+                }
+            }
+        });
+        
+        timer
+    };
 
     window.run()
 }

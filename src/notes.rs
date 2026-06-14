@@ -192,8 +192,24 @@ impl NoteDocument {
         self.cursor_line.min(self.line_count().saturating_sub(1))
     }
 
+    pub fn set_cursor_line(&mut self, line: usize) {
+        self.cursor_line = line;
+    }
+
     pub fn cursor_col(&self) -> usize {
         self.cursor_col.min(self.current_line_max_col())
+    }
+
+    pub fn set_cursor_col(&mut self, col: usize) {
+        self.cursor_col = col;
+    }
+
+    pub fn viewport_top_line(&self) -> usize {
+        self.viewport_state.top_line
+    }
+
+    pub fn set_viewport_top_line(&mut self, top_line: usize) {
+        self.viewport_state.top_line = top_line;
     }
 
     pub fn display_cursor_col(&self) -> usize {
