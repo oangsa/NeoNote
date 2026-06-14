@@ -177,7 +177,8 @@ export struct EditorLine {
     number: int,
     text: string,
     is-cursor-line: bool,
-    is-selected: bool,
+    selected-prefix: string,
+    selected-text: string,
     is-search-match: bool,
     cursor-column: int,
     cursor-prefix: string,
@@ -525,7 +526,28 @@ export component AppWindow inherits Window {
                             for line in root.editor-lines: Rectangle {
                                 height: root.editor-line-height * 1px;
                                 width: 100%;
-                                background: line.is-selected ? root.theme-accent-primary.with_alpha(0.18) : (line.is-search-match ? root.theme-warning.with_alpha(0.16) : (line.is-cursor-line ? root.theme-surface.with_alpha(0.28) : transparent));
+                                background: line.is-search-match ? root.theme-warning.with_alpha(0.16) : (line.is-cursor-line ? root.theme-surface.with_alpha(0.28) : transparent);
+
+                                selection-prefix-measure := Text {
+                                    text: line.selected-prefix;
+                                    font-family: root.editor-font-family;
+                                    font-size: root.editor-font-size * 1px;
+                                    visible: false;
+                                }
+
+                                selection-measure := Text {
+                                    text: line.selected-text;
+                                    font-family: root.editor-font-family;
+                                    font-size: root.editor-font-size * 1px;
+                                    visible: false;
+                                }
+
+                                Rectangle {
+                                    x: 58px + root.editor-left-padding + (line.selected-prefix == "" ? 0px : selection-prefix-measure.preferred-width);
+                                    width: line.selected-text == "" ? 0px : selection-measure.preferred-width;
+                                    height: root.editor-line-height * 1px;
+                                    background: root.theme-accent-primary.with_alpha(0.18);
+                                }
 
                                 Text {
                                     x: 0px;

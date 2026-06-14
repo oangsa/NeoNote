@@ -113,7 +113,8 @@ pub struct EditorLineSnapshot {
     pub number: i32,
     pub text: String,
     pub is_cursor_line: bool,
-    pub is_selected: bool,
+    pub selected_prefix: String,
+    pub selected_text: String,
     pub is_search_match: bool,
     pub cursor_column: i32,
     pub cursor_prefix: String,
@@ -406,7 +407,7 @@ impl AppController {
         self.flush_deferred_action();
         self.active_note_mut().clear_yank_highlight();
         match self.active_note().mode() {
-            VimMode::Insert => self.handle_insert_editor_key(key),
+            VimMode::Insert | VimMode::Replace => self.handle_insert_editor_key(key),
             _ => self.handle_normal_editor_key(key),
         }
     }
@@ -614,6 +615,14 @@ impl AppController {
             ExCommandAction::Save(None) => {
                 self.save();
             }
+            ExCommandAction::SaveAll => {
+                for i in 0..self.documents.len() {
+                    let prev_active = self.active_document;
+                    self.active_document = i;
+                    self.save();
+                    self.active_document = prev_active;
+                }
+            }
             ExCommandAction::Quit { force } => {
                 self.close_active_document(force);
             }
@@ -630,12 +639,22 @@ impl AppController {
             ExCommandAction::EditNew => {
                 self.new_file();
             }
+            ExCommandAction::ShowMessage(message) => {
+                self.last_message = message;
+            }
         }
     }
 
     fn handle_insert_editor_key(&mut self, key: &str) {
+        if self.active_note_mut().resolve_insert_register_paste(key) {
+            return;
+        }
         match normalize_insert_key(key) {
             InsertKey::EnterNormal => self.active_note_mut().enter_normal(),
+            InsertKey::Cancel => self.active_note_mut().cancel_insert(),
+            InsertKey::RegisterPaste => self.active_note_mut().begin_insert_register_paste(),
+            InsertKey::DeleteWord => self.active_note_mut().delete_word_insert(),
+            InsertKey::DeleteLine => self.active_note_mut().delete_line_insert(),
             InsertKey::Newline => self.active_note_mut().insert_newline(),
             InsertKey::Backspace => self.active_note_mut().backspace(),
             InsertKey::Delete => self.active_note_mut().delete_at_cursor(),
@@ -708,7 +727,7 @@ impl AppController {
         match mode {
             "NORMAL" => theme.vim_modes.normal.clone(),
             "INSERT" => theme.vim_modes.insert.clone(),
-            "VISUAL" | "V-LINE" => theme.vim_modes.visual.clone(),
+            "VISUAL" | "V-LINE" | "V-BLOCK" => theme.vim_modes.visual.clone(),
             "COMMAND" | "/" | "?" => theme.vim_modes.command.clone(),
             "REPLACE" => theme.vim_modes.replace.clone(),
             _ => theme.colors.accent_primary.clone(),
@@ -893,13 +912,29 @@ fn editor_lines(
     content_lines(note)
         .into_iter()
         .enumerate()
-        .map(|(index, text)| EditorLineSnapshot {
+        .map(|(index, text)| {
+            let (selected_prefix, selected_text) = {
+                let mut cols = note.line_selection_cols(index);
+                if let Some(selection) = mouse_selection {
+                    if selection.includes(index) {
+                        cols = Some((0, usize::MAX));
+                    }
+                }
+                if let Some((start_col, end_col)) = cols {
+                    let chars: Vec<char> = text.chars().collect();
+                    let start = start_col.min(chars.len());
+                    let end = end_col.min(chars.len()).max(start);
+                    (chars[..start].iter().collect(), chars[start..end].iter().collect())
+                } else {
+                    (String::new(), String::new())
+                }
+            };
+
+            EditorLineSnapshot {
             number: (index + 1) as i32,
             is_cursor_line: index == cursor_line,
-            is_selected: mouse_selection
-                .map(|selection| selection.includes(index))
-                .unwrap_or(false)
-                || note.line_is_visually_selected(index),
+            selected_prefix,
+            selected_text,
             is_search_match: note.line_has_search_match(index),
             cursor_column,
             cursor_prefix: if index == cursor_line {
@@ -919,6 +954,7 @@ fn editor_lines(
             },
             text,
             cursor_block,
+        }
         })
         .collect()
 }
@@ -1003,7 +1039,8 @@ mod tests {
                     number: 1,
                     text: "one".to_string(),
                     is_cursor_line: false,
-                    is_selected: false,
+                    selected_prefix: String::new(),
+                    selected_text: String::new(),
                     is_search_match: false,
                     cursor_column: 2,
                     cursor_prefix: String::new(),
@@ -1015,7 +1052,8 @@ mod tests {
                     number: 2,
                     text: "two".to_string(),
                     is_cursor_line: true,
-                    is_selected: false,
+                    selected_prefix: String::new(),
+                    selected_text: String::new(),
                     is_search_match: false,
                     cursor_column: 2,
                     cursor_prefix: "tw".to_string(),
@@ -1118,19 +1156,19 @@ mod tests {
 
         let snapshot = controller.snapshot();
         assert_eq!(snapshot.cursor_line, 2);
-        assert!(snapshot.editor_lines[0].is_selected);
-        assert!(snapshot.editor_lines[1].is_selected);
-        assert!(snapshot.editor_lines[2].is_selected);
+        assert!(!snapshot.editor_lines[0].selected_text.is_empty());
+        assert!(!snapshot.editor_lines[1].selected_text.is_empty());
+        assert!(!snapshot.editor_lines[2].selected_text.is_empty());
 
         controller.handle_editor_pointer(2, 0.0, "up");
-        assert!(controller.snapshot().editor_lines[1].is_selected);
+        assert!(!controller.snapshot().editor_lines[1].selected_text.is_empty());
 
         controller.handle_editor_key("j");
         assert!(controller
             .snapshot()
             .editor_lines
             .iter()
-            .all(|line| !line.is_selected));
+            .all(|line| line.selected_text.is_empty()));
     }
 
     #[test]
@@ -1147,8 +1185,8 @@ mod tests {
 
         let snapshot = controller.snapshot();
         assert_eq!(snapshot.mode_text, "V-LINE");
-        assert!(snapshot.editor_lines[0].is_selected);
-        assert!(snapshot.editor_lines[1].is_selected);
+        assert!(!snapshot.editor_lines[0].selected_text.is_empty());
+        assert!(!snapshot.editor_lines[1].selected_text.is_empty());
 
         controller.handle_editor_key("escape");
         for key in ["/", "t", "w", "o", "return"] {

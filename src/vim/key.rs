@@ -8,16 +8,20 @@ pub enum NormalKey<'a> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum InsertKey<'a> {
     EnterNormal,
+    Cancel,
+    RegisterPaste,
     Newline,
     Backspace,
     Delete,
+    DeleteWord,
+    DeleteLine,
     Text(&'a str),
     Ignore,
 }
 
 pub fn normalize_normal_key(key: &str) -> NormalKey<'_> {
     match key {
-        "escape" => NormalKey::EnterNormal,
+        "escape" | "ctrl+[" => NormalKey::EnterNormal,
         "left" => NormalKey::Input("h"),
         "right" => NormalKey::Input("l"),
         "up" => NormalKey::Input("k"),
@@ -30,7 +34,11 @@ pub fn normalize_normal_key(key: &str) -> NormalKey<'_> {
 
 pub fn normalize_insert_key(key: &str) -> InsertKey<'_> {
     match key {
-        "escape" => InsertKey::EnterNormal,
+        "escape" | "ctrl+[" => InsertKey::EnterNormal,
+        "ctrl+c" => InsertKey::Cancel,
+        "ctrl+r" => InsertKey::RegisterPaste,
+        "ctrl+w" => InsertKey::DeleteWord,
+        "ctrl+u" => InsertKey::DeleteLine,
         "return" => InsertKey::Newline,
         "backspace" => InsertKey::Backspace,
         "delete" => InsertKey::Delete,
@@ -51,6 +59,7 @@ mod tests {
     #[test]
     fn normal_key_normalizes_navigation_and_ignores_editing_controls() {
         assert_eq!(normalize_normal_key("escape"), NormalKey::EnterNormal);
+        assert_eq!(normalize_normal_key("ctrl+["), NormalKey::EnterNormal);
         assert_eq!(normalize_normal_key("left"), NormalKey::Input("h"));
         assert_eq!(normalize_normal_key("right"), NormalKey::Input("l"));
         assert_eq!(normalize_normal_key("up"), NormalKey::Input("k"));
@@ -66,6 +75,8 @@ mod tests {
     #[test]
     fn insert_key_separates_controls_from_printable_text() {
         assert_eq!(normalize_insert_key("escape"), InsertKey::EnterNormal);
+        assert_eq!(normalize_insert_key("ctrl+["), InsertKey::EnterNormal);
+        assert_eq!(normalize_insert_key("ctrl+r"), InsertKey::RegisterPaste);
         assert_eq!(normalize_insert_key("return"), InsertKey::Newline);
         assert_eq!(normalize_insert_key("backspace"), InsertKey::Backspace);
         assert_eq!(normalize_insert_key("delete"), InsertKey::Delete);
