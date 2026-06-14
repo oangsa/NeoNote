@@ -1543,7 +1543,7 @@ impl NoteDocument {
 
     fn apply_operator_range(&mut self, operator: Operator, range: TextRange) -> bool {
         let range = range.normalized().clamped(self.content_char_len());
-        if range.start >= range.end {
+        if !range.linewise && range.start >= range.end {
             return false;
         }
 
@@ -2372,6 +2372,10 @@ impl Registers {
         if target == RegisterTarget::BlackHole {
             return;
         }
+        let mut text = text;
+        if linewise && !text.ends_with('\n') {
+            text.push('\n');
+        }
         let value = RegisterValue { text, linewise };
         self.store_target(target, value.clone());
         self.yank = value;
@@ -2380,6 +2384,10 @@ impl Registers {
     fn store_deleted(&mut self, target: RegisterTarget, text: String, linewise: bool) {
         if target == RegisterTarget::BlackHole {
             return;
+        }
+        let mut text = text;
+        if linewise && !text.ends_with('\n') {
+            text.push('\n');
         }
         self.store_target(target, RegisterValue { text, linewise });
     }
@@ -2842,7 +2850,7 @@ mod tests {
         assert!(!yank_to_top.handle_normal_input("ygg"));
 
         assert_eq!(yank_to_top.content(), "one\ntwo\nthree\nfour");
-        assert_eq!(yank_to_top.yank_register_text(), "one\ntwo\nthree\nfour");
+        assert_eq!(yank_to_top.yank_register_text(), "one\ntwo\nthree\nfour\n");
         assert!(yank_to_top.yank_register_is_linewise());
 
         let mut yank_to_counted_line = NoteDocument::default();
@@ -2854,7 +2862,7 @@ mod tests {
 
         assert_eq!(
             yank_to_counted_line.yank_register_text(),
-            "two\nthree\nfour"
+            "two\nthree\nfour\n"
         );
 
         let mut delete_to_top = NoteDocument::default();
@@ -2867,7 +2875,7 @@ mod tests {
         assert_eq!(delete_to_top.content(), "");
         assert_eq!(
             delete_to_top.unnamed_register_text(),
-            "one\ntwo\nthree\nfour"
+            "one\ntwo\nthree\nfour\n"
         );
         assert!(delete_to_top.unnamed_register_is_linewise());
     }
@@ -3197,5 +3205,39 @@ mod tests {
         doc2.handle_normal_input("p");
         assert!(!doc2.has_deferred_action());
         assert_eq!(doc2.content(), "line two\nline one\nline three");
+    }
+
+    #[test]
+    fn test_yy_twice() {
+        let mut doc = NoteDocument::default();
+        doc.content = "line1\nline2\nline3".to_string();
+        doc.enter_normal();
+        doc.handle_normal_input("y");
+        doc.handle_normal_input("y");
+        assert_eq!(doc.unnamed_register_text(), "line1\n");
+    }
+
+    #[test]
+    fn test_yy_last_empty_line() {
+        let mut doc = NoteDocument::default();
+        doc.content = "line1\n".to_string();
+        doc.enter_normal();
+        doc.handle_normal_input("G"); // Go to last line (which is empty)
+        assert_eq!(doc.cursor_line(), 1);
+        doc.handle_normal_input("yy");
+        assert_eq!(doc.unnamed_register_text(), "\n");
+    }
+
+    #[test]
+    fn test_dd_last_empty_line() {
+        let mut doc = NoteDocument::default();
+        doc.content = "line1\n".to_string();
+        doc.enter_normal();
+        doc.handle_normal_input("G"); // Go to last line (which is empty)
+        assert_eq!(doc.cursor_line(), 1);
+        doc.handle_normal_input("dd");
+        doc.flush_deferred_action();
+        assert_eq!(doc.content(), "line1");
+        assert_eq!(doc.cursor_line(), 0);
     }
 }

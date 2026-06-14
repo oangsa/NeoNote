@@ -1251,4 +1251,26 @@ mod tests {
             .find_map(|(index, _)| (!controller.themes.is_active(index)).then_some(index))
             .expect("built-in themes should include an inactive theme")
     }
+
+    #[test]
+    fn test_app_yy() {
+        let mut controller = AppController::new();
+        controller.new_file();
+        controller.handle_editor_key("i");
+        for key in ["l", "i", "n", "e", "1", "return", "l", "i", "n", "e", "2", "escape"] {
+            controller.handle_editor_key(key);
+        }
+        // Move to the first line
+        controller.handle_editor_key("k");
+        assert_eq!(controller.active_note().cursor_line(), 0);
+
+        // Press yy
+        controller.handle_editor_key("y");
+        controller.handle_editor_key("y");
+
+        assert_eq!(controller.active_note().unnamed_register_text(), "line1\n");
+        if controller.config.sync_clipboard {
+            assert_eq!(clipboard::read_text().unwrap().replace("\r\n", "\n"), "line1\n");
+        }
+    }
 }

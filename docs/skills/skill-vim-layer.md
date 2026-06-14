@@ -22,6 +22,8 @@ Core rules:
 - Yank operations update both the unnamed register and yank register `0`; delete/change update the unnamed register without replacing the yank register.
 - `x` is a delete command and should update the unnamed register with the deleted character span without replacing yank register `0`.
 - Operator `gg` motions should resolve to a linewise range. Counts typed between the operator and `gg`, such as `y2gg`, select the destination line.
+- Linewise ranges (such as from `yy`, `dd`, `cc`, etc.) can have `start == end` when operating on the last empty line of a document. Bypassing the `start >= end` empty range check for linewise operations is required to allow those actions to succeed on empty lines.
+- Linewise register updates (yank or delete) must append a trailing newline (`\n`) if the text does not already end with one, ensuring standard Vim register behavior (which always ends linewise values with newlines, even on the last line of a file).
 - Register prefixes are stored as pending Vim state. Named registers `a-z`, explicit clipboard register `+`, black-hole register `_`, unnamed register `"`, and yank register `0` stay inside the pure Vim layer.
 - Plain `y`, `p`, and `P` use NeoNote's internal unnamed register. When the user enables `sync_clipboard`, the app controller may import/export the system clipboard around paste/yank/delete/change commands. Keep the Vim layer platform-free; explicit `+` register state is mirrored by the app boundary through `set_clipboard_register`.
 - Undo/redo snapshots are editor-state transactions recorded before buffer mutations. Restore clears pending operators/counts/register prefixes and clamps the cursor for the restored mode.
