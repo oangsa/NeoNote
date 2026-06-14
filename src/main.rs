@@ -5,6 +5,7 @@ mod notes;
 mod persistence;
 mod platform;
 mod theme;
+mod vim;
 
 use std::{cell::RefCell, rc::Rc};
 

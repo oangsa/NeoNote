@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
 };
@@ -15,6 +16,11 @@ pub struct NoteDocument {
     pending: Option<PendingCommand>,
     count: Option<usize>,
     registers: Registers,
+    selected_register: Option<RegisterTarget>,
+    undo_stack: Vec<DocumentSnapshot>,
+    redo_stack: Vec<DocumentSnapshot>,
+    last_change: Option<String>,
+    replaying_change: bool,
 }
 
 impl NoteDocument {
@@ -29,6 +35,11 @@ impl NoteDocument {
         self.pending = None;
         self.count = None;
         self.registers = Registers::default();
+        self.selected_register = None;
+        self.undo_stack.clear();
+        self.redo_stack.clear();
+        self.last_change = None;
+        self.replaying_change = false;
     }
 
     pub fn open(&mut self, path: impl AsRef<Path>) -> std::io::Result<()> {
@@ -43,6 +54,11 @@ impl NoteDocument {
         self.pending = None;
         self.count = None;
         self.registers = Registers::default();
+        self.selected_register = None;
+        self.undo_stack.clear();
+        self.redo_stack.clear();
+        self.last_change = None;
+        self.replaying_change = false;
         Ok(())
     }
 
@@ -143,6 +159,23 @@ impl NoteDocument {
         self.registers.unnamed = RegisterValue { text, linewise };
     }
 
+    pub fn set_clipboard_register(&mut self, text: String, linewise: bool) {
+        let value = RegisterValue { text, linewise };
+        self.registers.clipboard = value.clone();
+        self.registers.unnamed = value;
+    }
+
+    pub fn clipboard_register_text(&self) -> &str {
+        &self.registers.clipboard.text
+    }
+
+    pub fn named_register_text(&self, name: char) -> Option<&str> {
+        self.registers
+            .named
+            .get(&name.to_ascii_lowercase())
+            .map(|value| value.text.as_str())
+    }
+
     pub fn set_cursor_from_pointer(&mut self, line: usize, column: usize) {
         self.pending = None;
         self.count = None;
@@ -171,9 +204,22 @@ impl NoteDocument {
             return false;
         }
 
+        if input == "ctrl+r" {
+            return self.redo();
+        }
+
+        if input == "." {
+            return self.repeat_last_change();
+        }
+
         let mut changed = false;
         for ch in input.chars() {
             changed |= self.handle_normal_char(ch);
+        }
+        if changed && !self.replaying_change {
+            if is_repeatable_change(input) {
+                self.last_change = Some(input.to_string());
+            }
         }
         changed
     }
@@ -289,6 +335,11 @@ impl NoteDocument {
         let explicit_count = self.count.take();
         let count = explicit_count.unwrap_or(1).max(1);
         match ch {
+            '"' => {
+                self.pending = Some(PendingCommand::RegisterPrefix);
+                false
+            }
+            'u' => self.undo(),
             'i' => {
                 self.enter_insert();
                 false
@@ -394,15 +445,42 @@ impl NoteDocument {
                 });
                 false
             }
+            '>' => {
+                self.pending = Some(PendingCommand::Operator {
+                    operator: Operator::Indent,
+                    count,
+                });
+                false
+            }
+            '<' => {
+                self.pending = Some(PendingCommand::Operator {
+                    operator: Operator::Outdent,
+                    count,
+                });
+                false
+            }
+            '=' => {
+                self.pending = Some(PendingCommand::Operator {
+                    operator: Operator::Format,
+                    count,
+                });
+                false
+            }
             'p' => self.paste_unnamed(count, PastePlacement::After),
             'P' => self.paste_unnamed(count, PastePlacement::Before),
             'x' => self.delete_chars_on_current_line(count),
+            '~' => self.toggle_case_chars(count),
             _ => false,
         }
     }
 
     fn handle_pending_normal_char(&mut self, pending: PendingCommand, ch: char) -> bool {
         match (pending, ch) {
+            (PendingCommand::RegisterPrefix, register) => {
+                self.pending = None;
+                self.selected_register = RegisterTarget::from_prefix(register);
+                false
+            }
             (
                 PendingCommand::Operator {
                     operator: Operator::Delete,
@@ -439,6 +517,55 @@ impl NoteDocument {
                 self.yank_current_lines(count);
                 false
             }
+            (
+                PendingCommand::Operator {
+                    operator: Operator::Indent,
+                    count,
+                },
+                '>',
+            ) => {
+                self.pending = None;
+                self.count = None;
+                self.indent_current_lines(count, 1)
+            }
+            (
+                PendingCommand::Operator {
+                    operator: Operator::Outdent,
+                    count,
+                },
+                '<',
+            ) => {
+                self.pending = None;
+                self.count = None;
+                self.indent_current_lines(count, -1)
+            }
+            (
+                PendingCommand::Operator {
+                    operator: Operator::Format,
+                    count,
+                },
+                '=',
+            ) => {
+                self.pending = None;
+                self.count = None;
+                let range = self.linewise_range(
+                    self.cursor_line(),
+                    self.cursor_line()
+                        .saturating_add(count.max(1).saturating_sub(1)),
+                );
+                self.format_range(range)
+            }
+            (
+                PendingCommand::Operator {
+                    operator: Operator::Change,
+                    count,
+                },
+                'w',
+            ) => {
+                self.pending = None;
+                self.count = None;
+                self.apply_operator_motion(Operator::Change, count, 'w')
+            }
             (PendingCommand::Operator { operator, count }, 'i') => {
                 self.pending = Some(PendingCommand::TextObject {
                     operator,
@@ -458,7 +585,21 @@ impl NoteDocument {
                 false
             }
             (PendingCommand::Operator { operator, count }, 'g') => {
-                self.pending = Some(PendingCommand::OperatorGoto { operator, count });
+                self.pending = Some(PendingCommand::OperatorOrCaseGoto { operator, count });
+                false
+            }
+            (PendingCommand::Goto { count }, 'u') => {
+                self.pending = Some(PendingCommand::CaseOperator {
+                    upper: false,
+                    count: count.unwrap_or(1),
+                });
+                false
+            }
+            (PendingCommand::Goto { count }, 'U') => {
+                self.pending = Some(PendingCommand::CaseOperator {
+                    upper: true,
+                    count: count.unwrap_or(1),
+                });
                 false
             }
             (
@@ -484,7 +625,48 @@ impl NoteDocument {
                     operator,
                     count.saturating_mul(motion_count),
                     around,
-                    object == 'W',
+                    TextObject::Word {
+                        big_word: object == 'W',
+                    },
+                )
+            }
+            (
+                PendingCommand::TextObject {
+                    operator,
+                    count,
+                    around,
+                },
+                object @ ('\'' | '"' | '(' | ')' | '[' | ']' | '{' | '}'),
+            ) => {
+                let motion_count = self.count.take().unwrap_or(1).max(1);
+                self.pending = None;
+                self.apply_text_object_operator(
+                    operator,
+                    count.saturating_mul(motion_count),
+                    around,
+                    TextObject::Delimited(object),
+                )
+            }
+            (
+                PendingCommand::TextObject {
+                    operator,
+                    count,
+                    around,
+                },
+                object @ ('p' | 'l'),
+            ) => {
+                let motion_count = self.count.take().unwrap_or(1).max(1);
+                self.pending = None;
+                let object = if object == 'p' {
+                    TextObject::Paragraph
+                } else {
+                    TextObject::Line
+                };
+                self.apply_text_object_operator(
+                    operator,
+                    count.saturating_mul(motion_count),
+                    around,
+                    object,
                 )
             }
             (PendingCommand::Goto { count }, 'g') => {
@@ -496,7 +678,7 @@ impl NoteDocument {
                 self.clamp_cursor_normal();
                 false
             }
-            (PendingCommand::OperatorGoto { operator, count: _ }, 'g') => {
+            (PendingCommand::OperatorOrCaseGoto { operator, count: _ }, 'g') => {
                 let target_line = self.count.take().unwrap_or(1).saturating_sub(1);
                 self.pending = None;
                 self.apply_operator_range(
@@ -504,9 +686,24 @@ impl NoteDocument {
                     self.linewise_range(self.cursor_line(), target_line),
                 )
             }
+            (
+                PendingCommand::CaseOperator { upper, count },
+                motion @ ('h' | 'j' | 'k' | 'l' | 'w' | 'W' | 'b' | 'B' | 'e' | 'E' | '0' | '^'
+                | '$' | 'G'),
+            ) => {
+                let motion_count = self.count.take().unwrap_or(1).max(1);
+                self.pending = None;
+                let Some(range) =
+                    self.operator_motion_range(count.saturating_mul(motion_count), motion)
+                else {
+                    return false;
+                };
+                self.apply_case_range(range, upper)
+            }
             _ => {
                 self.pending = None;
                 self.count = None;
+                self.selected_register = None;
                 false
             }
         }
@@ -559,16 +756,91 @@ impl NoteDocument {
     }
 
     fn replace_lines(&mut self, lines: Vec<String>) {
+        self.record_undo();
         self.content = lines.join("\n");
         self.dirty = true;
         self.clamp_cursor_line();
     }
 
     fn replace_lines_keep_insert(&mut self, lines: Vec<String>) {
+        self.record_undo();
         self.content = lines.join("\n");
         self.dirty = true;
         self.cursor_line = self.cursor_line.min(self.line_count().saturating_sub(1));
         self.cursor_col = self.cursor_col.min(self.current_line_char_count());
+    }
+
+    fn snapshot_document(&self) -> DocumentSnapshot {
+        DocumentSnapshot {
+            content: self.content.clone(),
+            mode: self.mode,
+            cursor_line: self.cursor_line,
+            cursor_col: self.cursor_col,
+        }
+    }
+
+    fn restore_snapshot(&mut self, snapshot: DocumentSnapshot) {
+        self.content = snapshot.content;
+        self.mode = snapshot.mode;
+        self.cursor_line = snapshot.cursor_line;
+        self.cursor_col = snapshot.cursor_col;
+        self.pending = None;
+        self.count = None;
+        self.selected_register = None;
+        self.dirty = true;
+        match self.mode {
+            VimMode::Normal => self.clamp_cursor_normal(),
+            VimMode::Insert => {
+                self.cursor_line = self.cursor_line.min(self.line_count().saturating_sub(1));
+                self.cursor_col = self.cursor_col.min(self.current_line_char_count());
+            }
+        }
+    }
+
+    fn record_undo(&mut self) {
+        let snapshot = self.snapshot_document();
+        if self.undo_stack.last() != Some(&snapshot) {
+            self.undo_stack.push(snapshot);
+        }
+        self.redo_stack.clear();
+    }
+
+    fn undo(&mut self) -> bool {
+        let Some(snapshot) = self.undo_stack.pop() else {
+            return false;
+        };
+        self.redo_stack.push(self.snapshot_document());
+        self.restore_snapshot(snapshot);
+        true
+    }
+
+    fn redo(&mut self) -> bool {
+        let Some(snapshot) = self.redo_stack.pop() else {
+            return false;
+        };
+        self.undo_stack.push(self.snapshot_document());
+        self.restore_snapshot(snapshot);
+        true
+    }
+
+    fn repeat_last_change(&mut self) -> bool {
+        let Some(last_change) = self.last_change.clone() else {
+            return false;
+        };
+        if last_change == "." {
+            return false;
+        }
+
+        self.replaying_change = true;
+        let changed = self.handle_normal_input(&last_change);
+        self.replaying_change = false;
+        changed
+    }
+
+    fn take_register_target(&mut self) -> RegisterTarget {
+        self.selected_register
+            .take()
+            .unwrap_or(RegisterTarget::Unnamed)
     }
 
     fn insert_blank_line(&mut self, index: usize) {
@@ -604,6 +876,7 @@ impl NoteDocument {
 
     fn change_current_lines(&mut self, count: usize) {
         self.capture_line_register(count, false);
+        self.record_undo();
         let mut lines = self.lines_vec();
         let index = self.cursor_line();
         if lines.len() <= 1 {
@@ -644,9 +917,13 @@ impl NoteDocument {
                 return false;
             }
 
-            self.registers.store_deleted(deleted, false);
+            let target = self.take_register_target();
+            self.registers.store_deleted(target, deleted, false);
+            self.record_undo();
             remove_char_range(line, col, end);
-            self.replace_lines(lines);
+            self.content = lines.join("\n");
+            self.dirty = true;
+            self.clamp_cursor_line();
             return true;
         }
 
@@ -751,9 +1028,17 @@ impl NoteDocument {
         operator: Operator,
         count: usize,
         around: bool,
-        big_word: bool,
+        object: TextObject,
     ) -> bool {
-        let Some(range) = self.word_text_object_range(count.max(1), around, big_word) else {
+        let range = match object {
+            TextObject::Word { big_word } => {
+                self.word_text_object_range(count.max(1), around, big_word)
+            }
+            TextObject::Delimited(delimiter) => self.delimited_text_object_range(delimiter, around),
+            TextObject::Paragraph => self.paragraph_text_object_range(count.max(1), around),
+            TextObject::Line => self.line_text_object_range(count.max(1)),
+        };
+        let Some(range) = range else {
             return false;
         };
 
@@ -769,7 +1054,8 @@ impl NoteDocument {
         match operator {
             Operator::Delete => {
                 let text = self.text_for_range(range);
-                self.registers.store_deleted(text, range.linewise);
+                let target = self.take_register_target();
+                self.registers.store_deleted(target, text, range.linewise);
                 self.delete_flat_range(range);
                 self.set_insert_cursor_from_flat(range.start);
                 self.enter_normal();
@@ -777,7 +1063,8 @@ impl NoteDocument {
             }
             Operator::Change => {
                 let text = self.text_for_range(range);
-                self.registers.store_deleted(text, range.linewise);
+                let target = self.take_register_target();
+                self.registers.store_deleted(target, text, range.linewise);
                 self.delete_flat_range(range);
                 self.set_insert_cursor_from_flat(range.start);
                 self.enter_insert();
@@ -785,10 +1072,14 @@ impl NoteDocument {
             }
             Operator::Yank => {
                 let text = self.text_for_range(range);
-                self.registers.store_yank(text, range.linewise);
+                let target = self.take_register_target();
+                self.registers.store_yank(target, text, range.linewise);
                 self.clamp_cursor_normal();
                 false
             }
+            Operator::Indent => self.indent_range(range, 1),
+            Operator::Outdent => self.indent_range(range, -1),
+            Operator::Format => self.format_range(range),
         }
     }
 
@@ -907,7 +1198,225 @@ impl NoteDocument {
         Some(TextRange::new(start, end))
     }
 
+    fn delimited_text_object_range(&self, delimiter: char, around: bool) -> Option<TextRange> {
+        let (open, close) = delimiter_pair(delimiter)?;
+        let chars: Vec<char> = self.content.chars().collect();
+        if chars.is_empty() {
+            return None;
+        }
+
+        let cursor = self.flattened_cursor().min(chars.len().saturating_sub(1));
+        let start = (0..=cursor).rev().find(|&index| chars[index] == open)?;
+        let end = (cursor..chars.len()).find(|&index| chars[index] == close)?;
+        if start >= end {
+            return None;
+        }
+
+        if around {
+            Some(TextRange::new(start, end + 1))
+        } else {
+            Some(TextRange::new(start + 1, end))
+        }
+    }
+
+    fn paragraph_text_object_range(&self, count: usize, around: bool) -> Option<TextRange> {
+        let lines = self.lines_vec();
+        if lines.is_empty() {
+            return None;
+        }
+
+        let mut start_line = self.cursor_line().min(lines.len().saturating_sub(1));
+        while start_line > 0 && !lines[start_line - 1].trim().is_empty() {
+            start_line -= 1;
+        }
+
+        let mut end_line = self.cursor_line().min(lines.len().saturating_sub(1));
+        for paragraph_index in 0..count.max(1) {
+            while end_line + 1 < lines.len() && !lines[end_line + 1].trim().is_empty() {
+                end_line += 1;
+            }
+            if paragraph_index + 1 < count {
+                while end_line + 1 < lines.len() && lines[end_line + 1].trim().is_empty() {
+                    end_line += 1;
+                }
+                if end_line + 1 < lines.len() {
+                    end_line += 1;
+                }
+            }
+        }
+
+        let mut start = self.line_start_flat(start_line);
+        let mut end = self.line_end_flat_including_newline(end_line);
+        if around {
+            while end_line + 1 < lines.len() && lines[end_line + 1].trim().is_empty() {
+                end_line += 1;
+                end = self.line_end_flat_including_newline(end_line);
+                break;
+            }
+            if end == self.content_char_len() {
+                while start_line > 0 && lines[start_line - 1].trim().is_empty() {
+                    start_line -= 1;
+                    start = self.line_start_flat(start_line);
+                    break;
+                }
+            }
+        }
+
+        Some(TextRange::linewise(start, end))
+    }
+
+    fn line_text_object_range(&self, count: usize) -> Option<TextRange> {
+        if self.lines_vec().is_empty() {
+            return None;
+        }
+        Some(
+            self.linewise_range(
+                self.cursor_line(),
+                self.cursor_line()
+                    .saturating_add(count.max(1).saturating_sub(1)),
+            ),
+        )
+    }
+
+    fn indent_current_lines(&mut self, count: usize, delta: isize) -> bool {
+        let end_line = self
+            .cursor_line()
+            .saturating_add(count.max(1).saturating_sub(1));
+        self.indent_lines(self.cursor_line(), end_line, delta)
+    }
+
+    fn indent_range(&mut self, range: TextRange, delta: isize) -> bool {
+        let start_line = self.line_for_flat(range.start);
+        let end_offset = range.end.saturating_sub(1);
+        let end_line = self.line_for_flat(end_offset);
+        self.indent_lines(start_line, end_line, delta)
+    }
+
+    fn indent_lines(&mut self, start_line: usize, end_line: usize, delta: isize) -> bool {
+        let mut lines = self.lines_vec();
+        if lines.is_empty() {
+            return false;
+        }
+
+        let start_line = start_line.min(lines.len().saturating_sub(1));
+        let end_line = end_line.min(lines.len().saturating_sub(1));
+        let (start_line, end_line) = if start_line <= end_line {
+            (start_line, end_line)
+        } else {
+            (end_line, start_line)
+        };
+
+        let mut changed = false;
+        for line in &mut lines[start_line..=end_line] {
+            if delta > 0 {
+                line.insert_str(0, "  ");
+                changed = true;
+            } else if line.starts_with("  ") {
+                line.drain(..2);
+                changed = true;
+            } else if line.starts_with('\t') || line.starts_with(' ') {
+                line.drain(..1);
+                changed = true;
+            }
+        }
+
+        if !changed {
+            return false;
+        }
+
+        self.replace_lines(lines);
+        self.cursor_line = start_line;
+        self.cursor_col = self.first_non_blank_col();
+        self.clamp_cursor_normal();
+        true
+    }
+
+    fn format_range(&mut self, range: TextRange) -> bool {
+        let start_line = self.line_for_flat(range.start);
+        let end_line = self.line_for_flat(range.end.saturating_sub(1));
+        let mut lines = self.lines_vec();
+        if lines.is_empty() {
+            return false;
+        }
+
+        let start_line = start_line.min(lines.len().saturating_sub(1));
+        let end_line = end_line.min(lines.len().saturating_sub(1));
+        let mut changed = false;
+        for line in &mut lines[start_line..=end_line] {
+            let trimmed_len = line.trim_end_matches(|ch| ch == ' ' || ch == '\t').len();
+            if trimmed_len != line.len() {
+                line.truncate(trimmed_len);
+                changed = true;
+            }
+        }
+
+        if !changed {
+            return false;
+        }
+
+        self.replace_lines(lines);
+        true
+    }
+
+    fn toggle_case_chars(&mut self, count: usize) -> bool {
+        let start = self.flattened_cursor();
+        let end = (start + count.max(1)).min(self.current_line_end_flat_exclusive());
+        if start >= end {
+            return false;
+        }
+
+        let range = TextRange::new(start, end);
+        let replacement = self
+            .text_for_range(range)
+            .chars()
+            .flat_map(|ch| {
+                if ch.is_lowercase() {
+                    ch.to_uppercase().collect::<Vec<_>>()
+                } else if ch.is_uppercase() {
+                    ch.to_lowercase().collect::<Vec<_>>()
+                } else {
+                    vec![ch]
+                }
+            })
+            .collect::<String>();
+        self.replace_flat_range(range, &replacement);
+        self.set_cursor_from_flat(end.saturating_sub(1));
+        true
+    }
+
+    fn apply_case_range(&mut self, range: TextRange, upper: bool) -> bool {
+        let range = range.normalized().clamped(self.content_char_len());
+        if range.start >= range.end {
+            return false;
+        }
+
+        let replacement = self
+            .text_for_range(range)
+            .chars()
+            .flat_map(|ch| {
+                if upper {
+                    ch.to_uppercase().collect::<Vec<_>>()
+                } else {
+                    ch.to_lowercase().collect::<Vec<_>>()
+                }
+            })
+            .collect::<String>();
+        self.replace_flat_range(range, &replacement);
+        self.set_cursor_from_flat(range.start);
+        true
+    }
+
+    fn replace_flat_range(&mut self, range: TextRange, replacement: &str) {
+        self.record_undo();
+        let start_byte = byte_index_for_char(&self.content, range.start);
+        let end_byte = byte_index_for_char(&self.content, range.end);
+        self.content
+            .replace_range(start_byte..end_byte, replacement);
+        self.dirty = true;
+    }
+
     fn delete_flat_range(&mut self, range: TextRange) {
+        self.record_undo();
         remove_char_range(&mut self.content, range.start, range.end);
         self.dirty = true;
     }
@@ -928,27 +1437,35 @@ impl NoteDocument {
                 .saturating_add(count.max(1).saturating_sub(1)),
         );
         let text = self.text_for_range(range);
+        let target = self.take_register_target();
         if yank {
-            self.registers.store_yank(text, true);
+            self.registers.store_yank(target, text, true);
         } else {
-            self.registers.store_deleted(text, true);
+            self.registers.store_deleted(target, text, true);
         }
     }
 
     fn paste_unnamed(&mut self, count: usize, placement: PastePlacement) -> bool {
-        if self.registers.unnamed.text.is_empty() {
+        let target = self.take_register_target();
+        let register = self.registers.register(target).clone();
+        if register.text.is_empty() {
             return false;
         }
 
-        if self.registers.unnamed.linewise {
-            self.paste_linewise(count.max(1), placement)
+        if register.linewise {
+            self.paste_linewise(count.max(1), placement, register)
         } else {
-            self.paste_charwise(count.max(1), placement)
+            self.paste_charwise(count.max(1), placement, register)
         }
     }
 
-    fn paste_linewise(&mut self, count: usize, placement: PastePlacement) -> bool {
-        let register_text = self.registers.unnamed.text.clone();
+    fn paste_linewise(
+        &mut self,
+        count: usize,
+        placement: PastePlacement,
+        register: RegisterValue,
+    ) -> bool {
+        let register_text = register.text;
         let paste_lines = register_text
             .trim_end_matches('\n')
             .split('\n')
@@ -978,8 +1495,13 @@ impl NoteDocument {
         true
     }
 
-    fn paste_charwise(&mut self, count: usize, placement: PastePlacement) -> bool {
-        let text = self.registers.unnamed.text.repeat(count);
+    fn paste_charwise(
+        &mut self,
+        count: usize,
+        placement: PastePlacement,
+        register: RegisterValue,
+    ) -> bool {
+        let text = register.text.repeat(count);
         let insert_at = match placement {
             PastePlacement::After => {
                 (self.flattened_cursor() + 1).min(self.current_line_end_flat_exclusive())
@@ -988,6 +1510,7 @@ impl NoteDocument {
         };
         let inserted_chars = text.chars().count();
         let byte_index = byte_index_for_char(&self.content, insert_at);
+        self.record_undo();
         self.content.insert_str(byte_index, &text);
         self.dirty = true;
         self.set_insert_cursor_from_flat(insert_at + inserted_chars.saturating_sub(1));
@@ -1013,6 +1536,18 @@ impl NoteDocument {
             .take(line)
             .map(|line| char_count(line) + 1)
             .sum()
+    }
+
+    fn line_for_flat(&self, mut offset: usize) -> usize {
+        let lines = self.lines_vec();
+        for (line_index, line) in lines.iter().enumerate() {
+            let len = char_count(line);
+            if offset <= len {
+                return line_index;
+            }
+            offset = offset.saturating_sub(len + 1);
+        }
+        lines.len().saturating_sub(1)
     }
 
     fn line_end_flat_including_newline(&self, line: usize) -> usize {
@@ -1116,6 +1651,7 @@ impl VimMode {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PendingCommand {
+    RegisterPrefix,
     Operator {
         operator: Operator,
         count: usize,
@@ -1125,8 +1661,12 @@ enum PendingCommand {
         count: usize,
         around: bool,
     },
-    OperatorGoto {
+    OperatorOrCaseGoto {
         operator: Operator,
+        count: usize,
+    },
+    CaseOperator {
+        upper: bool,
         count: usize,
     },
     Goto {
@@ -1139,6 +1679,45 @@ enum Operator {
     Delete,
     Change,
     Yank,
+    Indent,
+    Outdent,
+    Format,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TextObject {
+    Word { big_word: bool },
+    Delimited(char),
+    Paragraph,
+    Line,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RegisterTarget {
+    Unnamed,
+    Named(char),
+    Clipboard,
+    BlackHole,
+}
+
+impl RegisterTarget {
+    fn from_prefix(ch: char) -> Option<Self> {
+        match ch {
+            '+' => Some(Self::Clipboard),
+            '_' => Some(Self::BlackHole),
+            '"' => Some(Self::Unnamed),
+            name if name.is_ascii_alphabetic() => Some(Self::Named(name.to_ascii_lowercase())),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct DocumentSnapshot {
+    content: String,
+    mode: VimMode,
+    cursor_line: usize,
+    cursor_col: usize,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1196,17 +1775,48 @@ impl TextRange {
 struct Registers {
     unnamed: RegisterValue,
     yank: RegisterValue,
+    clipboard: RegisterValue,
+    named: BTreeMap<char, RegisterValue>,
 }
 
 impl Registers {
-    fn store_yank(&mut self, text: String, linewise: bool) {
+    fn register(&self, target: RegisterTarget) -> &RegisterValue {
+        match target {
+            RegisterTarget::Unnamed | RegisterTarget::BlackHole => &self.unnamed,
+            RegisterTarget::Clipboard => &self.clipboard,
+            RegisterTarget::Named(name) => self.named.get(&name).unwrap_or(&self.unnamed),
+        }
+    }
+
+    fn store_yank(&mut self, target: RegisterTarget, text: String, linewise: bool) {
+        if target == RegisterTarget::BlackHole {
+            return;
+        }
         let value = RegisterValue { text, linewise };
-        self.unnamed = value.clone();
+        self.store_target(target, value.clone());
         self.yank = value;
     }
 
-    fn store_deleted(&mut self, text: String, linewise: bool) {
-        self.unnamed = RegisterValue { text, linewise };
+    fn store_deleted(&mut self, target: RegisterTarget, text: String, linewise: bool) {
+        if target == RegisterTarget::BlackHole {
+            return;
+        }
+        self.store_target(target, RegisterValue { text, linewise });
+    }
+
+    fn store_target(&mut self, target: RegisterTarget, value: RegisterValue) {
+        match target {
+            RegisterTarget::Unnamed => self.unnamed = value,
+            RegisterTarget::Clipboard => {
+                self.unnamed = value.clone();
+                self.clipboard = value;
+            }
+            RegisterTarget::Named(name) => {
+                self.unnamed = value.clone();
+                self.named.insert(name, value);
+            }
+            RegisterTarget::BlackHole => {}
+        }
     }
 }
 
@@ -1257,6 +1867,21 @@ fn is_word_char(ch: char, big_word: bool) -> bool {
         return false;
     }
     big_word || ch.is_alphanumeric() || ch == '_'
+}
+
+fn is_repeatable_change(input: &str) -> bool {
+    input != "u" && input != "ctrl+r" && !input.starts_with('y')
+}
+
+fn delimiter_pair(delimiter: char) -> Option<(char, char)> {
+    match delimiter {
+        '\'' => Some(('\'', '\'')),
+        '"' => Some(('"', '"')),
+        '(' | ')' => Some(('(', ')')),
+        '[' | ']' => Some(('[', ']')),
+        '{' | '}' => Some(('{', '}')),
+        _ => None,
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1706,5 +2331,143 @@ mod tests {
 
         assert_eq!(doc.content(), "one\none\none\ntwo");
         assert_eq!(doc.cursor_line(), 1);
+    }
+
+    #[test]
+    fn normal_mode_undo_redo_restore_common_edits() {
+        let mut doc = NoteDocument::default();
+        doc.content = "one\ntwo\nthree".to_string();
+        doc.enter_normal();
+
+        assert!(doc.handle_normal_input("dd"));
+        assert_eq!(doc.content(), "two\nthree");
+
+        assert!(doc.handle_normal_input("u"));
+        assert_eq!(doc.content(), "one\ntwo\nthree");
+
+        assert!(doc.handle_normal_input("ctrl+r"));
+        assert_eq!(doc.content(), "two\nthree");
+    }
+
+    #[test]
+    fn normal_mode_dot_repeats_last_change_without_repeating_undo() {
+        let mut doc = NoteDocument::default();
+        doc.content = "abcdef".to_string();
+        doc.enter_normal();
+
+        assert!(doc.handle_normal_input("x"));
+        assert!(doc.handle_normal_input("."));
+        assert_eq!(doc.content(), "cdef");
+
+        assert!(doc.handle_normal_input("u"));
+        assert_eq!(doc.content(), "bcdef");
+        assert!(doc.handle_normal_input("."));
+        assert_eq!(doc.content(), "cdef");
+    }
+
+    #[test]
+    fn normal_mode_named_clipboard_and_black_hole_registers_work() {
+        let mut named = NoteDocument::default();
+        named.content = "one\ntwo".to_string();
+        named.enter_normal();
+
+        named.handle_normal_input("\"ayyj\"ap");
+
+        assert_eq!(named.named_register_text('a'), Some("one\n"));
+        assert_eq!(named.content(), "one\ntwo\none");
+
+        let mut clipboard = NoteDocument::default();
+        clipboard.content = "alpha beta".to_string();
+        clipboard.enter_normal();
+
+        clipboard.handle_normal_input("\"+yiw");
+
+        assert_eq!(clipboard.clipboard_register_text(), "alpha");
+        assert_eq!(clipboard.unnamed_register_text(), "alpha");
+        assert_eq!(clipboard.yank_register_text(), "alpha");
+
+        let mut black_hole = NoteDocument::default();
+        black_hole.content = "one\ntwo".to_string();
+        black_hole.enter_normal();
+        black_hole.handle_normal_input("yyj\"_dd");
+
+        assert_eq!(black_hole.content(), "one");
+        assert_eq!(black_hole.unnamed_register_text(), "one\n");
+        assert_eq!(black_hole.yank_register_text(), "one\n");
+    }
+
+    #[test]
+    fn normal_mode_indent_outdent_and_format_operators_work() {
+        let mut doc = NoteDocument::default();
+        doc.content = "one  \ntwo\t\nthree".to_string();
+        doc.enter_normal();
+
+        assert!(doc.handle_normal_input(">>"));
+        assert_eq!(doc.content(), "  one  \ntwo\t\nthree");
+
+        assert!(doc.handle_normal_input("<<"));
+        assert_eq!(doc.content(), "one  \ntwo\t\nthree");
+
+        assert!(doc.handle_normal_input("=j"));
+        assert_eq!(doc.content(), "one\ntwo\nthree");
+    }
+
+    #[test]
+    fn normal_mode_case_operators_work() {
+        let mut toggle = NoteDocument::default();
+        toggle.content = "aBc".to_string();
+        toggle.enter_normal();
+
+        assert!(toggle.handle_normal_input("3~"));
+        assert_eq!(toggle.content(), "AbC");
+
+        let mut lower = NoteDocument::default();
+        lower.content = "ALPHA beta".to_string();
+        lower.enter_normal();
+
+        assert!(lower.handle_normal_input("guw"));
+        assert_eq!(lower.content(), "alpha beta");
+
+        let mut upper = NoteDocument::default();
+        upper.content = "alpha beta".to_string();
+        upper.enter_normal();
+
+        assert!(upper.handle_normal_input("gUw"));
+        assert_eq!(upper.content(), "ALPHA beta");
+    }
+
+    #[test]
+    fn normal_mode_quote_bracket_paragraph_and_line_text_objects_work() {
+        let mut quote = NoteDocument::default();
+        quote.content = "say \"hello\" now".to_string();
+        quote.enter_normal();
+        quote.handle_normal_input("5l");
+
+        assert!(quote.handle_normal_input("ci\""));
+        assert_eq!(quote.content(), "say \"\" now");
+        assert_eq!(quote.mode(), VimMode::Insert);
+
+        let mut bracket = NoteDocument::default();
+        bracket.content = "call(one, two)".to_string();
+        bracket.enter_normal();
+        bracket.handle_normal_input("5l");
+
+        assert!(!bracket.handle_normal_input("ya("));
+        assert_eq!(bracket.yank_register_text(), "(one, two)");
+
+        let mut paragraph = NoteDocument::default();
+        paragraph.content = "one\ntwo\n\nthree\nfour".to_string();
+        paragraph.enter_normal();
+
+        assert!(paragraph.handle_normal_input("dap"));
+        assert_eq!(paragraph.content(), "three\nfour");
+
+        let mut line = NoteDocument::default();
+        line.content = "one\ntwo\nthree".to_string();
+        line.enter_normal();
+        line.handle_normal_input("j");
+
+        assert!(line.handle_normal_input("dil"));
+        assert_eq!(line.content(), "one\nthree");
     }
 }

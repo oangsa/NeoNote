@@ -459,6 +459,8 @@ export component AppWindow inherits Window {
                         root.editor-key("up");
                     } else if (event.text == Key.DownArrow) {
                         root.editor-key("down");
+                    } else if (event.modifiers.control && event.text == "r") {
+                        root.editor-key("ctrl+r");
                     } else {
                         root.editor-key(event.text);
                     }

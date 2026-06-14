@@ -5,6 +5,7 @@ use crate::{
     persistence::{AppConfig, AppDataPaths, RecentFiles, SessionState},
     platform::clipboard,
     theme::ThemeStore,
+    vim::key::{normalize_insert_key, normalize_normal_key, InsertKey, NormalKey},
 };
 
 pub struct AppController {
@@ -508,17 +509,13 @@ impl AppController {
     }
 
     fn handle_normal_editor_key(&mut self, key: &str) {
-        let normal_key = match key {
-            "escape" => {
+        let normal_key = match normalize_normal_key(key) {
+            NormalKey::EnterNormal => {
                 self.active_note_mut().enter_normal();
                 return;
             }
-            "left" => "h",
-            "right" => "l",
-            "up" => "k",
-            "down" => "j",
-            "return" | "backspace" | "delete" => return,
-            value => value,
+            NormalKey::Input(normal_key) => normal_key,
+            NormalKey::Ignore => return,
         };
 
         if self.config.sync_clipboard && is_clipboard_paste_key(normal_key) {
@@ -538,16 +535,13 @@ impl AppController {
     }
 
     fn handle_insert_editor_key(&mut self, key: &str) {
-        match key {
-            "escape" => self.active_note_mut().enter_normal(),
-            "return" => self.active_note_mut().insert_newline(),
-            "backspace" => self.active_note_mut().backspace(),
-            "delete" => self.active_note_mut().delete_at_cursor(),
-            "left" | "right" | "up" | "down" => {}
-            text if is_printable_editor_text(text) => {
-                self.active_note_mut().handle_insert_text(text)
-            }
-            _ => {}
+        match normalize_insert_key(key) {
+            InsertKey::EnterNormal => self.active_note_mut().enter_normal(),
+            InsertKey::Newline => self.active_note_mut().insert_newline(),
+            InsertKey::Backspace => self.active_note_mut().backspace(),
+            InsertKey::Delete => self.active_note_mut().delete_at_cursor(),
+            InsertKey::Text(text) => self.active_note_mut().handle_insert_text(text),
+            InsertKey::Ignore => {}
         }
     }
 
@@ -648,7 +642,8 @@ impl AppController {
         match clipboard::read_text() {
             Ok(text) => {
                 let linewise = text.ends_with('\n');
-                self.active_note_mut().set_unnamed_register(text, linewise);
+                self.active_note_mut()
+                    .set_clipboard_register(text, linewise);
             }
             Err(error) => self.last_message = format!("Could not read clipboard: {error}"),
         }
@@ -731,10 +726,6 @@ fn chrono_like_now() -> String {
         .map(|duration| duration.as_secs())
         .unwrap_or_default();
     format!("{seconds}")
-}
-
-fn is_printable_editor_text(text: &str) -> bool {
-    !text.is_empty() && text.chars().all(|ch| !ch.is_control())
 }
 
 fn is_clipboard_paste_key(key: &str) -> bool {

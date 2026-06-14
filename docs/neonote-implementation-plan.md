@@ -338,7 +338,7 @@ Recent files are capped at 20 and sorted descending by `last_opened`.
 
 ### Phase 0 - Stabilize Current Native Editor Baseline
 
-Status: mostly complete.
+Status: complete.
 
 Scope:
 
@@ -359,7 +359,7 @@ Acceptance:
 
 ### Phase 1 - Slint Foundation
 
-Status: first shell implemented.
+Status: complete.
 
 Scope:
 
@@ -379,6 +379,8 @@ Acceptance:
 
 ### Phase 2 - Slint Shell Feature Parity
 
+Status: complete.
+
 Scope:
 
 - Title/menu/status bars in Slint.
@@ -396,6 +398,8 @@ Acceptance:
 - Status bar shows native document state.
 
 ### Phase 3 - Slint Editor View
+
+Status: complete.
 
 Scope:
 
@@ -421,10 +425,12 @@ Current implementation note:
 
 ### Phase 4 - Extract Vim Core
 
+Status: complete.
+
 Scope:
 
 - Create `src/vim/`.
-- Move key normalization out of app/controller code.
+- Move key normalization out of app/controller code. Initial `src/vim/key.rs` extraction normalizes Slint/app key strings into pure normal-mode and insert-mode key intents.
 - Split `NoteDocument` into text-buffer APIs and `VimState`.
 - Define canonical `CursorPos` and `TextRange`.
 - Preserve current behavior while improving testability.
@@ -436,6 +442,8 @@ Acceptance:
 - Vim logic has no Slint dependencies except optional key conversion at the boundary.
 
 ### Phase 5 - Minimal Vim Navigation Completion
+
+Status: complete.
 
 Scope:
 
@@ -462,6 +470,8 @@ Acceptance:
 
 ### Phase 6 - Operators And Text Objects
 
+Status: complete.
+
 Scope:
 
 - Operators: `d`, `y`, `c`, `>`, `<`, `=`, `gu`, `gU`, `~`
@@ -477,6 +487,8 @@ Acceptance:
 - Buffer mutation is undo-transaction-ready.
 
 ### Phase 7 - Undo, Redo, Registers, Repeat
+
+Status: complete.
 
 Scope:
 

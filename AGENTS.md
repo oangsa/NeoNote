@@ -173,6 +173,7 @@ git push origin main
 - Do not reintroduce Neovide, Neovim RPC, HWND editor embedding, terminal editor rendering, WebView, Electron, Tauri, or browser-based rendering.
 - Keep all user-facing config and data under `%APPDATA%\NeoNote\`.
 - Write new reusable discoveries to `docs/skills/skill-{topic}.md` immediately.
+- After implementing a feature or fix, run the relevant tests and commit the completed work once tests pass, unless the user explicitly says not to commit.
 - Test before every push. Do not push broken builds to `dev`. Never push directly to `main`.
 - Commit messages must follow the format above. No freeform commit messages.
 - Do not revert unrelated user changes in a dirty worktree.
