@@ -6,6 +6,8 @@ component CommandButton inherits Rectangle {
     in property <brush> hover-color;
     in property <brush> command-border-color;
     in property <brush> text-color;
+    in property <TextHorizontalAlignment> text-alignment: center;
+    in property <length> text-padding-left: 0px;
     callback clicked();
 
     height: 30px;
@@ -15,12 +17,15 @@ component CommandButton inherits Rectangle {
     border-color: root.command-border-color;
     background: touch.has-hover ? root.hover-color : root.background-color;
 
-    Text {
-        text: root.text;
-        color: root.text-color;
-        font-size: 13px;
-        horizontal-alignment: center;
-        vertical-alignment: center;
+    HorizontalLayout {
+        padding-left: root.text-padding-left;
+        Text {
+            text: root.text;
+            color: root.text-color;
+            font-size: 13px;
+            horizontal-alignment: root.text-alignment;
+            vertical-alignment: center;
+        }
     }
 
     touch := TouchArea {
@@ -214,15 +219,22 @@ export struct SettingsData {
     window-opacity-label: string,
 }
 
+export struct DocumentTab {
+    index: int,
+    title: string,
+    is-active: bool,
+    is-modified: bool,
+}
+
 export component AppWindow inherits Window {
     title: "NeoNote";
-    width: 1280px;
-    height: 800px;
+    preferred-width: 1280px;
+    preferred-height: 800px;
 
     in property <string> file-title: "Untitled";
     in property <string> file-path: "";
     in property <[EditorLine]> editor-lines;
-    in property <string> document-tabs: "";
+    in property <[DocumentTab]> document-tabs;
     in property <string> status-text: "No note open";
     in property <string> status-right: "";
     in property <string> mode-text: "NORMAL";
@@ -263,6 +275,8 @@ export component AppWindow inherits Window {
     callback save-as-file();
     callback previous-document();
     callback next-document();
+    callback switch-to-document(int);
+    callback close-document(int);
     callback open-theme-panel();
     callback theme-preview(int);
     callback theme-apply(int);
@@ -284,6 +298,18 @@ export component AppWindow inherits Window {
 
     public function focus-editor() {
         editor-focus.focus();
+    }
+
+    public function scroll-to-cursor() {
+        let cursor_y = root.cursor-line * root.editor-line-height * 1px;
+        let visible_height = editor-scroll.height;
+        let current_scroll_y = -editor-scroll.viewport-y;
+        
+        if (cursor_y < current_scroll_y) {
+            editor-scroll.viewport-y = -cursor_y;
+        } else if (cursor_y + root.editor-line-height * 1px > current_scroll_y + visible_height) {
+            editor-scroll.viewport-y = -(cursor_y + root.editor-line-height * 1px - visible_height);
+        }
     }
 
     background: root.theme-background;
@@ -325,84 +351,112 @@ export component AppWindow inherits Window {
                     background: root.theme-border;
                 }
 
-                Text {
-                    text: root.has-document ? root.file-title : "[No Name]";
-                    color: root.theme-text-muted;
-                    font-size: 14px;
-                    vertical-alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    
+                    files-btn := Rectangle {
+                        width: 64px;
+                        height: 30px;
+                        border-radius: 4px;
+                        border-width: 1px;
+                        border-color: root.theme-border;
+                        background: files-touch.has-hover ? root.theme-border : root.theme-surface;
+
+                        Text {
+                            text: "Files";
+                            color: root.theme-text;
+                            font-size: 13px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        files-touch := TouchArea {
+                            clicked => {
+                                files-popup.show();
+                            }
+                        }
+
+                        files-popup := PopupWindow {
+                            x: 0px;
+                            y: 34px;
+                            width: 140px;
+
+                            Rectangle {
+                                background: root.theme-surface;
+                                border-color: root.theme-border;
+                                border-width: 1px;
+                                border-radius: 4px;
+                                drop-shadow-color: root.theme-background;
+                                drop-shadow-blur: 8px;
+                                drop-shadow-offset-y: 4px;
+
+                                VerticalLayout {
+                                    padding: 4px;
+                                    spacing: 2px;
+
+                                    CommandButton {
+                                        text: "New";
+                                        text-alignment: left;
+                                        text-padding-left: 12px;
+                                        background-color: root.theme-surface;
+                                        hover-color: root.theme-border;
+                                        command-border-color: transparent;
+                                        text-color: root.theme-text;
+                                        clicked => { root.new-file(); }
+                                    }
+                                    CommandButton {
+                                        text: "Open...";
+                                        text-alignment: left;
+                                        text-padding-left: 12px;
+                                        background-color: root.theme-surface;
+                                        hover-color: root.theme-border;
+                                        command-border-color: transparent;
+                                        text-color: root.theme-text;
+                                        clicked => { root.open-file(); }
+                                    }
+                                    Rectangle { height: 1px; background: root.theme-border; }
+                                    CommandButton {
+                                        text: "Save";
+                                        text-alignment: left;
+                                        text-padding-left: 12px;
+                                        background-color: root.theme-surface;
+                                        hover-color: root.theme-border;
+                                        command-border-color: transparent;
+                                        text-color: root.theme-text;
+                                        clicked => { root.save-file(); }
+                                    }
+                                    CommandButton {
+                                        text: "Save As...";
+                                        text-alignment: left;
+                                        text-padding-left: 12px;
+                                        background-color: root.theme-surface;
+                                        hover-color: root.theme-border;
+                                        command-border-color: transparent;
+                                        text-color: root.theme-text;
+                                        clicked => { root.save-as-file(); }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
                     horizontal-stretch: 1;
                 }
 
-                CommandButton {
-                    text: "Prev";
-                    background-color: root.theme-background-alt;
-                    hover-color: root.theme-border;
-                    command-border-color: root.theme-border;
-                    text-color: root.theme-text-muted;
-                    clicked => { root.previous-document(); }
-                }
-
-                CommandButton {
-                    text: "Next";
-                    background-color: root.theme-background-alt;
-                    hover-color: root.theme-border;
-                    command-border-color: root.theme-border;
-                    text-color: root.theme-text-muted;
-                    clicked => { root.next-document(); }
-                }
-
-                CommandButton {
-                    text: "New";
-                    background-color: root.theme-surface;
-                    hover-color: root.theme-border;
-                    command-border-color: root.theme-border;
-                    text-color: root.theme-text;
-                    clicked => { root.new-file(); }
-                }
-
-                CommandButton {
-                    text: "Open";
-                    background-color: root.theme-surface;
-                    hover-color: root.theme-border;
-                    command-border-color: root.theme-border;
-                    text-color: root.theme-text;
-                    clicked => { root.open-file(); }
-                }
-
-                CommandButton {
-                    text: "Save";
-                    background-color: root.theme-surface;
-                    hover-color: root.theme-border;
-                    command-border-color: root.theme-border;
-                    text-color: root.theme-text;
-                    clicked => { root.save-file(); }
-                }
-
-                CommandButton {
-                    text: "Save As";
-                    background-color: root.theme-surface;
-                    hover-color: root.theme-border;
-                    command-border-color: root.theme-border;
-                    text-color: root.theme-text;
-                    clicked => { root.save-as-file(); }
-                }
-
-                CommandButton {
-                    text: "Themes";
-                    background-color: root.theme-surface;
-                    hover-color: root.theme-border;
-                    command-border-color: root.theme-border;
-                    text-color: root.theme-text;
-                    clicked => { root.open-theme-panel(); }
-                }
-
-                CommandButton {
-                    text: "Settings";
-                    background-color: root.theme-surface;
-                    hover-color: root.theme-border;
-                    command-border-color: root.theme-border;
-                    text-color: root.theme-text;
-                    clicked => { root.open-settings-panel(); }
+                VerticalLayout {
+                    alignment: center;
+                    
+                    CommandButton {
+                        width: 32px;
+                        text: "⚙";
+                        background-color: root.theme-surface;
+                        hover-color: root.theme-border;
+                        command-border-color: root.theme-border;
+                        text-color: root.theme-text;
+                        clicked => { root.open-settings-panel(); }
+                    }
                 }
             }
         }
@@ -418,12 +472,68 @@ export component AppWindow inherits Window {
                 padding-right: 12px;
                 spacing: 10px;
 
-                Text {
-                    text: root.has-document ? root.document-tabs : "New .txt note";
-                    color: root.theme-text-muted;
-                    font-size: 12px;
-                    vertical-alignment: center;
+                ScrollView {
                     horizontal-stretch: 1;
+                    height: 28px;
+                    
+                    HorizontalLayout {
+                        spacing: 2px;
+                        
+                        for tab in root.document-tabs: Rectangle {
+                            width: 140px;
+                            height: 28px;
+                            background: tab.is-active ? root.theme-background : root.theme-surface;
+                            border-top-left-radius: 6px;
+                            border-top-right-radius: 6px;
+                            
+                            HorizontalLayout {
+                                padding-left: 10px;
+                                padding-right: 4px;
+                                spacing: 4px;
+                                
+                                Text {
+                                    horizontal-stretch: 1;
+                                    text: tab.title + (tab.is-modified ? " •" : "");
+                                    color: tab.is-active ? root.theme-text : root.theme-text-muted;
+                                    font-size: 12px;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                }
+
+                                VerticalLayout {
+                                    alignment: center;
+                                    
+                                    close-btn := Rectangle {
+                                        width: 16px;
+                                        height: 16px;
+                                        border-radius: 4px;
+                                        background: close-touch.has-hover ? root.theme-border : transparent;
+
+                                        Text {
+                                            text: "✕";
+                                            font-size: 10px;
+                                            color: tab.is-active ? root.theme-text : root.theme-text-muted;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
+
+                                        close-touch := TouchArea {
+                                            clicked => {
+                                                root.close-document(tab.index);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            TouchArea {
+                                width: parent.width - 24px;
+                                clicked => {
+                                    root.switch-to-document(tab.index);
+                                }
+                            }
+                        }
+                    }
                 }
 
                 Text {
@@ -463,6 +573,14 @@ export component AppWindow inherits Window {
                         root.editor-key("down");
                     } else if (event.modifiers.control && event.text == "r") {
                         root.editor-key("ctrl+r");
+                    } else if (event.modifiers.control && event.text == "=") {
+                        root.editor-key("ctrl+=");
+                    } else if (event.modifiers.control && event.text == "+") {
+                        root.editor-key("ctrl++");
+                    } else if (event.modifiers.control && event.text == "-") {
+                        root.editor-key("ctrl+-");
+                    } else if (event.text == Key.Tab) {
+                        root.editor-key("tab");
                     } else if (event.text == Key.Shift || event.text == Key.Control || event.text == Key.Alt || event.text == Key.Meta) {
                         // ignore modifier keys to prevent them from entering the buffer as unprintable characters
                     } else {
@@ -506,15 +624,7 @@ export component AppWindow inherits Window {
                         visible: !root.has-document;
                     }
 
-                    TouchArea {
-                        width: 100%;
-                        height: 100%;
-                        clicked => {
-                            editor-focus.focus();
-                        }
-                    }
-
-                    ScrollView {
+                    editor-scroll := ScrollView {
                         x: 0px;
                         y: 0px;
                         width: 100%;
@@ -609,26 +719,55 @@ export component AppWindow inherits Window {
                                     wrap: no-wrap;
                                 }
 
-                                line-touch := TouchArea {
-                                    width: 100%;
-                                    height: 100%;
 
-                                    pointer-event(event) => {
-                                        if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
-                                            editor-focus.focus();
-                                            root.editor-pointer-event(line.number - 1, (line-touch.mouse-x - 58px - root.editor-left-padding) / 1px, "down");
-                                        } else if (event.kind == PointerEventKind.move && line-touch.pressed) {
-                                            root.editor-pointer-event(line.number - 1, (line-touch.mouse-x - 58px - root.editor-left-padding) / 1px, "move");
-                                        } else if (event.button == PointerEventButton.left && event.kind == PointerEventKind.up) {
-                                            root.editor-pointer-event(line.number - 1, (line-touch.mouse-x - 58px - root.editor-left-padding) / 1px, "up");
-                                        }
-                                    }
-                                }
                             }
                         }
                     }
                 }
             }
+
+                    editor-touch := TouchArea {
+                        width: parent.width - 15px; // Leave room for scrollbar
+                        height: 100%;
+                        clicked => {
+                            editor-focus.focus();
+                        }
+                        scroll-event(event) => {
+                            if (event.modifiers.control) {
+                                if (event.delta-y > 0) {
+                                    root.editor-key("ctrl+scroll-up");
+                                } else if (event.delta-y < 0) {
+                                    root.editor-key("ctrl+scroll-down");
+                                }
+                                return accept;
+                            }
+                            return reject;
+                        }
+
+                        pointer-event(event) => {
+                            let physical_y = editor-touch.mouse-y - editor-scroll.viewport-y;
+                            let line_index = Math.floor(physical_y / (root.editor-line-height * 1px));
+                            if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
+                                root.editor-pointer-event(line_index, (editor-touch.mouse-x - 58px - root.editor-left-padding) / 1px, "down");
+                            } else if (event.button == PointerEventButton.left && event.kind == PointerEventKind.up) {
+                                root.editor-pointer-event(line_index, (editor-touch.mouse-x - 58px - root.editor-left-padding) / 1px, "up");
+                            }
+                        }
+
+                        moved => {
+                            if (editor-touch.pressed) {
+                                let physical_y = editor-touch.mouse-y - editor-scroll.viewport-y;
+                                let line_index = Math.floor(physical_y / (root.editor-line-height * 1px));
+                                root.editor-pointer-event(line_index, (editor-touch.mouse-x - 58px - root.editor-left-padding) / 1px, "move");
+                            }
+                        }
+
+                        double-clicked => {
+                            let physical_y = editor-touch.mouse-y - editor-scroll.viewport-y;
+                            let line_index = Math.floor(physical_y / (root.editor-line-height * 1px));
+                            root.editor-pointer-event(line_index, (editor-touch.mouse-x - 58px - root.editor-left-padding) / 1px, "double_click");
+                        }
+                    }
         }
 
         Rectangle {
@@ -909,6 +1048,40 @@ export component AppWindow inherits Window {
                     VerticalLayout {
                         padding-right: 16px;
                         spacing: 12px;
+
+                Text {
+                    text: "Appearance";
+                    color: root.theme-text-muted;
+                    font-size: 12px;
+                    font-weight: 700;
+                }
+
+                Rectangle {
+                    height: 46px;
+                    border-radius: 4px;
+                    background: touch-theme.has-hover ? root.theme-border : root.theme-background;
+
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 10px;
+
+                        Text {
+                            text: "Themes ->";
+                            color: root.theme-text;
+                            font-size: 13px;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                    }
+
+                    touch-theme := TouchArea {
+                        clicked => {
+                            root.open-theme-panel();
+                        }
+                    }
+                }
 
                 Text {
                     text: "Editor";
