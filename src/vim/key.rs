@@ -30,12 +30,19 @@ pub enum EditorKey {
     DeleteWord,
     DeleteLine,
     Input(String),
+    Indent,
+    Dedent,
+    SingleNormalCommand,
+    DigraphPrefix,
+    LiteralPrefix,
     Ignore,
 }
 
 pub fn normalize_normal_key(key: &str) -> EditorKey {
     match key {
         "escape" | "ctrl+[" => EditorKey::EnterNormal,
+        "ctrl+a" => EditorKey::Input("\x01".to_string()),
+        "ctrl+x" => EditorKey::Input("\x18".to_string()),
         "left" => EditorKey::Input("h".to_string()),
         "right" => EditorKey::Input("l".to_string()),
         "up" => EditorKey::Input("k".to_string()),
@@ -59,6 +66,11 @@ pub fn normalize_insert_key(key: &str) -> EditorKey {
         "ctrl+r" => EditorKey::RegisterPaste,
         "ctrl+w" => EditorKey::DeleteWord,
         "ctrl+u" => EditorKey::DeleteLine,
+        "ctrl+t" => EditorKey::Indent,
+        "ctrl+d" => EditorKey::Dedent,
+        "ctrl+o" => EditorKey::SingleNormalCommand,
+        "ctrl+k" => EditorKey::DigraphPrefix,
+        "ctrl+v" => EditorKey::LiteralPrefix,
         "return" => EditorKey::Newline,
         "backspace" => EditorKey::Backspace,
         "delete" => EditorKey::Delete,

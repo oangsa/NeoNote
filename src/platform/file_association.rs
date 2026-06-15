@@ -1,8 +1,5 @@
 #[cfg(target_os = "windows")]
-use {
-    std::path::{Path, PathBuf},
-    windows::Win32::UI::Shell::{SHChangeNotify, SHCNE_ASSOCCHANGED, SHCNF_IDLIST},
-};
+use windows::Win32::UI::Shell::{SHChangeNotify, SHCNE_ASSOCCHANGED, SHCNF_IDLIST};
 
 #[derive(Debug, Clone)]
 pub struct FileAssociationConfig {

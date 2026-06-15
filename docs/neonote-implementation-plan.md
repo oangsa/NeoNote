@@ -697,6 +697,62 @@ Acceptance:
 - `cargo test` passes.
 - No `egui`/`eframe` dependency remains unless explicitly retained for non-UI tooling with documented justification.
 
+### Phase 16 - Navigation and Basic Editing Gaps
+
+Scope:
+
+- Display line motions: `gj`, `gk`
+- Screen position jumps: `H`, `M`, `L`
+- Advanced word motions: `ge`, `gE`
+- Line/column jumps: `g_`, `|`
+- Section jumps: `]]`, `[[`, `][`, `[]`
+- Backwards delete: `X`
+- Substitution: `s`, `S`
+- Line joining: `J`, `gJ`
+- Replace mode: `R`, `r{char}`
+- Visual mode additions: `o` / `O` for swapping cursor, `gv` for reselect.
+
+Acceptance:
+
+- Motions correctly navigate text and update cursor.
+- Commands correctly manipulate text and are undoable.
+
+### Phase 17 - Insert Mode Enhancements & Advanced Paste
+
+Scope:
+
+- Start positions: `ea`, `gi`
+- In-insert commands: `Ctrl+o`, `Ctrl+w`, `Ctrl+u`, `Ctrl+t`, `Ctrl+d`
+- Digraphs / Special: `Ctrl+k`, `Ctrl+v`
+- Paste variations: `gp`, `gP`, `]p`, `[p`
+
+Acceptance:
+
+- `Ctrl+o` correctly executes a single normal mode command and returns to insert mode.
+- Insert shortcuts and paste variations work accurately and preserve register formatting.
+
+### Phase 18 - Advanced Operators and Folds
+
+Scope:
+
+- Case toggling: `g~`
+- Formatting: `gw`, `gq`
+- External filters: `!`
+- Basic folding: `zf`, `zd`, `za`, `zo`, `zc`
+- Number adjustments: `Ctrl+a`, `Ctrl+x`
+
+Acceptance:
+
+- Operators successfully process visual selections and motions.
+- Simple folds correctly hide/show text lines in the UI.
+
+### Future Phase - Autocomplete and Spelling
+
+Scope:
+
+- `Ctrl+x` autocomplete sub-mode with word suggestions.
+- Spell checking integration.
+
 ## Testing Strategy
 
 Run `cargo test` after each phase and before commits.

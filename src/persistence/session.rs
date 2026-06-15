@@ -24,10 +24,14 @@ fn default_version() -> u32 {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SessionFile {
-    pub path: std::path::PathBuf,
+    pub path: Option<std::path::PathBuf>,
     pub cursor_line: usize,
     pub cursor_col: usize,
     pub viewport_top_line: usize,
+    #[serde(default)]
+    pub is_dirty: bool,
+    #[serde(default)]
+    pub unsaved_content: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Default)]

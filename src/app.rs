@@ -1,7 +1,8 @@
 use std::path::PathBuf;
+use std::collections::HashMap;
 
 use crate::{
-    notes::{NoteDocument, RegisterSnapshot, VimMode, PendingCommand, ExCommandAction},
+    notes::{Pane, TextBuffer, PaneId, BufferId, RegisterSnapshot, VimMode, PendingCommand, ExCommandAction},
     persistence::{AppConfig, AppDataPaths, RecentFiles, SessionState},
     platform::clipboard,
     theme::ThemeStore,
@@ -13,14 +14,16 @@ pub struct AppController {
     session: SessionState,
     recent_files: RecentFiles,
     themes: ThemeStore,
-    documents: Vec<NoteDocument>,
+    documents: Vec<Pane>,
+    buffers: HashMap<BufferId, TextBuffer>,
     active_document: usize,
-    mouse_selection: Option<MouseSelection>,
     theme_panel_open: bool,
     settings_panel_open: bool,
     last_message: String,
     suppress_session_save: bool,
     last_session_save: Option<std::time::Instant>,
+    next_pane_id: usize,
+    next_buffer_id: usize,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -28,7 +31,7 @@ pub struct AppSnapshot {
     pub file_title: String,
     pub file_path: String,
     pub editor_lines: Vec<EditorLineSnapshot>,
-    pub document_tabs: String,
+    pub document_tabs: Vec<DocumentTabSnapshot>,
     pub status_text: String,
     pub status_right: String,
     pub mode_text: String,
@@ -49,6 +52,14 @@ pub struct AppSnapshot {
     pub settings_panel_open: bool,
     pub settings: SettingsSnapshot,
     pub theme: ThemeSnapshot,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct DocumentTabSnapshot {
+    pub index: i32,
+    pub title: String,
+    pub is_active: bool,
+    pub is_modified: bool,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -124,20 +135,6 @@ pub struct EditorLineSnapshot {
     pub cursor_block: bool,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct MouseSelection {
-    anchor_line: usize,
-    focus_line: usize,
-}
-
-impl MouseSelection {
-    fn includes(self, line: usize) -> bool {
-        let start = self.anchor_line.min(self.focus_line);
-        let end = self.anchor_line.max(self.focus_line);
-        start != end && (start..=end).contains(&line)
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct ThemeSnapshot {
     pub background: String,
@@ -186,8 +183,14 @@ impl AppController {
         let recent_files = RecentFiles::load_or_default(&paths);
         let themes = ThemeStore::load(&paths, config.active_theme.as_deref());
 
-        let mut initial_doc = NoteDocument::default();
-        initial_doc.defer_enabled = true;
+        let initial_buffer = TextBuffer::new();
+        let buffer_id = BufferId(1);
+        let pane_id = PaneId(1);
+        let mut initial_pane = Pane::new(pane_id, buffer_id);
+        initial_pane.defer_enabled = true;
+        
+        let mut buffers = HashMap::new();
+        buffers.insert(buffer_id, initial_buffer);
 
         Self {
             paths,
@@ -195,22 +198,34 @@ impl AppController {
             session,
             recent_files,
             themes,
-            documents: vec![initial_doc],
+            documents: vec![initial_pane],
+            buffers,
             active_document: 0,
-            mouse_selection: None,
             theme_panel_open: false,
             settings_panel_open: false,
             last_message: String::new(),
             suppress_session_save: false,
             last_session_save: None,
+            next_pane_id: 2,
+            next_buffer_id: 2,
         }
     }
 
     pub fn new_file(&mut self) {
-        let mut note = NoteDocument::default();
+        let buffer_id = BufferId(self.next_buffer_id);
+        self.next_buffer_id += 1;
+        let pane_id = PaneId(self.next_pane_id);
+        self.next_pane_id += 1;
+
+        let mut note = Pane::new(pane_id, buffer_id);
         note.defer_enabled = true;
-        note.new_blank();
-        if self.documents.len() == 1 && !self.active_note().is_open() {
+        
+        let buffer = TextBuffer::new();
+        self.buffers.insert(buffer_id, buffer);
+
+        let active_buffer = self.active_buffer();
+        let is_untitled_empty = self.active_pane().path_string(active_buffer).is_none() && self.active_pane().is_empty(active_buffer);
+        if self.documents.len() == 1 && is_untitled_empty {
             self.documents[0] = note;
             self.active_document = 0;
         } else {
@@ -218,7 +233,7 @@ impl AppController {
             self.active_document = self.documents.len().saturating_sub(1);
         }
         self.last_message = "New note ready.".to_string();
-        self.mouse_selection = None;
+        self.flush_deferred_action();
     }
 
     pub fn open_file_dialog(&mut self) {
@@ -235,14 +250,14 @@ impl AppController {
     }
 
     pub fn save(&mut self) {
-        if !self.active_note().is_open() {
+        if !self.active_pane().is_open(self.active_buffer()) {
             self.new_file();
         }
 
-        if self.active_note().path_string().is_some() {
-            match self.active_note_mut().save() {
+        if self.active_pane().path_string(self.active_buffer()).is_some() {
+            match { let (p, b) = self.active_pane_and_buffer(); p.save(b) } {
                 Ok(()) => {
-                    if let Some(path) = self.active_note().path_string() {
+                    if let Some(path) = self.active_pane().path_string(self.active_buffer()) {
                         self.remember_recent(PathBuf::from(path));
                     }
                     self.last_message = "Saved.".to_string();
@@ -256,8 +271,8 @@ impl AppController {
     }
 
     pub fn save_as(&mut self) {
-        if !self.active_note().is_open() {
-            self.active_note_mut().new_blank();
+        if !self.active_pane().is_open(self.active_buffer()) {
+            { let (p, b) = self.active_pane_and_buffer(); p.new_blank(b) };
         }
 
         if let Some(path) = rfd::FileDialog::new()
@@ -266,7 +281,7 @@ impl AppController {
             .set_file_name("note.txt")
             .save_file()
         {
-            match self.active_note_mut().save_as(&path) {
+            match { let (p, b) = self.active_pane_and_buffer(); p.save_as(b, &path) } {
                 Ok(()) => {
                     self.remember_recent(path);
                     self.last_message = "Saved.".to_string();
@@ -307,7 +322,9 @@ impl AppController {
 
         self.config.active_theme = Some(slug);
         match self.config.save(&self.paths) {
-            Ok(()) => self.last_message = "Theme applied.".to_string(),
+            Ok(()) => {
+                self.last_message = "Theme applied.".to_string();
+            },
             Err(error) => {
                 self.last_message = format!("Theme applied but config was not saved: {error}")
             }
@@ -386,16 +403,16 @@ impl AppController {
     }
 
     pub fn flush_deferred_action(&mut self) -> bool {
-        if !self.active_note().is_open() {
+        if !self.active_pane().is_open(self.active_buffer()) {
             return false;
         }
 
         let before_register = self
             .config
             .sync_clipboard
-            .then(|| self.active_note().unnamed_register_snapshot());
+            .then(|| self.active_pane().unnamed_register_snapshot(self.active_buffer()));
 
-        let result = self.active_note_mut().flush_deferred_action();
+        let result = { let (p, b) = self.active_pane_and_buffer(); p.flush_deferred_action(b) };
         if result {
             self.export_unnamed_register_if_changed(before_register);
         }
@@ -403,23 +420,41 @@ impl AppController {
     }
 
     pub fn handle_editor_key(&mut self, key: &str) {
-        if !self.active_note().is_open() {
+        match key {
+            "ctrl+=" | "ctrl++" | "ctrl+scroll-up" => {
+                self.config.font_size = (self.config.font_size + 1.0).min(72.0);
+                let _ = self.config.save(&self.paths);
+                return;
+            }
+            "ctrl+-" | "ctrl+scroll-down" => {
+                self.config.font_size = (self.config.font_size - 1.0).max(8.0);
+                let _ = self.config.save(&self.paths);
+                return;
+            }
+            "ctrl+0" => {
+                self.config.font_size = 14.0;
+                let _ = self.config.save(&self.paths);
+                return;
+            }
+            _ => {}
+        }
+
+        if !self.active_pane().is_open(self.active_buffer()) {
             return;
         }
 
-        self.mouse_selection = None;
         self.flush_deferred_action();
-        self.active_note_mut().clear_yank_highlight();
+        { let (p, b) = self.active_pane_and_buffer(); p.clear_yank_highlight(b) };
         
-        let is_insert = self.active_note().mode() == crate::notes::VimMode::Insert || self.active_note().mode() == crate::notes::VimMode::Replace;
+        let is_insert = self.active_pane().mode(self.active_buffer()) == crate::notes::VimMode::Insert || self.active_pane().mode(self.active_buffer()) == crate::notes::VimMode::Replace;
         
         if is_insert {
-            if self.active_note_mut().resolve_insert_register_paste(key) {
+            if { let (p, b) = self.active_pane_and_buffer(); p.resolve_insert_register_paste(b, key) } {
                 return;
             }
         }
         
-        let editor_key = match self.active_note().mode() {
+        let editor_key = match self.active_pane().mode(self.active_buffer()) {
             crate::notes::VimMode::Insert | crate::notes::VimMode::Replace => {
                 crate::vim::key::normalize_insert_key(key)
             }
@@ -444,53 +479,77 @@ impl AppController {
         let before_register = self
             .config
             .sync_clipboard
-            .then(|| self.active_note().unnamed_register_snapshot());
+            .then(|| self.active_pane().unnamed_register_snapshot(self.active_buffer()));
 
-        if self.active_note_mut().handle_editor_key(editor_key) {
+        if { let (p, b) = self.active_pane_and_buffer(); p.handle_editor_key(b, editor_key) } {
             self.last_message.clear();
         }
 
         self.export_unnamed_register_if_changed(before_register);
 
-        if let Some(action) = self.active_note_mut().take_ex_action() {
+        if let Some(action) = { let (p, b) = self.active_pane_and_buffer(); p.take_ex_action(b) } {
             self.handle_ex_action(action);
         }
         self.save_session_state(false);
     }
 
     pub fn handle_editor_pointer(&mut self, line: i32, x_pixels: f32, event_kind: &str) {
-        if !self.active_note().is_open() || line < 0 {
+        if !self.active_pane().is_open(self.active_buffer()) || line < 0 {
             return;
         }
 
         self.flush_deferred_action();
-        self.active_note_mut().clear_yank_highlight();
+        { let (p, b) = self.active_pane_and_buffer(); p.clear_yank_highlight(b) };
         let line = line as usize;
         let column = pointer_column_from_x(x_pixels, self.config.font_size);
-        self.active_note_mut().set_cursor_from_pointer(line, column);
+
+
+        let pane = self.active_pane();
+        let is_visual = matches!(pane.mode(self.active_buffer()), VimMode::Visual | VimMode::VisualLine);
+
+        eprintln!("handle_editor_pointer: kind={}, line={}, column={}, is_visual={}", event_kind, line, column, is_visual);
+
+        let mut trigger_viw = false;
 
         match event_kind {
             "down" => {
-                let cursor_line = self.active_note().cursor_line();
-                self.mouse_selection = Some(MouseSelection {
-                    anchor_line: cursor_line,
-                    focus_line: cursor_line,
-                });
+                let (p, b) = self.active_pane_and_buffer();
+                if matches!(p.mode(b), VimMode::Visual | VimMode::VisualLine) {
+                    p.vim_state.mode = VimMode::Normal;
+                    p.visual_anchor_flat = None;
+                }
+                p.set_cursor_from_pointer(b, line, column);
+                eprintln!("down: set cursor to {},{}", p.cursor_line, p.cursor_col);
             }
             "move" => {
-                let focus_line = self.active_note().cursor_line();
-                if let Some(selection) = &mut self.mouse_selection {
-                    selection.focus_line = focus_line;
+                let (p, b) = self.active_pane_and_buffer();
+                if !matches!(p.mode(b), VimMode::Visual | VimMode::VisualLine) {
+                    // Start visual selection from current cursor
+                    let current_flat = p.flattened_cursor(b);
+                    p.vim_state.mode = VimMode::Visual;
+                    p.visual_anchor_flat = Some(current_flat);
+                    eprintln!("move: started visual mode at flat {}", current_flat);
                 }
+                p.cursor_line = line;
+                p.cursor_col = column;
+                p.clamp_cursor_normal(b);
+                eprintln!("move: updated cursor to {},{}", p.cursor_line, p.cursor_col);
             }
-            "up" => {
-                if let Some(selection) = self.mouse_selection {
-                    if selection.anchor_line == selection.focus_line {
-                        self.mouse_selection = None;
-                    }
-                }
+            "double_click" => {
+                let (p, _b) = self.active_pane_and_buffer();
+                p.vim_state.mode = VimMode::Normal;
+                p.visual_anchor_flat = None;
+                trigger_viw = true;
             }
+            "up" => {}
             _ => {}
+        }
+
+        if trigger_viw {
+            let (p, b) = self.active_pane_and_buffer();
+            p.handle_editor_key(b, crate::vim::key::EditorKey::Input("v".to_string()));
+            p.handle_editor_key(b, crate::vim::key::EditorKey::Input("i".to_string()));
+            p.handle_editor_key(b, crate::vim::key::EditorKey::Input("w".to_string()));
         }
 
         self.last_message.clear();
@@ -506,8 +565,7 @@ impl AppController {
         } else {
             self.active_document - 1
         };
-        self.last_message = format!("Switched to {}.", self.active_note().title());
-        self.mouse_selection = None;
+        self.last_message = format!("Switched to {}.", self.active_pane().title(self.active_buffer()));
     }
 
     pub fn next_document(&mut self) {
@@ -516,26 +574,99 @@ impl AppController {
         }
 
         self.active_document = (self.active_document + 1) % self.documents.len();
-        self.last_message = format!("Switched to {}.", self.active_note().title());
-        self.mouse_selection = None;
+        self.last_message = format!("Switched to {}.", self.active_pane().title(self.active_buffer()));
+    }
+
+    pub fn switch_to_document(&mut self, index: usize) {
+        if index < self.documents.len() {
+            self.active_document = index;
+            self.last_message = format!("Switched to {}.", self.active_pane().title(self.active_buffer()));
+        }
+    }
+
+    pub fn close_document(&mut self, index: usize) {
+        if index >= self.documents.len() {
+            return;
+        }
+        
+        let is_dirty = {
+            let doc = &self.documents[index];
+            let buffer = self.buffers.get(&doc.buffer_id).unwrap();
+            buffer.dirty
+        };
+
+        if is_dirty {
+            let name = {
+                let doc = &self.documents[index];
+                let buffer = self.buffers.get(&doc.buffer_id).unwrap();
+                doc.path_string(buffer).map(|p| PathBuf::from(p).file_name().unwrap_or_default().to_string_lossy().to_string()).unwrap_or_else(|| "Untitled".to_string())
+            };
+            
+            let msg = rfd::MessageDialog::new()
+                .set_title("Save changes?")
+                .set_description(&format!("Do you want to save the changes you made to {}?", name))
+                .set_buttons(rfd::MessageButtons::YesNoCancel)
+                .show();
+                
+            match msg {
+                rfd::MessageDialogResult::Yes => {
+                    let doc = &mut self.documents[index];
+                    let buffer = self.buffers.get_mut(&doc.buffer_id).unwrap();
+
+                    if let Some(path_str) = doc.path_string(buffer) {
+                        let path = PathBuf::from(path_str);
+                        if let Err(e) = doc.save_as(buffer, &path) {
+                            self.last_message = format!("Could not save note: {e}");
+                            return;
+                        }
+                    } else {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("Text", &["txt"])
+                            .add_filter("Markdown", &["md"])
+                            .set_file_name("note.txt")
+                            .save_file()
+                        {
+                            if let Err(e) = doc.save_as(buffer, &path) {
+                                self.last_message = format!("Could not save note: {e}");
+                                return;
+                            }
+                        } else {
+                            return;
+                        }
+                    }
+                }
+                rfd::MessageDialogResult::No => {}
+                _ => return,
+            }
+        }
+        
+        self.documents.remove(index);
+        
+        if self.documents.is_empty() {
+            self.new_file();
+        } else if self.active_document >= self.documents.len() {
+            self.active_document = self.documents.len().saturating_sub(1);
+        }
+        self.save_session_state(false);
     }
 
     pub fn snapshot(&self) -> AppSnapshot {
-        let note = self.active_note();
-        let stats = note.stats();
-        let cursor = cursor_snapshot(note);
-        let mode_text = if note.is_open() {
-            note.mode().label().to_string()
+        let note = self.active_pane();
+        let buffer = self.active_buffer();
+        let stats = note.stats(buffer);
+        let cursor = cursor_snapshot(note, buffer);
+        let mode_text = if note.is_open(self.active_buffer()) {
+            note.mode(buffer).label().to_string()
         } else {
             "READY".to_string()
         };
         let theme = self.theme_snapshot();
         AppSnapshot {
-            file_title: note.title(),
-            file_path: note.path_string().unwrap_or_default(),
-            editor_lines: editor_lines(note, self.mouse_selection),
+            file_title: note.title(self.active_buffer()),
+            file_path: note.path_string(self.active_buffer()).unwrap_or_default(),
+            editor_lines: editor_lines(note, self.active_buffer()),
             document_tabs: self.document_tabs(),
-            status_text: if note.is_open() {
+            status_text: if note.is_open(self.active_buffer()) {
                 match note.vim_state.mode {
                     VimMode::Command => {
                         format!(":{}", note.vim_state.command_line.input)
@@ -549,8 +680,8 @@ impl AppController {
                         } else {
                             format!(
                                 " {}{}",
-                                note.title(),
-                                if note.dirty() { " [+]" } else { "" },
+                                note.title(self.active_buffer()),
+                                if self.active_buffer().dirty { " [+]" } else { "" },
                             )
                         }
                     }
@@ -558,14 +689,14 @@ impl AppController {
             } else {
                 " [No Name]".to_string()
             },
-            status_right: if note.is_open() {
+            status_right: if note.is_open(self.active_buffer()) {
                 format!(
                     "Doc {}/{}  |  Ln {}, Col {}{}  |  {} lines, {} words, {} chars  ",
                     self.active_document + 1,
                     self.open_document_count(),
-                    note.cursor_line() + 1,
-                    note.display_cursor_col() + 1,
-                    note.search_pattern()
+                    note.cursor_line(buffer) + 1,
+                    note.display_cursor_col(buffer) + 1,
+                    note.search_pattern(buffer)
                         .map(|pattern| format!("  |  /{pattern}"))
                         .unwrap_or_default(),
                     stats.line_count,
@@ -576,15 +707,15 @@ impl AppController {
                 "NeoNote native Vim core  ".to_string()
             },
             mode_color: self.mode_color(&mode_text),
-            cursor_line: note.cursor_line() as i32,
-            cursor_column: note.display_cursor_col() as i32,
+            cursor_line: note.cursor_line(buffer) as i32,
+            cursor_column: note.display_cursor_col(buffer) as i32,
             cursor_prefix: cursor.prefix,
             cursor_cell: cursor.cell,
             cursor_suffix: cursor.suffix,
-            cursor_block: note.mode() != VimMode::Insert,
+            cursor_block: note.mode(buffer) != VimMode::Insert,
             mode_text,
             message: self.last_message.clone(),
-            has_document: note.is_open(),
+            has_document: note.is_open(self.active_buffer()),
             editor_font_family: crate::platform::fonts::select_editor_font(
                 &self.config.font_family,
             ),
@@ -600,7 +731,7 @@ impl AppController {
 
 
     fn close_active_document(&mut self, force: bool) -> bool {
-        if self.active_note().dirty() && !force {
+        if self.active_buffer().dirty && !force {
             self.last_message = "No write since last change (add ! to override)".to_string();
             return false;
         }
@@ -612,9 +743,8 @@ impl AppController {
             self.documents.remove(self.active_document);
             self.active_document = self.active_document.min(self.documents.len() - 1);
             self.last_message = "Closed note.".to_string();
-            self.mouse_selection = None;
             self.save_session_state(false);
-            true
+            return false;
         }
     }
 
@@ -622,7 +752,7 @@ impl AppController {
         match action {
             ExCommandAction::Save(Some(path_str)) => {
                 let path = PathBuf::from(path_str);
-                match self.active_note_mut().save_as(&path) {
+                match { let (p, b) = self.active_pane_and_buffer(); p.save_as(b, &path) } {
                     Ok(()) => {
                         self.remember_recent(path);
                         self.last_message = "Saved.".to_string();
@@ -646,7 +776,7 @@ impl AppController {
             }
             ExCommandAction::SaveAndQuit => {
                 self.save();
-                if !self.active_note().dirty() {
+                if !self.active_buffer().dirty {
                     self.close_active_document(false);
                 }
             }
@@ -702,7 +832,7 @@ impl AppController {
             // Let's ensure there is at least one blank document if needed, or clear.
             if self.documents.is_empty() {
                 self.new_file();
-            } else if !self.active_note().is_open() {
+            } else if !self.active_pane().is_open(self.active_buffer()) {
                 // blank note
             }
         } else {
@@ -739,16 +869,33 @@ impl AppController {
         let active_document = self.session.active_document.clone();
 
         for session_file in opened_files {
-            if session_file.path.exists() {
+            if session_file.path.as_ref().map_or(true, |p| p.exists()) {
                 to_open.push(session_file);
             }
         }
 
         for session_file in to_open {
-            if self.open_file_or_focus_existing(session_file.path.clone()).is_ok() {
-                self.active_note_mut().set_cursor_line(session_file.cursor_line);
-                self.active_note_mut().set_cursor_col(session_file.cursor_col);
-                self.active_note_mut().set_viewport_top_line(session_file.viewport_top_line);
+            let mut opened = false;
+            if let Some(path) = &session_file.path {
+                if self.open_file_or_focus_existing(path.clone()).is_ok() {
+                    opened = true;
+                }
+            } else {
+                self.new_file();
+                opened = true;
+            }
+
+            if opened {
+                { let (p, b) = self.active_pane_and_buffer(); p.set_cursor_line(b, session_file.cursor_line); }
+                { let (p, b) = self.active_pane_and_buffer(); p.set_cursor_col(b, session_file.cursor_col); }
+                { let (p, b) = self.active_pane_and_buffer(); p.set_viewport_top_line(b, session_file.viewport_top_line); }
+                
+                if let Some(content) = session_file.unsaved_content {
+                    let (_, b) = self.active_pane_and_buffer();
+                    b.content = content;
+                    b.dirty = session_file.is_dirty;
+                }
+                
                 restored_count += 1;
             }
         }
@@ -784,7 +931,8 @@ impl AppController {
 
     fn find_open_document_by_path(&self, canonical_path: &std::path::Path) -> Option<usize> {
         for (i, doc) in self.documents.iter().enumerate() {
-            if let Some(doc_path_str) = doc.path_string() {
+            let buffer = self.buffers.get(&doc.buffer_id).unwrap();
+            if let Some(doc_path_str) = doc.path_string(buffer) {
                 let doc_path = PathBuf::from(doc_path_str);
                 let doc_canonical = std::fs::canonicalize(&doc_path).unwrap_or_else(|_| doc_path);
                 if doc_canonical == canonical_path {
@@ -812,21 +960,32 @@ impl AppController {
 
         let mut opened_files = Vec::new();
         for doc in &self.documents {
-            if let Some(path_str) = doc.path_string() {
-                if doc.is_open() {
-                    let p = PathBuf::from(&path_str);
-                    let path = std::fs::canonicalize(&p).unwrap_or_else(|_| p);
-                    opened_files.push(crate::persistence::session::SessionFile {
-                        path,
-                        cursor_line: doc.cursor_line(),
-                        cursor_col: doc.cursor_col(),
-                        viewport_top_line: doc.viewport_top_line(),
-                    });
-                }
+            let buffer = self.buffers.get(&doc.buffer_id).unwrap();
+            if doc.is_open(buffer) {
+                let path = doc.path_string(buffer).map(|p| {
+                    let p_buf = PathBuf::from(&p);
+                    std::fs::canonicalize(&p_buf).unwrap_or_else(|_| p_buf)
+                });
+
+                let is_dirty = buffer.dirty;
+                let unsaved_content = if is_dirty {
+                    Some(buffer.content.clone())
+                } else {
+                    None
+                };
+
+                opened_files.push(crate::persistence::session::SessionFile {
+                    path,
+                    cursor_line: doc.cursor_line(buffer),
+                    cursor_col: doc.cursor_col(buffer),
+                    viewport_top_line: doc.viewport_top_line(buffer),
+                    is_dirty,
+                    unsaved_content,
+                });
             }
         }
 
-        let active_document = self.active_note().path_string().map(|p| {
+        let active_document = self.active_pane().path_string(self.active_buffer()).map(|p| {
             let p_buf = PathBuf::from(&p);
             std::fs::canonicalize(&p_buf).unwrap_or_else(|_| p_buf)
         });
@@ -841,23 +1000,31 @@ impl AppController {
     fn open_path(&mut self, path: PathBuf) {
         if let Some(index) = self.document_index_for_path(&path) {
             self.active_document = index;
-            self.mouse_selection = None;
             self.last_message = "File already open.".to_string();
             return;
         }
 
-        let mut note = NoteDocument::default();
+        let buffer_id = BufferId(self.next_buffer_id);
+        self.next_buffer_id += 1;
+        let pane_id = PaneId(self.next_pane_id);
+        self.next_pane_id += 1;
+
+        let mut note = Pane::new(pane_id, buffer_id);
         note.defer_enabled = true;
-        match note.open(&path) {
+        
+        let mut buffer = TextBuffer::new();
+        match note.open(&mut buffer, &path) {
             Ok(()) => {
-                if self.documents.len() == 1 && !self.active_note().is_open() {
+                self.buffers.insert(buffer_id, buffer);
+                let active_buffer = self.active_buffer();
+                let is_untitled_empty = self.active_pane().path_string(active_buffer).is_none() && self.active_pane().is_empty(active_buffer);
+                if self.documents.len() == 1 && is_untitled_empty {
                     self.documents[0] = note;
                     self.active_document = 0;
                 } else {
                     self.documents.push(note);
                     self.active_document = self.documents.len().saturating_sub(1);
                 }
-                self.mouse_selection = None;
                 self.remember_recent(path);
 
                 self.last_message = "Opened note.".to_string();
@@ -938,12 +1105,11 @@ impl AppController {
         match clipboard::read_text() {
             Ok(text) => {
                 let text = text.replace("\r\n", "\n");
-                if self.active_note().clipboard_register_text() == text {
+                if self.active_pane().clipboard_register_text(self.active_buffer()) == text {
                     return;
                 }
                 let linewise = text.ends_with('\n');
-                self.active_note_mut()
-                    .set_clipboard_register(text, linewise);
+                { let (p, b) = self.active_pane_and_buffer(); p.set_clipboard_register(b, text, linewise); }
             }
             Err(error) => self.last_message = format!("Could not read clipboard: {error}"),
         }
@@ -954,7 +1120,7 @@ impl AppController {
             return;
         };
 
-        let after = self.active_note().unnamed_register_snapshot();
+        let after = self.active_pane().unnamed_register_snapshot(self.active_buffer());
         if after == before || after.text.is_empty() {
             return;
         }
@@ -964,13 +1130,33 @@ impl AppController {
         }
     }
 
-    pub(crate) fn active_note(&self) -> &NoteDocument {
+    
+    pub(crate) fn active_pane_and_buffer(&mut self) -> (&mut Pane, &mut TextBuffer) {
+        let index = self
+            .active_document
+            .min(self.documents.len().saturating_sub(1));
+        let pane = &mut self.documents[index];
+        let buffer = self.buffers.get_mut(&pane.buffer_id).unwrap();
+        (pane, buffer)
+    }
+
+    pub(crate) fn active_pane(&self) -> &Pane {
         &self.documents[self
             .active_document
             .min(self.documents.len().saturating_sub(1))]
     }
 
-    pub(crate) fn active_note_mut(&mut self) -> &mut NoteDocument {
+    pub(crate) fn active_buffer(&self) -> &TextBuffer {
+        self.buffers.get(&self.active_pane().buffer_id).unwrap()
+    }
+
+    pub(crate) fn active_note(&self) -> &Pane {
+        &self.documents[self
+            .active_document
+            .min(self.documents.len().saturating_sub(1))]
+    }
+
+    pub(crate) fn active_note_mut(&mut self) -> &mut Pane {
         let index = self
             .active_document
             .min(self.documents.len().saturating_sub(1));
@@ -979,34 +1165,38 @@ impl AppController {
 
     fn document_index_for_path(&self, path: &std::path::Path) -> Option<usize> {
         self.documents.iter().position(|note| {
-            note.path_string()
+            note.path_string(self.active_buffer())
                 .map(|open_path| PathBuf::from(open_path) == path)
                 .unwrap_or(false)
         })
     }
 
-    fn document_tabs(&self) -> String {
+    fn document_tabs(&self) -> Vec<DocumentTabSnapshot> {
         self.documents
             .iter()
             .enumerate()
-            .filter(|(_, note)| note.is_open())
-            .map(|(index, note)| {
-                let active_marker = if index == self.active_document {
-                    ">"
-                } else {
-                    " "
-                };
-                let dirty_marker = if note.dirty() { " +" } else { "" };
-                format!("{active_marker} {}{dirty_marker}", note.title())
+            .filter_map(|(index, note)| {
+                let buffer = self.buffers.get(&note.buffer_id)?;
+                if !note.is_open(buffer) {
+                    return None;
+                }
+                
+                Some(DocumentTabSnapshot {
+                    index: index as i32,
+                    title: note.title(buffer),
+                    is_active: index == self.active_document,
+                    is_modified: buffer.dirty,
+                })
             })
-            .collect::<Vec<_>>()
-            .join("   ")
+            .collect()
     }
 
     fn open_document_count(&self) -> usize {
         self.documents
             .iter()
-            .filter(|note| note.is_open())
+            .filter(|note| {
+                self.buffers.get(&note.buffer_id).map_or(false, |b| note.is_open(b))
+            })
             .count()
             .max(1)
     }
@@ -1050,20 +1240,20 @@ struct CursorSnapshot {
     suffix: String,
 }
 
-fn cursor_snapshot(note: &NoteDocument) -> CursorSnapshot {
+fn cursor_snapshot(note: &Pane, buffer: &TextBuffer) -> CursorSnapshot {
     let line = note
-        .content()
+        .content(buffer)
         .split('\n')
-        .nth(note.cursor_line())
+        .nth(note.cursor_line(buffer))
         .unwrap_or_default();
-    let col = note.display_cursor_col();
+    let col = note.display_cursor_col(buffer);
     let prefix = line.chars().take(col).collect::<String>();
-    let suffix_start = if note.mode() == VimMode::Normal {
+    let suffix_start = if note.mode(buffer) == VimMode::Normal {
         col.saturating_add(1)
     } else {
         col
     };
-    let cell = if note.mode() == VimMode::Normal {
+    let cell = if note.mode(buffer) == VimMode::Normal {
         line.chars().nth(col).unwrap_or(' ').to_string()
     } else {
         " ".to_string()
@@ -1077,26 +1267,18 @@ fn cursor_snapshot(note: &NoteDocument) -> CursorSnapshot {
     }
 }
 
-fn editor_lines(
-    note: &NoteDocument,
-    mouse_selection: Option<MouseSelection>,
-) -> Vec<EditorLineSnapshot> {
-    let cursor_line = note.cursor_line();
-    let cursor_column = note.display_cursor_col() as i32;
-    let cursor_block = note.mode() != VimMode::Insert;
-    let cursor = cursor_snapshot(note);
+fn editor_lines(note: &Pane, buffer: &TextBuffer) -> Vec<EditorLineSnapshot> {
+    let cursor_line = note.cursor_line(buffer);
+    let cursor_column = note.display_cursor_col(buffer) as i32;
+    let cursor_block = note.mode(buffer) != VimMode::Insert;
+    let cursor = cursor_snapshot(note, buffer);
 
-    content_lines(note)
+    content_lines(buffer)
         .into_iter()
         .enumerate()
         .map(|(index, text)| {
             let (selected_prefix, selected_text) = {
-                let mut cols = note.line_selection_cols(index);
-                if let Some(selection) = mouse_selection {
-                    if selection.includes(index) {
-                        cols = Some((0, usize::MAX));
-                    }
-                }
+                let cols = note.line_selection_cols(buffer, index);
                 if let Some((start_col, end_col)) = cols {
                     let chars: Vec<char> = text.chars().collect();
                     let start = start_col.min(chars.len());
@@ -1112,7 +1294,7 @@ fn editor_lines(
             is_cursor_line: index == cursor_line,
             selected_prefix,
             selected_text,
-            is_search_match: note.line_has_search_match(index),
+            is_search_match: note.line_has_search_match(buffer, index),
             cursor_column,
             cursor_prefix: if index == cursor_line {
                 cursor.prefix.clone()
@@ -1136,11 +1318,11 @@ fn editor_lines(
         .collect()
 }
 
-fn content_lines(note: &NoteDocument) -> Vec<String> {
-    if note.content().is_empty() {
+fn content_lines(buffer: &TextBuffer) -> Vec<String> {
+    if buffer.content.is_empty() {
         vec![String::new()]
     } else {
-        note.content().split('\n').map(ToOwned::to_owned).collect()
+        buffer.content.split('\n').map(ToOwned::to_owned).collect()
     }
 }
 
@@ -1159,9 +1341,9 @@ mod tests {
         controller.handle_editor_key("i");
         controller.handle_editor_key("b");
 
-        assert_eq!(controller.active_note().content(), "b");
+        assert_eq!(controller.active_note().content(controller.active_buffer()), "b");
         controller.previous_document();
-        assert_eq!(controller.active_note().content(), "a");
+        assert_eq!(controller.active_note().content(controller.active_buffer()), "a");
     }
 
     #[test]
@@ -1174,13 +1356,16 @@ mod tests {
         std::fs::write(&second, "two").unwrap();
 
         let mut controller = AppController::new();
+        dbg!(controller.documents.len());
         controller.open_path(first);
+        dbg!(controller.documents.len());
         controller.open_path(second);
+        dbg!(controller.documents.len());
 
         assert_eq!(controller.open_document_count(), 2);
-        assert_eq!(controller.active_note().content(), "two");
+        assert_eq!(controller.active_note().content(controller.active_buffer()), "two");
         controller.previous_document();
-        assert_eq!(controller.active_note().content(), "one");
+        assert_eq!(controller.active_note().content(controller.active_buffer()), "one");
     }
 
     #[test]
@@ -1340,7 +1525,7 @@ mod tests {
         controller.handle_editor_pointer(2, 0.0, "up");
         assert!(!controller.snapshot().editor_lines[1].selected_text.is_empty());
 
-        controller.handle_editor_key("j");
+        controller.handle_editor_key("escape");
         assert!(controller
             .snapshot()
             .editor_lines
@@ -1352,8 +1537,8 @@ mod tests {
     fn editor_lines_render_visual_selection_and_search_matches() {
         let mut controller = AppController::new();
         controller.new_file();
-        *controller.active_note_mut().content_mut() = "one\ntwo\nthree".to_string();
-        controller.active_note_mut().enter_normal();
+        { let (p, b) = controller.active_pane_and_buffer(); *p.content_mut(b) = "one\ntwo\nthree".to_string(); }
+        { let (p, b) = controller.active_pane_and_buffer(); p.enter_normal(b); }
 
         controller.handle_editor_key("g");
         controller.handle_editor_key("g");
@@ -1545,13 +1730,13 @@ mod tests {
         }
         // Move to the first line
         controller.handle_editor_key("k");
-        assert_eq!(controller.active_note().cursor_line(), 0);
+        assert_eq!(controller.active_note().cursor_line(controller.active_buffer()), 0);
 
         // Press yy
         controller.handle_editor_key("y");
         controller.handle_editor_key("y");
 
-        assert_eq!(controller.active_note().unnamed_register_text(), "line1\n");
+        assert_eq!(controller.active_note().unnamed_register_text(controller.active_buffer()), "line1\n");
         if controller.config.sync_clipboard {
             assert_eq!(clipboard::read_text().unwrap().replace("\r\n", "\n"), "line1\n");
         }

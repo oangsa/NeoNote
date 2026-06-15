@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
-use std::io::{Read, Write};
+use std::io::Write;
 use std::fs::OpenOptions;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -38,7 +38,7 @@ where
     use windows::{
         core::PCWSTR,
         Win32::System::Pipes::{CreateNamedPipeW, ConnectNamedPipe, DisconnectNamedPipe, PIPE_TYPE_MESSAGE, PIPE_READMODE_MESSAGE, PIPE_WAIT},
-        Win32::Foundation::{HANDLE, CloseHandle, GetLastError, ERROR_PIPE_CONNECTED},
+        Win32::Foundation::{CloseHandle, GetLastError, ERROR_PIPE_CONNECTED},
         Win32::Storage::FileSystem::ReadFile,
         Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES,
     };

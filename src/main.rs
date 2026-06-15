@@ -74,7 +74,9 @@ fn main() -> Result<(), slint::PlatformError> {
         timer
     };
 
-    window.run()
+    let result = window.run();
+    controller.borrow_mut().save_session_state(true);
+    result
 }
 
 fn install_callbacks(window: &AppWindow, controller: Rc<RefCell<AppController>>) {
@@ -130,6 +132,26 @@ fn install_callbacks(window: &AppWindow, controller: Rc<RefCell<AppController>>)
         controller_for_next.borrow_mut().next_document();
         if let Some(window) = weak_window.upgrade() {
             apply_snapshot(&window, &controller_for_next.borrow().snapshot());
+            window.invoke_focus_editor();
+        }
+    });
+
+    let weak_window = window.as_weak();
+    let controller_for_switch = Rc::clone(&controller);
+    window.on_switch_to_document(move |index| {
+        controller_for_switch.borrow_mut().switch_to_document(index as usize);
+        if let Some(window) = weak_window.upgrade() {
+            apply_snapshot(&window, &controller_for_switch.borrow().snapshot());
+            window.invoke_focus_editor();
+        }
+    });
+
+    let weak_window = window.as_weak();
+    let controller_for_close = Rc::clone(&controller);
+    window.on_close_document(move |index| {
+        controller_for_close.borrow_mut().close_document(index as usize);
+        if let Some(window) = weak_window.upgrade() {
+            apply_snapshot(&window, &controller_for_close.borrow().snapshot());
             window.invoke_focus_editor();
         }
     });
@@ -309,7 +331,7 @@ fn install_callbacks(window: &AppWindow, controller: Rc<RefCell<AppController>>)
         let has_highlight = {
             let ctrl = controller_for_editor.borrow();
             let note = ctrl.active_note();
-            note.has_yank_highlight() || note.has_deferred_action()
+            note.has_yank_highlight(ctrl.active_buffer()) || note.has_deferred_action(ctrl.active_buffer())
         };
 
         if let Some(window) = weak_window.upgrade() {
@@ -323,7 +345,10 @@ fn install_callbacks(window: &AppWindow, controller: Rc<RefCell<AppController>>)
                     if let Some(w) = weak_window_inner.upgrade() {
                         let mut ctrl = controller_inner.borrow_mut();
                         ctrl.flush_deferred_action();
-                        ctrl.active_note_mut().clear_yank_highlight();
+                        {
+        let (p, b) = ctrl.active_pane_and_buffer();
+        p.clear_yank_highlight(b);
+    }
                         apply_editor_snapshot(&w, &ctrl.snapshot());
                     }
                 });
@@ -423,7 +448,21 @@ fn apply_editor_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
         ))
         .into(),
     );
-    window.set_document_tabs(SharedString::from(snapshot.document_tabs.as_str()));
+    window.set_document_tabs(
+        Rc::new(VecModel::from(
+            snapshot
+                .document_tabs
+                .iter()
+                .map(|tab| DocumentTab {
+                    index: tab.index,
+                    title: SharedString::from(tab.title.as_str()),
+                    is_active: tab.is_active,
+                    is_modified: tab.is_modified,
+                })
+                .collect::<Vec<_>>(),
+        ))
+        .into(),
+    );
     window.set_status_text(SharedString::from(snapshot.status_text.as_str()));
     window.set_status_right(SharedString::from(snapshot.status_right.as_str()));
     window.set_mode_text(SharedString::from(snapshot.mode_text.as_str()));
@@ -439,6 +478,7 @@ fn apply_editor_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
     window.set_editor_font_size(snapshot.editor_font_size);
     window.set_editor_line_height(snapshot.editor_line_height);
     window.set_mode_color(brush_from_hex(&snapshot.mode_color));
+    window.invoke_scroll_to_cursor();
 }
 
 fn brush_from_hex(value: &str) -> Brush {
