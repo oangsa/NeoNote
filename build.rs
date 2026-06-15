@@ -6,11 +6,19 @@ fn main() {
 
     #[cfg(windows)]
     {
+        let package_version = std::env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "1.0.0".to_string());
+        let windows_version = format!("{}.0", package_version);
         let mut resource = winres::WindowsResource::new();
+        resource.set("FileVersion", &windows_version);
+        resource.set("ProductVersion", &windows_version);
+        resource.set("ProductName", "NeoNote");
+        resource.set("FileDescription", "NeoNote");
+        resource.set("OriginalFilename", "NeoNote.exe");
         resource.set_manifest(
-            r#"
+            &format!(
+                r#"
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-  <assemblyIdentity version="0.1.0.0" processorArchitecture="*" name="NeoNote" type="win32"/>
+  <assemblyIdentity version="{windows_version}" processorArchitecture="*" name="NeoNote" type="win32"/>
   <description>NeoNote</description>
   <application xmlns="urn:schemas-microsoft-com:asm.v3">
     <windowsSettings>
@@ -20,6 +28,7 @@ fn main() {
   </application>
 </assembly>
 "#,
+            ),
         );
 
         if let Err(error) = resource.compile() {
