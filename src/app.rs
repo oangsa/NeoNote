@@ -892,7 +892,7 @@ impl AppController {
                 
                 if let Some(content) = session_file.unsaved_content {
                     let (_, b) = self.active_pane_and_buffer();
-                    b.content = content;
+                    b.content = content.replace("\r\n", "\n");
                     b.dirty = session_file.is_dirty;
                 }
                 

@@ -166,7 +166,8 @@ impl Pane {
 
     pub fn open(&mut self, buffer: &mut TextBuffer, path: impl AsRef<Path>) -> std::io::Result<()> {
         let path = path.as_ref();
-        buffer.content = fs::read_to_string(path)?;
+        let content = fs::read_to_string(path)?;
+        buffer.content = content.replace("\r\n", "\n");
         buffer.path = Some(path.to_path_buf());
         buffer.dirty = false;
         buffer.open = true;
