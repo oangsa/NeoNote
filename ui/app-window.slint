@@ -16,6 +16,14 @@ component CommandButton inherits Rectangle {
     border-width: 1px;
     border-color: root.command-border-color;
     background: touch.has-hover ? root.hover-color : root.background-color;
+    animate background {
+        duration: 140ms;
+        easing: ease-out;
+    }
+    animate border-color {
+        duration: 140ms;
+        easing: ease-out;
+    }
 
     HorizontalLayout {
         padding-left: root.text-padding-left;
@@ -25,6 +33,10 @@ component CommandButton inherits Rectangle {
             font-size: 13px;
             horizontal-alignment: root.text-alignment;
             vertical-alignment: center;
+            animate color {
+                duration: 140ms;
+                easing: ease-out;
+            }
         }
     }
 
@@ -123,6 +135,10 @@ component ToggleRow inherits Rectangle {
     height: 48px;
     border-radius: 4px;
     background: touch.has-hover ? root.row-hover : root.row-background;
+    animate background {
+        duration: 160ms;
+        easing: ease-out;
+    }
 
     HorizontalLayout {
         padding-left: 12px;
@@ -158,6 +174,10 @@ component ToggleRow inherits Rectangle {
                 height: 20px;
                 border-radius: 10px;
                 background: root.checked ? root.row-accent : root.row-border;
+                animate background {
+                    duration: 160ms;
+                    easing: ease-in-out;
+                }
 
                 Rectangle {
                     x: root.checked ? 20px : 2px;
@@ -166,6 +186,10 @@ component ToggleRow inherits Rectangle {
                     height: 16px;
                     border-radius: 8px;
                     background: root.row-background;
+                    animate x {
+                        duration: 160ms;
+                        easing: ease-in-out;
+                    }
                 }
             }
         }
@@ -584,6 +608,11 @@ export component AppWindow inherits Window {
                     color: root.message == "" ? root.theme-text-muted : root.theme-success;
                     font-size: 12px;
                     vertical-alignment: center;
+                    opacity: root.message == "" ? 0.45 : 1;
+                    animate opacity {
+                        duration: 180ms;
+                        easing: ease-out;
+                    }
                 }
             }
         }
@@ -858,26 +887,41 @@ export component AppWindow inherits Window {
         y: 0px;
         width: 100%;
         height: 100%;
-        visible: root.show-theme-panel;
+        visible: root.show-theme-panel || self.opacity > 0.01;
+        opacity: root.show-theme-panel ? 1 : 0;
         background: root.theme-background.with_alpha(0.68);
+        animate opacity {
+            duration: 180ms;
+            easing: ease-out;
+        }
 
         TouchArea {
             width: 100%;
             height: 100%;
+            enabled: root.show-theme-panel;
             clicked => {
                 root.theme-panel-close();
             }
         }
 
-        Rectangle {
+        theme-panel-card := Rectangle {
             width: min(parent.width - 48px, 560px);
             height: min(parent.height - 80px, 520px);
             x: (parent.width - self.width) / 2;
-            y: 56px;
+            y: root.show-theme-panel ? 56px : 76px;
+            opacity: root.show-theme-panel ? 1 : 0;
             border-width: 1px;
             border-color: root.theme-border;
             border-radius: 6px;
             background: root.theme-surface;
+            animate y {
+                duration: 220ms;
+                easing: ease-out;
+            }
+            animate opacity {
+                duration: 180ms;
+                easing: ease-out;
+            }
 
             VerticalLayout {
                 padding: 16px;
@@ -1030,26 +1074,41 @@ export component AppWindow inherits Window {
         y: 0px;
         width: 100%;
         height: 100%;
-        visible: root.show-settings-panel;
+        visible: root.show-settings-panel || self.opacity > 0.01;
+        opacity: root.show-settings-panel ? 1 : 0;
         background: root.theme-background.with_alpha(0.68);
+        animate opacity {
+            duration: 180ms;
+            easing: ease-out;
+        }
 
         TouchArea {
             width: 100%;
             height: 100%;
+            enabled: root.show-settings-panel;
             clicked => {
                 root.settings-panel-close();
             }
         }
 
-        Rectangle {
+        settings-panel-card := Rectangle {
             width: min(parent.width - 48px, 600px);
             height: min(parent.height - 80px, 560px);
             x: (parent.width - self.width) / 2;
-            y: 56px;
+            y: root.show-settings-panel ? 56px : 76px;
+            opacity: root.show-settings-panel ? 1 : 0;
             border-width: 1px;
             border-color: root.theme-border;
             border-radius: 6px;
             background: root.theme-surface;
+            animate y {
+                duration: 220ms;
+                easing: ease-out;
+            }
+            animate opacity {
+                duration: 180ms;
+                easing: ease-out;
+            }
 
             VerticalLayout {
                 padding: 16px;
