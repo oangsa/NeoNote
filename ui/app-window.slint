@@ -550,44 +550,71 @@ export component AppWindow inherits Window {
                         for tab in root.document-tabs: Rectangle {
                             width: 140px;
                             height: 28px;
-                            background: tab.is-active ? root.theme-background : root.theme-surface;
-                            border-top-left-radius: 6px;
-                            border-top-right-radius: 6px;
+                            background: transparent;
                             
-                            HorizontalLayout {
-                                padding-left: 10px;
-                                padding-right: 4px;
-                                spacing: 4px;
-                                
-                                Text {
-                                    horizontal-stretch: 1;
-                                    text: tab.title + (tab.is-modified ? " •" : "");
-                                    color: tab.is-active ? root.theme-text : root.theme-text-muted;
-                                    font-size: 12px;
-                                    vertical-alignment: center;
-                                    overflow: elide;
+                            tab-card := Rectangle {
+                                width: parent.width;
+                                height: parent.height;
+                                x: tab-touch.pressed ? min(max(tab-touch.mouse-x - self.width / 2, -18px), 18px) : 0px;
+                                y: tab-touch.pressed ? -3px : 0px;
+                                background: tab-touch.pressed
+                                    ? root.theme-border
+                                    : (tab.is-active ? root.theme-background : root.theme-surface);
+                                border-top-left-radius: 6px;
+                                border-top-right-radius: 6px;
+                                opacity: tab-touch.pressed ? 0.98 : 1;
+                                animate x {
+                                    duration: 120ms;
+                                    easing: ease-out;
+                                }
+                                animate y {
+                                    duration: 140ms;
+                                    easing: ease-out;
+                                }
+                                animate background {
+                                    duration: 140ms;
+                                    easing: ease-out;
+                                }
+                                animate opacity {
+                                    duration: 140ms;
+                                    easing: ease-out;
                                 }
 
-                                VerticalLayout {
-                                    alignment: center;
+                                HorizontalLayout {
+                                    padding-left: 10px;
+                                    padding-right: 4px;
+                                    spacing: 4px;
                                     
-                                    close-btn := Rectangle {
-                                        width: 16px;
-                                        height: 16px;
-                                        border-radius: 4px;
-                                        background: close-touch.has-hover ? root.theme-border : transparent;
+                                    Text {
+                                        horizontal-stretch: 1;
+                                        text: tab.title + (tab.is-modified ? " •" : "");
+                                        color: tab.is-active ? root.theme-text : root.theme-text-muted;
+                                        font-size: 12px;
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                    }
 
-                                        Text {
-                                            text: "x";
-                                            font-size: 12px;
-                                            color: tab.is-active ? root.theme-text : root.theme-text-muted;
-                                            horizontal-alignment: center;
-                                            vertical-alignment: center;
-                                        }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        
+                                        close-btn := Rectangle {
+                                            width: 16px;
+                                            height: 16px;
+                                            border-radius: 4px;
+                                            background: close-touch.has-hover ? root.theme-border : transparent;
 
-                                        close-touch := TouchArea {
-                                            clicked => {
-                                                root.close-document(tab.index);
+                                            Text {
+                                                text: "x";
+                                                font-size: 12px;
+                                                color: tab.is-active ? root.theme-text : root.theme-text-muted;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
+
+                                            close-touch := TouchArea {
+                                                clicked => {
+                                                    root.close-document(tab.index);
+                                                }
                                             }
                                         }
                                     }
