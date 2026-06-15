@@ -342,6 +342,7 @@ export component AppWindow inherits Window {
     callback previous-document();
     callback next-document();
     callback switch-to-document(int);
+    callback reorder-document(int, int);
     callback close-document(int);
     callback open-theme-panel();
     callback theme-preview(int);
@@ -593,10 +594,21 @@ export component AppWindow inherits Window {
                                 }
                             }
                             
-                            TouchArea {
+                            tab-touch := TouchArea {
                                 width: parent.width - 24px;
                                 clicked => {
                                     root.switch-to-document(tab.index);
+                                }
+                                moved => {
+                                    if (!tab-touch.pressed) {
+                                        return;
+                                    }
+
+                                    if (tab-touch.mouse-x < -24px) {
+                                        root.reorder-document(tab.index, tab.index - 1);
+                                    } else if (tab-touch.mouse-x > self.width + 24px) {
+                                        root.reorder-document(tab.index, tab.index + 1);
+                                    }
                                 }
                             }
                         }

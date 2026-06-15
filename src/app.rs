@@ -236,7 +236,7 @@ impl AppController {
             self.documents.push(note);
             self.active_document = self.documents.len().saturating_sub(1);
         }
-        self.last_message = self.language().new_note_ready_message().to_string();
+        self.last_message.clear();
         self.flush_deferred_action();
     }
 
@@ -264,7 +264,7 @@ impl AppController {
                     if let Some(path) = self.active_pane().path_string(self.active_buffer()) {
                         self.remember_recent(PathBuf::from(path));
                     }
-                    self.last_message = self.language().saved_message().to_string();
+                    self.last_message.clear();
                 }
                 Err(error) => self.last_message = format!("Could not save note: {error}"),
             }
@@ -288,7 +288,7 @@ impl AppController {
             match { let (p, b) = self.active_pane_and_buffer(); p.save_as(b, &path) } {
                 Ok(()) => {
                     self.remember_recent(path);
-                    self.last_message = self.language().saved_message().to_string();
+                    self.last_message.clear();
                 }
                 Err(error) => self.last_message = format!("Could not save note: {error}"),
             }
@@ -299,7 +299,7 @@ impl AppController {
         self.theme_panel_open = true;
         self.settings_panel_open = false;
         self.themes.clear_preview();
-        self.last_message = self.language().choose_theme_message().to_string();
+        self.last_message.clear();
     }
 
     pub fn preview_theme(&mut self, index: i32) {
@@ -308,11 +308,7 @@ impl AppController {
         };
 
         self.themes.preview(index);
-        self.last_message = self
-            .themes
-            .active_theme()
-            .map(|theme| self.language().previewing_theme_message(&theme.name))
-            .unwrap_or_default();
+        self.last_message.clear();
     }
 
     pub fn apply_theme(&mut self, index: i32) {
@@ -327,7 +323,7 @@ impl AppController {
         self.config.active_theme = Some(slug);
         match self.config.save(&self.paths) {
             Ok(()) => {
-                self.last_message = self.language().theme_applied_message().to_string();
+                self.last_message.clear();
             },
             Err(error) => {
                 self.last_message = format!("Theme applied but config was not saved: {error}")
@@ -339,76 +335,76 @@ impl AppController {
     pub fn close_theme_panel(&mut self) {
         self.themes.clear_preview();
         self.theme_panel_open = false;
-        self.last_message = self.language().theme_selection_canceled_message().to_string();
+        self.last_message.clear();
     }
 
     pub fn open_settings_panel(&mut self) {
         self.themes.clear_preview();
         self.theme_panel_open = false;
         self.settings_panel_open = true;
-        self.last_message = self.language().adjust_settings_message().to_string();
+        self.last_message.clear();
     }
 
     pub fn close_settings_panel(&mut self) {
         self.settings_panel_open = false;
-        self.last_message = self.language().settings_closed_message().to_string();
+        self.last_message.clear();
     }
 
     pub fn cycle_language(&mut self, delta: i32) {
         self.config.language = self.config.language.cycle(delta);
-        self.save_config_message(self.language().ready_message());
+        self.save_config_silent();
     }
 
     pub fn adjust_font_size(&mut self, delta: i32) {
         self.config.font_size = (self.config.font_size + delta as f32).clamp(8.0, 32.0);
-        self.save_config_message("Font size updated.");
+        self.save_config_silent();
     }
 
     pub fn adjust_line_height(&mut self, delta_tenths: i32) {
         self.config.line_height =
             (self.config.line_height + (delta_tenths as f32 / 10.0)).clamp(1.0, 2.4);
-        self.save_config_message("Line height updated.");
+        self.save_config_silent();
     }
 
     pub fn adjust_tab_size(&mut self, delta: i32) {
         self.config.tab_size = ((i32::from(self.config.tab_size) + delta).clamp(2, 8)) as u8;
-        self.save_config_message("Tab size updated.");
+        self.save_config_silent();
     }
 
     pub fn adjust_window_opacity(&mut self, delta: i32) {
         self.config.window_opacity =
             ((i32::from(self.config.window_opacity) + delta).clamp(40, 100)) as u8;
-        self.save_config_message("Window opacity updated.");
+        self.save_config_silent();
     }
 
     pub fn toggle_word_wrap(&mut self) {
         self.config.word_wrap = !self.config.word_wrap;
-        self.save_config_message("Word wrap updated.");
+        self.save_config_silent();
     }
 
     pub fn toggle_sync_clipboard(&mut self) {
         self.config.sync_clipboard = !self.config.sync_clipboard;
-        self.save_config_message("Clipboard sync updated.");
+        self.save_config_silent();
     }
 
     pub fn toggle_restore_last_session(&mut self) {
         self.config.restore_last_session = !self.config.restore_last_session;
-        self.save_config_message("Session restore updated.");
+        self.save_config_silent();
     }
 
     pub fn toggle_show_launcher_on_startup(&mut self) {
         self.config.show_launcher_on_startup = !self.config.show_launcher_on_startup;
-        self.save_config_message("Startup launcher updated.");
+        self.save_config_silent();
     }
 
     pub fn toggle_remember_window_geometry(&mut self) {
         self.config.remember_window_geometry = !self.config.remember_window_geometry;
-        self.save_config_message("Window geometry setting updated.");
+        self.save_config_silent();
     }
 
     pub fn toggle_blur_behind(&mut self) {
         self.config.blur_behind = !self.config.blur_behind;
-        self.save_config_message("Window blur setting updated.");
+        self.save_config_silent();
     }
 
     pub fn flush_deferred_action(&mut self) -> bool {
@@ -599,9 +595,7 @@ impl AppController {
         } else {
             self.active_document - 1
         };
-        self.last_message = self
-            .language()
-            .switched_to_message(&self.localized_title(self.active_pane(), self.active_buffer()));
+        self.last_message.clear();
     }
 
     pub fn next_document(&mut self) {
@@ -610,18 +604,34 @@ impl AppController {
         }
 
         self.active_document = (self.active_document + 1) % self.documents.len();
-        self.last_message = self
-            .language()
-            .switched_to_message(&self.localized_title(self.active_pane(), self.active_buffer()));
+        self.last_message.clear();
     }
 
     pub fn switch_to_document(&mut self, index: usize) {
         if index < self.documents.len() {
             self.active_document = index;
-            self.last_message = self
-                .language()
-                .switched_to_message(&self.localized_title(self.active_pane(), self.active_buffer()));
+            self.last_message.clear();
         }
+    }
+
+    pub fn move_document(&mut self, from: usize, to: usize) {
+        if from >= self.documents.len() || to >= self.documents.len() || from == to {
+            return;
+        }
+
+        let moved = self.documents.remove(from);
+        self.documents.insert(to, moved);
+
+        if self.active_document == from {
+            self.active_document = to;
+        } else if from < self.active_document && to >= self.active_document {
+            self.active_document = self.active_document.saturating_sub(1);
+        } else if from > self.active_document && to <= self.active_document {
+            self.active_document = (self.active_document + 1).min(self.documents.len().saturating_sub(1));
+        }
+
+        self.last_message.clear();
+        self.save_session_state(false);
     }
 
     pub fn close_document(&mut self, index: usize) {
@@ -781,7 +791,7 @@ impl AppController {
         } else {
             self.documents.remove(self.active_document);
             self.active_document = self.active_document.min(self.documents.len() - 1);
-            self.last_message = self.language().closed_note_message().to_string();
+            self.last_message.clear();
             self.save_session_state(false);
             return false;
         }
@@ -794,7 +804,7 @@ impl AppController {
                 match { let (p, b) = self.active_pane_and_buffer(); p.save_as(b, &path) } {
                     Ok(()) => {
                         self.remember_recent(path);
-                        self.last_message = self.language().saved_message().to_string();
+                        self.last_message.clear();
                     }
                     Err(error) => self.last_message = format!("Could not save note: {error}"),
                 }
@@ -865,7 +875,7 @@ impl AppController {
 
     pub fn open_startup_fallback(&mut self) {
         if self.config.show_launcher_on_startup {
-            self.last_message = self.language().ready_message().to_string();
+            self.last_message.clear();
             // Assuming launcher is shown by default if there's no open document or based on some state.
             // In the original app, new_file() might be called.
             // Let's ensure there is at least one blank document if needed, or clear.
@@ -1066,7 +1076,7 @@ impl AppController {
                 }
                 self.remember_recent(path);
 
-                self.last_message = self.language().opened_note_message().to_string();
+            self.last_message.clear();
                 self.save_session_state(false);
             }
             Err(error) => self.last_message = format!("Could not open note: {error}"),
@@ -1136,6 +1146,13 @@ impl AppController {
     fn save_config_message(&mut self, success_message: &str) {
         match self.config.save(&self.paths) {
             Ok(()) => self.last_message = success_message.to_string(),
+            Err(error) => self.last_message = format!("Could not save settings: {error}"),
+        }
+    }
+
+    fn save_config_silent(&mut self) {
+        match self.config.save(&self.paths) {
+            Ok(()) => self.last_message.clear(),
             Err(error) => self.last_message = format!("Could not save settings: {error}"),
         }
     }
@@ -1417,6 +1434,27 @@ mod tests {
         assert_eq!(controller.active_note().content(controller.active_buffer()), "two");
         controller.previous_document();
         assert_eq!(controller.active_note().content(controller.active_buffer()), "one");
+    }
+
+    #[test]
+    fn move_document_reorders_tabs_and_keeps_active_buffer() {
+        let root = std::env::temp_dir().join(format!("neonote-reorder-test-{}", chrono_like_now()));
+        std::fs::create_dir_all(&root).unwrap();
+        let first = root.join("first.txt");
+        let second = root.join("second.txt");
+        std::fs::write(&first, "one").unwrap();
+        std::fs::write(&second, "two").unwrap();
+
+        let mut controller = AppController::new();
+        controller.open_path(first);
+        controller.open_path(second);
+
+        controller.move_document(1, 0);
+
+        let tabs = controller.document_tabs();
+        assert_eq!(tabs[0].title, "second.txt");
+        assert_eq!(tabs[1].title, "first.txt");
+        assert_eq!(controller.active_note().content(controller.active_buffer()), "two");
     }
 
     #[test]
@@ -1737,6 +1775,19 @@ mod tests {
         assert_eq!(snapshot.ui_text.files_menu, "ファイル");
         assert_eq!(snapshot.ui_text.settings_title, "設定");
         assert_eq!(snapshot.settings.language_label, "日本語");
+    }
+
+    #[test]
+    fn routine_success_actions_do_not_leave_status_message_noise() {
+        let (_root, mut controller) = test_controller();
+        controller.new_file();
+        assert_eq!(controller.snapshot().message, "");
+
+        controller.open_settings_panel();
+        assert_eq!(controller.snapshot().message, "");
+
+        controller.close_settings_panel();
+        assert_eq!(controller.snapshot().message, "");
     }
 
     #[test]

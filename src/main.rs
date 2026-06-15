@@ -159,6 +159,21 @@ fn install_callbacks(window: &AppWindow, controller: Rc<RefCell<AppController>>)
     });
 
     let weak_window = window.as_weak();
+    let controller_for_reorder = Rc::clone(&controller);
+    window.on_reorder_document(move |from, to| {
+        if from < 0 || to < 0 {
+            return;
+        }
+        controller_for_reorder
+            .borrow_mut()
+            .move_document(from as usize, to as usize);
+        if let Some(window) = weak_window.upgrade() {
+            apply_snapshot(&window, &controller_for_reorder.borrow().snapshot());
+            window.invoke_focus_editor();
+        }
+    });
+
+    let weak_window = window.as_weak();
     let controller_for_theme = Rc::clone(&controller);
     window.on_open_theme_panel(move || {
         controller_for_theme.borrow_mut().open_theme_panel();
