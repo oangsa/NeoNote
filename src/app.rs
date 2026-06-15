@@ -452,6 +452,12 @@ impl AppController {
             return;
         }
 
+        if key == "ctrl+shift+v" {
+            self.handle_clipboard_paste_shortcut();
+            self.save_session_state(false);
+            return;
+        }
+
         self.flush_deferred_action();
         { let (p, b) = self.active_pane_and_buffer(); p.clear_yank_highlight(b) };
         
@@ -500,6 +506,25 @@ impl AppController {
             self.handle_ex_action(action);
         }
         self.save_session_state(false);
+    }
+
+    fn handle_clipboard_paste_shortcut(&mut self) {
+        match clipboard::read_text() {
+            Ok(text) => {
+                self.apply_clipboard_paste_text(&text.replace("\r\n", "\n"));
+            }
+            Err(error) => self.last_message = format!("Could not read clipboard: {error}"),
+        }
+    }
+
+    fn apply_clipboard_paste_text(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+
+        if { let (p, b) = self.active_pane_and_buffer(); p.paste_text_shortcut(b, text) } {
+            self.last_message.clear();
+        }
     }
 
     pub fn handle_editor_pointer(&mut self, line: i32, x_pixels: f32, event_kind: &str) {
@@ -1712,6 +1737,37 @@ mod tests {
         assert_eq!(snapshot.ui_text.files_menu, "ファイル");
         assert_eq!(snapshot.ui_text.settings_title, "設定");
         assert_eq!(snapshot.settings.language_label, "日本語");
+    }
+
+    #[test]
+    fn clipboard_paste_shortcut_inserts_text_without_register_roundtrip() {
+        let (_root, mut controller) = test_controller();
+        controller.new_file();
+        controller.handle_editor_key("i");
+        controller.handle_editor_key("a");
+        controller.handle_editor_key("escape");
+
+        controller.apply_clipboard_paste_text("XYZ");
+
+        assert_eq!(controller.active_note().content(controller.active_buffer()), "aXYZ");
+    }
+
+    #[test]
+    fn clipboard_paste_shortcut_replaces_visual_selection() {
+        let (_root, mut controller) = test_controller();
+        controller.new_file();
+        controller.handle_editor_key("i");
+        for key in ["h", "e", "l", "l", "o", " ", "w", "o", "r", "l", "d", "escape"] {
+            controller.handle_editor_key(key);
+        }
+
+        controller.handle_editor_key("0");
+        controller.handle_editor_key("w");
+        controller.handle_editor_key("v");
+        controller.handle_editor_key("e");
+        controller.apply_clipboard_paste_text("Rust");
+
+        assert_eq!(controller.active_note().content(controller.active_buffer()), "hello Rust");
     }
 
     #[test]

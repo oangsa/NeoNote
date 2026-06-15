@@ -123,6 +123,25 @@ mod unicode_tests {
 
         assert_eq!(buffer.search.matches, vec![TextRange::new(1, 2)]);
     }
+
+    #[test]
+    fn visual_p_replaces_selection_with_register_text() {
+        let mut pane = Pane::new(PaneId(1), BufferId(1));
+        let mut buffer = TextBuffer::new();
+        buffer.content = "hello world".to_string();
+        buffer
+            .registers
+            .store_yank(RegisterTarget::Unnamed, "Rust".to_string(), false);
+        pane.enter_normal(&mut buffer);
+
+        pane.handle_editor_key(&mut buffer, crate::vim::key::EditorKey::Input("w".to_string()));
+        pane.handle_editor_key(&mut buffer, crate::vim::key::EditorKey::Input("v".to_string()));
+        pane.handle_editor_key(&mut buffer, crate::vim::key::EditorKey::Input("e".to_string()));
+        pane.handle_editor_key(&mut buffer, crate::vim::key::EditorKey::Input("p".to_string()));
+
+        assert_eq!(buffer.content, "hello Rust");
+        assert_eq!(pane.mode(&buffer), VimMode::Normal);
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2305,6 +2324,8 @@ impl Pane {
             }
             'd' | 'x' => self.apply_visual_operator(buffer, Operator::Delete),
             'c' => self.apply_visual_operator(buffer, Operator::Change),
+            'p' => self.paste_over_visual_selection(buffer, 1),
+            'P' => self.paste_over_visual_selection(buffer, 1),
             's' | 'S' => self.apply_visual_operator(buffer, Operator::SurroundAdd),
             'y' => self.apply_visual_operator(buffer, Operator::Yank),
             '>' => self.apply_visual_operator(buffer, Operator::Indent),
@@ -4374,6 +4395,101 @@ impl Pane {
             .skip(range.start)
             .take(range.end.saturating_sub(range.start))
             .collect()
+    }
+
+    fn paste_over_visual_selection(&mut self, buffer: &mut TextBuffer, count: usize) -> bool {
+        let Some(range) = self.visual_selection_range(buffer, ) else {
+            return false;
+        };
+        let kind = self.visual_kind(buffer, );
+        let target = self.take_register_target(buffer, );
+        let register = buffer.registers.register(target).clone();
+        if register.text.is_empty() {
+            return false;
+        }
+
+        self.last_visual_selection = Some((range, kind));
+        self.visual_anchor_flat = None;
+        self.vim_state.mode = VimMode::Normal;
+
+        let replaced_text = self.text_for_range(buffer, range);
+        buffer
+            .registers
+            .store_deleted(RegisterTarget::Unnamed, replaced_text, range.linewise);
+
+        if register.blockwise {
+            self.delete_flat_range(buffer, range);
+            self.set_insert_cursor_from_flat(buffer, range.start);
+            self.enter_normal(buffer, );
+            return self.paste_blockwise(buffer, count.max(1), PastePlacement::Before, register);
+        }
+
+        let replacement = register.text.repeat(count.max(1));
+        let replacement_char_count = replacement.chars().count();
+        self.replace_flat_range(buffer, range, &replacement);
+
+        if register.linewise {
+            self.set_insert_cursor_from_flat(buffer, range.start);
+            self.cursor_col = self.first_non_blank_col(buffer, );
+        } else if replacement_char_count > 0 {
+            self.set_insert_cursor_from_flat(buffer, range.start + replacement_char_count.saturating_sub(1));
+        } else {
+            self.set_insert_cursor_from_flat(buffer, range.start);
+        }
+
+        self.enter_normal(buffer, );
+        true
+    }
+
+    pub fn paste_text_shortcut(&mut self, buffer: &mut TextBuffer, text: &str) -> bool {
+        if text.is_empty() {
+            return false;
+        }
+
+        match self.vim_state.mode {
+            VimMode::Insert | VimMode::Replace => {
+                self.handle_insert_text(buffer, text);
+                true
+            }
+            VimMode::Visual | VimMode::VisualLine | VimMode::VisualBlock => {
+                let Some(range) = self.visual_selection_range(buffer, ) else {
+                    return false;
+                };
+                self.last_visual_selection = Some((range, self.visual_kind(buffer, )));
+                self.visual_anchor_flat = None;
+                self.vim_state.mode = VimMode::Normal;
+                self.replace_flat_range(buffer, range, text);
+                let replacement_char_count = text.chars().count();
+                if replacement_char_count > 0 {
+                    self.set_insert_cursor_from_flat(
+                        buffer,
+                        range.start + replacement_char_count.saturating_sub(1),
+                    );
+                } else {
+                    self.set_insert_cursor_from_flat(buffer, range.start);
+                }
+                self.enter_normal(buffer, );
+                true
+            }
+            VimMode::Normal => {
+                let insert_at = (self.flattened_cursor(buffer, ) + 1)
+                    .min(self.current_line_end_flat_exclusive(buffer, ));
+                self.record_undo(buffer);
+                self.push_change_location(buffer);
+                let byte_index = byte_index_for_char(&buffer.content, insert_at);
+                buffer.content.insert_str(byte_index, text);
+                buffer.dirty = true;
+                let inserted_chars = text.chars().count();
+                if inserted_chars > 0 {
+                    self.set_insert_cursor_from_flat(buffer, insert_at + inserted_chars.saturating_sub(1));
+                } else {
+                    self.set_insert_cursor_from_flat(buffer, insert_at);
+                }
+                self.enter_normal(buffer, );
+                true
+            }
+            _ => false,
+        }
     }
 
 
