@@ -42,6 +42,7 @@ pub struct PaneId(pub usize);
 pub struct TextBuffer {
     pub content: String,
     pub path: Option<PathBuf>,
+    pub encoding: TextEncoding,
     pub dirty: bool,
     pub open: bool,
     pub registers: Registers,
@@ -60,6 +61,7 @@ impl TextBuffer {
         Self {
             content: String::new(),
             path: None,
+            encoding: TextEncoding::Utf8,
             dirty: false,
             open: true,
             registers: Registers::default(),
@@ -73,6 +75,62 @@ impl TextBuffer {
             marks: BTreeMap::new(),
         }
     }
+}
+
+#[cfg(test)]
+mod unicode_tests {
+    use super::*;
+
+    #[test]
+    fn utf16_files_round_trip_unicode_content() {
+        let root = std::env::temp_dir().join(format!(
+            "neonote-unicode-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_nanos())
+                .unwrap_or_default()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("unicode.txt");
+        let content = "こんにちは\nПривет\nمرحبا";
+        let mut bytes = vec![0xFF, 0xFE];
+        for unit in content.encode_utf16() {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+        std::fs::write(&path, bytes).unwrap();
+
+        let mut pane = Pane::new(PaneId(1), BufferId(1));
+        let mut buffer = TextBuffer::new();
+        pane.open(&mut buffer, &path).unwrap();
+
+        assert_eq!(buffer.content, content);
+        assert_eq!(buffer.encoding, TextEncoding::Utf16Le);
+
+        pane.save(&mut buffer).unwrap();
+        let saved = std::fs::read(&path).unwrap();
+        assert_eq!(&saved[..2], &[0xFF, 0xFE]);
+    }
+
+    #[test]
+    fn ignorecase_search_keeps_unicode_match_ranges_stable() {
+        let mut buffer = TextBuffer::new();
+        buffer.content = "AİB".to_string();
+        buffer.settings.ignorecase = true;
+        buffer.search.pattern = "İ".to_string();
+
+        let mut pane = Pane::new(PaneId(1), BufferId(1));
+        pane.refresh_search_matches(&mut buffer);
+
+        assert_eq!(buffer.search.matches, vec![TextRange::new(1, 2)]);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TextEncoding {
+    Utf8,
+    Utf8Bom,
+    Utf16Le,
+    Utf16Be,
 }
 
 #[derive(Clone)]
@@ -138,6 +196,7 @@ impl Pane {
     pub fn new_blank(&mut self, buffer: &mut TextBuffer) {
         buffer.content.clear();
         buffer.path = None;
+        buffer.encoding = TextEncoding::Utf8;
         buffer.dirty = false;
         buffer.open = true;
         self.vim_state = VimState::default();
@@ -166,9 +225,10 @@ impl Pane {
 
     pub fn open(&mut self, buffer: &mut TextBuffer, path: impl AsRef<Path>) -> std::io::Result<()> {
         let path = path.as_ref();
-        let content = fs::read_to_string(path)?;
+        let (content, encoding) = decode_text_file(&fs::read(path)?)?;
         buffer.content = content.replace("\r\n", "\n");
         buffer.path = Some(path.to_path_buf());
+        buffer.encoding = encoding;
         buffer.dirty = false;
         buffer.open = true;
         self.vim_state = VimState::default();
@@ -205,7 +265,7 @@ impl Pane {
 
     pub fn save_as(&mut self, buffer: &mut TextBuffer, path: impl AsRef<Path>) -> std::io::Result<()> {
         let path = path.as_ref();
-        fs::write(path, &buffer.content)?;
+        fs::write(path, encode_text_file(&buffer.content, buffer.encoding))?;
         buffer.path = Some(path.to_path_buf());
         buffer.dirty = false;
         Ok(())
@@ -1709,7 +1769,12 @@ impl Pane {
                 let mut old_len = 0;
                 
                 // Find the boundary
-                for i in 1..=cmd_buffer.len() {
+                let boundaries = cmd_buffer
+                    .char_indices()
+                    .map(|(index, _)| index)
+                    .skip(1)
+                    .chain(std::iter::once(cmd_buffer.len()));
+                for i in boundaries {
                     let old_part = &cmd_buffer[0..i];
                     match crate::vim::surround::SurroundSpec::parse(old_part) {
                         crate::vim::surround::ParseResult::Complete(spec) => {
@@ -2618,23 +2683,13 @@ impl Pane {
 
         let chars: Vec<char> = buffer.content.chars().collect();
         let ignore_case = self.should_ignore_case(buffer, &buffer.search.pattern.clone());
-        let pattern_source = if ignore_case {
-            buffer.search.pattern.to_lowercase()
-        } else {
-            buffer.search.pattern.clone()
-        };
-        let pattern: Vec<char> = pattern_source.chars().collect();
+        let pattern: Vec<char> = buffer.search.pattern.chars().collect();
         if chars.is_empty() || pattern.is_empty() || pattern.len() > chars.len() {
             return;
         }
 
-        let haystack: Vec<char> = if ignore_case {
-            buffer.content.to_lowercase().chars().collect()
-        } else {
-            chars.clone()
-        };
         for start in 0..=chars.len() - pattern.len() {
-            if haystack[start..start + pattern.len()] == pattern[..] {
+            if chars_equal_at(&chars[start..start + pattern.len()], &pattern, ignore_case) {
                 buffer.search
                     .matches
                     .push(TextRange::new(start, start + pattern.len()));
@@ -4866,11 +4921,7 @@ impl Pane {
 
         let lines = self.lines_vec(buffer, );
         let pat_len = pattern.chars().count();
-        let pat_chars: Vec<char> = if is_case_insensitive {
-            pattern.to_lowercase().chars().collect()
-        } else {
-            pattern.chars().collect()
-        };
+        let pat_chars: Vec<char> = pattern.chars().collect();
 
         let mut current_flat_offset = 0;
         for line_idx in 0..lines.len() {
@@ -4878,15 +4929,11 @@ impl Pane {
             let line_len = line.chars().count();
 
             if line_idx >= start_line && line_idx <= end_line {
-                let line_chars: Vec<char> = if is_case_insensitive {
-                    line.to_lowercase().chars().collect()
-                } else {
-                    line.chars().collect()
-                };
+                let line_chars: Vec<char> = line.chars().collect();
 
                 let mut col = 0;
                 while col + pat_len <= line_len {
-                    if line_chars[col..col + pat_len] == pat_chars[..] {
+                    if chars_equal_at(&line_chars[col..col + pat_len], &pat_chars, is_case_insensitive) {
                         matches.push(TextRange::new(
                             current_flat_offset + col,
                             current_flat_offset + col + pat_len,
@@ -5845,6 +5892,85 @@ struct RegisterValue {
     text: String,
     linewise: bool,
     blockwise: bool,
+}
+
+fn decode_text_file(bytes: &[u8]) -> std::io::Result<(String, TextEncoding)> {
+    if let Some(utf8) = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]) {
+        let text = String::from_utf8(utf8.to_vec())
+            .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+        return Ok((text, TextEncoding::Utf8Bom));
+    }
+
+    if let Some(utf16) = bytes.strip_prefix(&[0xFF, 0xFE]) {
+        return decode_utf16_bytes(utf16, true).map(|text| (text, TextEncoding::Utf16Le));
+    }
+
+    if let Some(utf16) = bytes.strip_prefix(&[0xFE, 0xFF]) {
+        return decode_utf16_bytes(utf16, false).map(|text| (text, TextEncoding::Utf16Be));
+    }
+
+    let text = String::from_utf8(bytes.to_vec())
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+    Ok((text, TextEncoding::Utf8))
+}
+
+fn decode_utf16_bytes(bytes: &[u8], little_endian: bool) -> std::io::Result<String> {
+    if bytes.len() % 2 != 0 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "UTF-16 text had an odd number of bytes",
+        ));
+    }
+
+    let units = bytes
+        .chunks_exact(2)
+        .map(|chunk| {
+            if little_endian {
+                u16::from_le_bytes([chunk[0], chunk[1]])
+            } else {
+                u16::from_be_bytes([chunk[0], chunk[1]])
+            }
+        })
+        .collect::<Vec<_>>();
+
+    String::from_utf16(&units)
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
+}
+
+fn encode_text_file(content: &str, encoding: TextEncoding) -> Vec<u8> {
+    match encoding {
+        TextEncoding::Utf8 => content.as_bytes().to_vec(),
+        TextEncoding::Utf8Bom => {
+            let mut bytes = vec![0xEF, 0xBB, 0xBF];
+            bytes.extend_from_slice(content.as_bytes());
+            bytes
+        }
+        TextEncoding::Utf16Le => {
+            let mut bytes = vec![0xFF, 0xFE];
+            for unit in content.encode_utf16() {
+                bytes.extend_from_slice(&unit.to_le_bytes());
+            }
+            bytes
+        }
+        TextEncoding::Utf16Be => {
+            let mut bytes = vec![0xFE, 0xFF];
+            for unit in content.encode_utf16() {
+                bytes.extend_from_slice(&unit.to_be_bytes());
+            }
+            bytes
+        }
+    }
+}
+
+fn chars_equal_at(window: &[char], pattern: &[char], ignore_case: bool) -> bool {
+    if !ignore_case {
+        return window == pattern;
+    }
+
+    window
+        .iter()
+        .flat_map(|ch| ch.to_lowercase())
+        .eq(pattern.iter().flat_map(|ch| ch.to_lowercase()))
 }
 
 fn char_count(line: &str) -> usize {
@@ -7178,5 +7304,48 @@ mod tests {
         
         // If it seeks forward, it should become `   <>`
         assert_eq!(buffer.content, "   <>");
+    }
+
+    #[test]
+    fn utf16_files_round_trip_unicode_content() {
+        let root = std::env::temp_dir().join(format!(
+            "neonote-unicode-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_nanos())
+                .unwrap_or_default()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("unicode.txt");
+        let content = "こんにちは\nПривет\nمرحبا";
+        let mut bytes = vec![0xFF, 0xFE];
+        for unit in content.encode_utf16() {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+        std::fs::write(&path, bytes).unwrap();
+
+        let mut pane = Pane::new(PaneId(1), BufferId(1));
+        let mut buffer = TextBuffer::new();
+        pane.open(&mut buffer, &path).unwrap();
+
+        assert_eq!(buffer.content, content);
+        assert_eq!(buffer.encoding, TextEncoding::Utf16Le);
+
+        pane.save(&mut buffer).unwrap();
+        let saved = std::fs::read(&path).unwrap();
+        assert_eq!(&saved[..2], &[0xFF, 0xFE]);
+    }
+
+    #[test]
+    fn ignorecase_search_keeps_unicode_match_ranges_stable() {
+        let mut buffer = TextBuffer::new();
+        buffer.content = "AİB".to_string();
+        buffer.settings.ignorecase = true;
+        buffer.search.pattern = "İ".to_string();
+
+        let mut pane = Pane::new(PaneId(1), BufferId(1));
+        pane.refresh_search_matches(&mut buffer);
+
+        assert_eq!(buffer.search.matches, vec![TextRange::new(1, 2)]);
     }
 }

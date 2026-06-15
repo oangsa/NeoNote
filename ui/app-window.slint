@@ -202,6 +202,7 @@ export struct ThemeItem {
 }
 
 export struct SettingsData {
+    language-label: string,
     font-family: string,
     font-size: float,
     font-size-label: string,
@@ -226,8 +227,48 @@ export struct DocumentTab {
     is-modified: bool,
 }
 
+export struct UiText {
+    app-title: string,
+    launcher-hint: string,
+    files-menu: string,
+    new-file: string,
+    open-file: string,
+    save-file: string,
+    save-as-file: string,
+    settings-title: string,
+    settings-close: string,
+    themes-title: string,
+    theme-cancel: string,
+    theme-preview: string,
+    theme-apply: string,
+    theme-active: string,
+    appearance-section: string,
+    appearance-themes: string,
+    editor-section: string,
+    language: string,
+    font-size: string,
+    line-height: string,
+    tab-size: string,
+    word-wrap: string,
+    word-wrap-detail: string,
+    vim-section: string,
+    sync-clipboard: string,
+    sync-clipboard-detail: string,
+    startup-section: string,
+    restore-last-session: string,
+    restore-last-session-detail: string,
+    show-launcher-on-startup: string,
+    show-launcher-on-startup-detail: string,
+    window-section: string,
+    remember-window-geometry: string,
+    remember-window-geometry-detail: string,
+    blur-behind: string,
+    blur-behind-detail: string,
+    window-opacity: string,
+}
+
 export component AppWindow inherits Window {
-    title: "NeoNote";
+    title: root.ui-text.app-title;
     preferred-width: 1280px;
     preferred-height: 800px;
 
@@ -255,6 +296,7 @@ export component AppWindow inherits Window {
     in property <bool> show-settings-panel: false;
     in property <[ThemeItem]> theme-items;
     in property <SettingsData> settings;
+    in property <UiText> ui-text;
     in property <brush> theme-background: #0f1117;
     in property <brush> theme-background-alt: #161922;
     in property <brush> theme-surface: #1d2430;
@@ -286,6 +328,7 @@ export component AppWindow inherits Window {
     callback settings-adjust-font-size(int);
     callback settings-adjust-line-height(int);
     callback settings-adjust-tab-size(int);
+    callback settings-cycle-language(int);
     callback settings-adjust-window-opacity(int);
     callback settings-toggle-word-wrap();
     callback settings-toggle-sync-clipboard();
@@ -339,7 +382,7 @@ export component AppWindow inherits Window {
                 }
 
                 Text {
-                    text: "NeoNote";
+                    text: root.ui-text.app-title;
                     color: root.theme-text;
                     font-size: 16px;
                     font-weight: 700;
@@ -363,7 +406,7 @@ export component AppWindow inherits Window {
                         background: files-touch.has-hover ? root.theme-border : root.theme-surface;
 
                         Text {
-                            text: "Files";
+                            text: root.ui-text.files-menu;
                             color: root.theme-text;
                             font-size: 13px;
                             horizontal-alignment: center;
@@ -395,7 +438,7 @@ export component AppWindow inherits Window {
                                     spacing: 2px;
 
                                     CommandButton {
-                                        text: "New";
+                                        text: root.ui-text.new-file;
                                         text-alignment: left;
                                         text-padding-left: 12px;
                                         background-color: root.theme-surface;
@@ -405,7 +448,7 @@ export component AppWindow inherits Window {
                                         clicked => { root.new-file(); }
                                     }
                                     CommandButton {
-                                        text: "Open...";
+                                        text: root.ui-text.open-file;
                                         text-alignment: left;
                                         text-padding-left: 12px;
                                         background-color: root.theme-surface;
@@ -416,7 +459,7 @@ export component AppWindow inherits Window {
                                     }
                                     Rectangle { height: 1px; background: root.theme-border; }
                                     CommandButton {
-                                        text: "Save";
+                                        text: root.ui-text.save-file;
                                         text-alignment: left;
                                         text-padding-left: 12px;
                                         background-color: root.theme-surface;
@@ -426,7 +469,7 @@ export component AppWindow inherits Window {
                                         clicked => { root.save-file(); }
                                     }
                                     CommandButton {
-                                        text: "Save As...";
+                                        text: root.ui-text.save-as-file;
                                         text-alignment: left;
                                         text-padding-left: 12px;
                                         background-color: root.theme-surface;
@@ -617,7 +660,7 @@ export component AppWindow inherits Window {
                         y: 0px;
                         width: parent.width - 58px - (root.editor-left-padding * 2);
                         height: parent.height;
-                        text: "New File\nOpen File";
+                        text: root.ui-text.launcher-hint;
                         color: root.theme-text-muted;
                         font-family: root.editor-font-family;
                         font-size: root.editor-font-size * 1px;
@@ -846,7 +889,7 @@ export component AppWindow inherits Window {
                     spacing: 8px;
 
                     Text {
-                        text: "Themes";
+                        text: root.ui-text.themes-title;
                         color: root.theme-text;
                         font-size: 18px;
                         font-weight: 700;
@@ -855,7 +898,7 @@ export component AppWindow inherits Window {
                     }
 
                     CommandButton {
-                        text: "Cancel";
+                        text: root.ui-text.theme-cancel;
                         background-color: root.theme-background-alt;
                         hover-color: root.theme-border;
                         command-border-color: root.theme-border;
@@ -944,7 +987,7 @@ export component AppWindow inherits Window {
                                         spacing: 10px;
 
                                         Text {
-                                            text: item.is-preview ? "Preview" : (item.is-active ? "Active" : "");
+                                            text: item.is-preview ? root.ui-text.theme-preview : (item.is-active ? root.ui-text.theme-active : "");
                                             color: item.is-active ? root.theme-success : root.theme-accent-primary;
                                             font-size: 12px;
                                             width: 54px;
@@ -954,7 +997,7 @@ export component AppWindow inherits Window {
 
                                         CommandButton {
                                             width: 64px;
-                                            text: "Preview";
+                                            text: root.ui-text.theme-preview;
                                             background-color: root.theme-background-alt;
                                             hover-color: root.theme-border;
                                             command-border-color: root.theme-border;
@@ -964,7 +1007,7 @@ export component AppWindow inherits Window {
 
                                         CommandButton {
                                             width: 64px;
-                                            text: "Apply";
+                                            text: root.ui-text.theme-apply;
                                             background-color: item.is-active ? root.theme-background-alt : root.theme-accent-primary;
                                             hover-color: root.theme-border;
                                             command-border-color: item.is-active ? root.theme-border : root.theme-accent-primary;
@@ -1018,7 +1061,7 @@ export component AppWindow inherits Window {
                     spacing: 8px;
 
                     Text {
-                        text: "Settings";
+                        text: root.ui-text.settings-title;
                         color: root.theme-text;
                         font-size: 18px;
                         font-weight: 700;
@@ -1027,7 +1070,7 @@ export component AppWindow inherits Window {
                     }
 
                     CommandButton {
-                        text: "Close";
+                        text: root.ui-text.settings-close;
                         background-color: root.theme-background-alt;
                         hover-color: root.theme-border;
                         command-border-color: root.theme-border;
@@ -1050,7 +1093,7 @@ export component AppWindow inherits Window {
                         spacing: 12px;
 
                 Text {
-                    text: "Appearance";
+                    text: root.ui-text.appearance-section;
                     color: root.theme-text-muted;
                     font-size: 12px;
                     font-weight: 700;
@@ -1067,7 +1110,7 @@ export component AppWindow inherits Window {
                         spacing: 10px;
 
                         Text {
-                            text: "Themes ->";
+                            text: root.ui-text.appearance-themes;
                             color: root.theme-text;
                             font-size: 13px;
                             font-weight: 600;
@@ -1084,14 +1127,26 @@ export component AppWindow inherits Window {
                 }
 
                 Text {
-                    text: "Editor";
+                    text: root.ui-text.editor-section;
                     color: root.theme-text-muted;
                     font-size: 12px;
                     font-weight: 700;
                 }
 
                 NumericSettingRow {
-                    title: "Font size";
+                    title: root.ui-text.language;
+                    value: root.settings.language-label;
+                    row-background: root.theme-background;
+                    row-hover: root.theme-border;
+                    row-border: root.theme-border;
+                    row-text: root.theme-text;
+                    row-text-muted: root.theme-text-muted;
+                    decrement => { root.settings-cycle-language(-1); }
+                    increment => { root.settings-cycle-language(1); }
+                }
+
+                NumericSettingRow {
+                    title: root.ui-text.font-size;
                     value: root.settings.font-size-label;
                     row-background: root.theme-background;
                     row-hover: root.theme-border;
@@ -1103,7 +1158,7 @@ export component AppWindow inherits Window {
                 }
 
                 NumericSettingRow {
-                    title: "Line height";
+                    title: root.ui-text.line-height;
                     value: root.settings.line-height-label;
                     row-background: root.theme-background;
                     row-hover: root.theme-border;
@@ -1115,7 +1170,7 @@ export component AppWindow inherits Window {
                 }
 
                 NumericSettingRow {
-                    title: "Tab size";
+                    title: root.ui-text.tab-size;
                     value: root.settings.tab-size-label;
                     row-background: root.theme-background;
                     row-hover: root.theme-border;
@@ -1127,8 +1182,8 @@ export component AppWindow inherits Window {
                 }
 
                 ToggleRow {
-                    title: "Word wrap";
-                    detail: "Soft-wrap long note lines";
+                    title: root.ui-text.word-wrap;
+                    detail: root.ui-text.word-wrap-detail;
                     checked: root.settings.word-wrap;
                     row-background: root.theme-background;
                     row-hover: root.theme-background-alt;
@@ -1140,15 +1195,15 @@ export component AppWindow inherits Window {
                 }
 
                 Text {
-                    text: "Vim Mode";
+                    text: root.ui-text.vim-section;
                     color: root.theme-text-muted;
                     font-size: 12px;
                     font-weight: 700;
                 }
 
                 ToggleRow {
-                    title: "Sync with clipboard";
-                    detail: "Use the system clipboard for yanks and pastes";
+                    title: root.ui-text.sync-clipboard;
+                    detail: root.ui-text.sync-clipboard-detail;
                     checked: root.settings.sync-clipboard;
                     row-background: root.theme-background;
                     row-hover: root.theme-background-alt;
@@ -1160,15 +1215,15 @@ export component AppWindow inherits Window {
                 }
 
                 Text {
-                    text: "Startup";
+                    text: root.ui-text.startup-section;
                     color: root.theme-text-muted;
                     font-size: 12px;
                     font-weight: 700;
                 }
 
                 ToggleRow {
-                    title: "Restore last session";
-                    detail: "Open remembered notes on launch";
+                    title: root.ui-text.restore-last-session;
+                    detail: root.ui-text.restore-last-session-detail;
                     checked: root.settings.restore-last-session;
                     row-background: root.theme-background;
                     row-hover: root.theme-background-alt;
@@ -1180,8 +1235,8 @@ export component AppWindow inherits Window {
                 }
 
                 ToggleRow {
-                    title: "Show launcher on startup";
-                    detail: "Start on the note launcher when no session opens";
+                    title: root.ui-text.show-launcher-on-startup;
+                    detail: root.ui-text.show-launcher-on-startup-detail;
                     checked: root.settings.show-launcher-on-startup;
                     row-background: root.theme-background;
                     row-hover: root.theme-background-alt;
@@ -1193,15 +1248,15 @@ export component AppWindow inherits Window {
                 }
 
                 Text {
-                    text: "Window";
+                    text: root.ui-text.window-section;
                     color: root.theme-text-muted;
                     font-size: 12px;
                     font-weight: 700;
                 }
 
                 ToggleRow {
-                    title: "Remember window geometry";
-                    detail: "Persist size and placement when supported";
+                    title: root.ui-text.remember-window-geometry;
+                    detail: root.ui-text.remember-window-geometry-detail;
                     checked: root.settings.remember-window-geometry;
                     row-background: root.theme-background;
                     row-hover: root.theme-background-alt;
@@ -1213,8 +1268,8 @@ export component AppWindow inherits Window {
                 }
 
                 ToggleRow {
-                    title: "Blur behind";
-                    detail: "Use the Windows blur effect when supported";
+                    title: root.ui-text.blur-behind;
+                    detail: root.ui-text.blur-behind-detail;
                     checked: root.settings.blur-behind;
                     row-background: root.theme-background;
                     row-hover: root.theme-background-alt;
@@ -1226,7 +1281,7 @@ export component AppWindow inherits Window {
                 }
 
                 NumericSettingRow {
-                    title: "Window opacity";
+                    title: root.ui-text.window-opacity;
                     value: root.settings.window-opacity-label;
                     row-background: root.theme-background;
                     row-hover: root.theme-border;

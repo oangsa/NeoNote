@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::collections::HashMap;
 
 use crate::{
+    i18n::{AppLanguage, UiTextSnapshot},
     notes::{Pane, TextBuffer, PaneId, BufferId, RegisterSnapshot, VimMode, PendingCommand, ExCommandAction},
     persistence::{AppConfig, AppDataPaths, RecentFiles, SessionState},
     platform::clipboard,
@@ -52,6 +53,7 @@ pub struct AppSnapshot {
     pub settings_panel_open: bool,
     pub settings: SettingsSnapshot,
     pub theme: ThemeSnapshot,
+    pub ui_text: UiTextSnapshot,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -74,6 +76,7 @@ pub struct ThemeItemSnapshot {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SettingsSnapshot {
+    pub language_label: String,
     pub font_family: String,
     pub font_size: f32,
     pub font_size_label: String,
@@ -101,6 +104,7 @@ impl Default for SettingsSnapshot {
 impl SettingsSnapshot {
     fn from_config(config: &AppConfig) -> Self {
         Self {
+            language_label: config.language.native_name().to_string(),
             font_family: config.font_family.clone(),
             font_size: config.font_size,
             font_size_label: format!("{:.0}", config.font_size),
@@ -232,7 +236,7 @@ impl AppController {
             self.documents.push(note);
             self.active_document = self.documents.len().saturating_sub(1);
         }
-        self.last_message = "New note ready.".to_string();
+        self.last_message = self.language().new_note_ready_message().to_string();
         self.flush_deferred_action();
     }
 
@@ -260,7 +264,7 @@ impl AppController {
                     if let Some(path) = self.active_pane().path_string(self.active_buffer()) {
                         self.remember_recent(PathBuf::from(path));
                     }
-                    self.last_message = "Saved.".to_string();
+                    self.last_message = self.language().saved_message().to_string();
                 }
                 Err(error) => self.last_message = format!("Could not save note: {error}"),
             }
@@ -284,7 +288,7 @@ impl AppController {
             match { let (p, b) = self.active_pane_and_buffer(); p.save_as(b, &path) } {
                 Ok(()) => {
                     self.remember_recent(path);
-                    self.last_message = "Saved.".to_string();
+                    self.last_message = self.language().saved_message().to_string();
                 }
                 Err(error) => self.last_message = format!("Could not save note: {error}"),
             }
@@ -295,7 +299,7 @@ impl AppController {
         self.theme_panel_open = true;
         self.settings_panel_open = false;
         self.themes.clear_preview();
-        self.last_message = "Choose a theme.".to_string();
+        self.last_message = self.language().choose_theme_message().to_string();
     }
 
     pub fn preview_theme(&mut self, index: i32) {
@@ -307,7 +311,7 @@ impl AppController {
         self.last_message = self
             .themes
             .active_theme()
-            .map(|theme| format!("Previewing {}.", theme.name))
+            .map(|theme| self.language().previewing_theme_message(&theme.name))
             .unwrap_or_default();
     }
 
@@ -323,7 +327,7 @@ impl AppController {
         self.config.active_theme = Some(slug);
         match self.config.save(&self.paths) {
             Ok(()) => {
-                self.last_message = "Theme applied.".to_string();
+                self.last_message = self.language().theme_applied_message().to_string();
             },
             Err(error) => {
                 self.last_message = format!("Theme applied but config was not saved: {error}")
@@ -335,19 +339,24 @@ impl AppController {
     pub fn close_theme_panel(&mut self) {
         self.themes.clear_preview();
         self.theme_panel_open = false;
-        self.last_message = "Theme selection canceled.".to_string();
+        self.last_message = self.language().theme_selection_canceled_message().to_string();
     }
 
     pub fn open_settings_panel(&mut self) {
         self.themes.clear_preview();
         self.theme_panel_open = false;
         self.settings_panel_open = true;
-        self.last_message = "Adjust settings.".to_string();
+        self.last_message = self.language().adjust_settings_message().to_string();
     }
 
     pub fn close_settings_panel(&mut self) {
         self.settings_panel_open = false;
-        self.last_message = "Settings closed.".to_string();
+        self.last_message = self.language().settings_closed_message().to_string();
+    }
+
+    pub fn cycle_language(&mut self, delta: i32) {
+        self.config.language = self.config.language.cycle(delta);
+        self.save_config_message(self.language().ready_message());
     }
 
     pub fn adjust_font_size(&mut self, delta: i32) {
@@ -565,7 +574,9 @@ impl AppController {
         } else {
             self.active_document - 1
         };
-        self.last_message = format!("Switched to {}.", self.active_pane().title(self.active_buffer()));
+        self.last_message = self
+            .language()
+            .switched_to_message(&self.localized_title(self.active_pane(), self.active_buffer()));
     }
 
     pub fn next_document(&mut self) {
@@ -574,13 +585,17 @@ impl AppController {
         }
 
         self.active_document = (self.active_document + 1) % self.documents.len();
-        self.last_message = format!("Switched to {}.", self.active_pane().title(self.active_buffer()));
+        self.last_message = self
+            .language()
+            .switched_to_message(&self.localized_title(self.active_pane(), self.active_buffer()));
     }
 
     pub fn switch_to_document(&mut self, index: usize) {
         if index < self.documents.len() {
             self.active_document = index;
-            self.last_message = format!("Switched to {}.", self.active_pane().title(self.active_buffer()));
+            self.last_message = self
+                .language()
+                .switched_to_message(&self.localized_title(self.active_pane(), self.active_buffer()));
         }
     }
 
@@ -655,14 +670,15 @@ impl AppController {
         let buffer = self.active_buffer();
         let stats = note.stats(buffer);
         let cursor = cursor_snapshot(note, buffer);
+        let language = self.language();
         let mode_text = if note.is_open(self.active_buffer()) {
             note.mode(buffer).label().to_string()
         } else {
-            "READY".to_string()
+            language.ready_mode_label().to_string()
         };
         let theme = self.theme_snapshot();
         AppSnapshot {
-            file_title: note.title(self.active_buffer()),
+            file_title: self.localized_title(note, self.active_buffer()),
             file_path: note.path_string(self.active_buffer()).unwrap_or_default(),
             editor_lines: editor_lines(note, self.active_buffer()),
             document_tabs: self.document_tabs(),
@@ -676,35 +692,32 @@ impl AppController {
                     }
                     _ => {
                         if let Some(PendingCommand::SubstituteConfirm { replacement, .. }) = &note.vim_state.pending_command {
-                            format!("replace with {} (y/n/a/q/l)?", replacement)
+                            language.substitute_confirm(replacement)
                         } else {
                             format!(
                                 " {}{}",
-                                note.title(self.active_buffer()),
+                                self.localized_title(note, self.active_buffer()),
                                 if self.active_buffer().dirty { " [+]" } else { "" },
                             )
                         }
                     }
                 }
             } else {
-                " [No Name]".to_string()
+                language.no_name_status().to_string()
             },
             status_right: if note.is_open(self.active_buffer()) {
-                format!(
-                    "Doc {}/{}  |  Ln {}, Col {}{}  |  {} lines, {} words, {} chars  ",
+                language.status_right(
                     self.active_document + 1,
                     self.open_document_count(),
                     note.cursor_line(buffer) + 1,
                     note.display_cursor_col(buffer) + 1,
-                    note.search_pattern(buffer)
-                        .map(|pattern| format!("  |  /{pattern}"))
-                        .unwrap_or_default(),
+                    note.search_pattern(buffer),
                     stats.line_count,
                     stats.word_count,
                     stats.char_count
                 )
             } else {
-                "NeoNote native Vim core  ".to_string()
+                language.ready_status_right().to_string()
             },
             mode_color: self.mode_color(&mode_text),
             cursor_line: note.cursor_line(buffer) as i32,
@@ -726,13 +739,14 @@ impl AppController {
             settings_panel_open: self.settings_panel_open,
             settings: SettingsSnapshot::from_config(&self.config),
             theme,
+            ui_text: language.strings(),
         }
     }
 
 
     fn close_active_document(&mut self, force: bool) -> bool {
         if self.active_buffer().dirty && !force {
-            self.last_message = "No write since last change (add ! to override)".to_string();
+            self.last_message = self.language().no_write_since_last_change().to_string();
             return false;
         }
 
@@ -742,7 +756,7 @@ impl AppController {
         } else {
             self.documents.remove(self.active_document);
             self.active_document = self.active_document.min(self.documents.len() - 1);
-            self.last_message = "Closed note.".to_string();
+            self.last_message = self.language().closed_note_message().to_string();
             self.save_session_state(false);
             return false;
         }
@@ -755,7 +769,7 @@ impl AppController {
                 match { let (p, b) = self.active_pane_and_buffer(); p.save_as(b, &path) } {
                     Ok(()) => {
                         self.remember_recent(path);
-                        self.last_message = "Saved.".to_string();
+                        self.last_message = self.language().saved_message().to_string();
                     }
                     Err(error) => self.last_message = format!("Could not save note: {error}"),
                 }
@@ -826,7 +840,7 @@ impl AppController {
 
     pub fn open_startup_fallback(&mut self) {
         if self.config.show_launcher_on_startup {
-            self.last_message = "Ready.".to_string();
+            self.last_message = self.language().ready_message().to_string();
             // Assuming launcher is shown by default if there's no open document or based on some state.
             // In the original app, new_file() might be called.
             // Let's ensure there is at least one blank document if needed, or clear.
@@ -1000,7 +1014,7 @@ impl AppController {
     fn open_path(&mut self, path: PathBuf) {
         if let Some(index) = self.document_index_for_path(&path) {
             self.active_document = index;
-            self.last_message = "File already open.".to_string();
+            self.last_message = self.language().file_already_open_message().to_string();
             return;
         }
 
@@ -1027,7 +1041,7 @@ impl AppController {
                 }
                 self.remember_recent(path);
 
-                self.last_message = "Opened note.".to_string();
+                self.last_message = self.language().opened_note_message().to_string();
                 self.save_session_state(false);
             }
             Err(error) => self.last_message = format!("Could not open note: {error}"),
@@ -1098,6 +1112,18 @@ impl AppController {
         match self.config.save(&self.paths) {
             Ok(()) => self.last_message = success_message.to_string(),
             Err(error) => self.last_message = format!("Could not save settings: {error}"),
+        }
+    }
+
+    fn language(&self) -> AppLanguage {
+        self.config.language
+    }
+
+    fn localized_title(&self, note: &Pane, buffer: &TextBuffer) -> String {
+        if buffer.path.is_some() {
+            note.title(buffer)
+        } else {
+            self.language().untitled_label().to_string()
         }
     }
 
@@ -1183,7 +1209,7 @@ impl AppController {
                 
                 Some(DocumentTabSnapshot {
                     index: index as i32,
-                    title: note.title(buffer),
+                    title: self.localized_title(note, buffer),
                     is_active: index == self.active_document,
                     is_modified: buffer.dirty,
                 })
@@ -1673,6 +1699,19 @@ mod tests {
         assert!(!saved_config.show_launcher_on_startup);
         assert!(saved_config.word_wrap);
         assert!(!saved_config.sync_clipboard);
+    }
+
+    #[test]
+    fn snapshot_localizes_ui_text_and_untitled_title() {
+        let (_root, mut controller) = test_controller();
+        controller.config.language = AppLanguage::Japanese;
+
+        let snapshot = controller.snapshot();
+
+        assert_eq!(snapshot.file_title, "無題");
+        assert_eq!(snapshot.ui_text.files_menu, "ファイル");
+        assert_eq!(snapshot.ui_text.settings_title, "設定");
+        assert_eq!(snapshot.settings.language_label, "日本語");
     }
 
     #[test]

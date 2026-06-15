@@ -3,10 +3,13 @@ use std::fs;
 use serde::{Deserialize, Serialize};
 
 use super::AppDataPaths;
+use crate::i18n::AppLanguage;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AppConfig {
     pub active_theme: Option<String>,
+    #[serde(default)]
+    pub language: AppLanguage,
     pub font_family: String,
     pub font_size: f32,
     pub line_height: f32,
@@ -38,6 +41,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             active_theme: Some("neovim-dark".to_string()),
+            language: AppLanguage::English,
             font_family: "JetBrains Mono".to_string(),
             font_size: 14.0,
             line_height: 1.4,
@@ -83,6 +87,7 @@ mod tests {
     fn default_config_matches_plan() {
         let config = AppConfig::default();
         assert_eq!(config.active_theme.as_deref(), Some("neovim-dark"));
+        assert_eq!(config.language, AppLanguage::English);
         assert_eq!(config.window_opacity, 100);
         assert!(config.show_launcher_on_startup);
         assert!(config.sync_clipboard);

@@ -1,6 +1,8 @@
 #![allow(dead_code)]
+#![windows_subsystem = "windows"]
 
 mod app;
+mod i18n;
 mod notes;
 mod persistence;
 mod platform;
@@ -249,6 +251,15 @@ fn install_callbacks(window: &AppWindow, controller: Rc<RefCell<AppController>>)
     });
 
     let weak_window = window.as_weak();
+    let controller_for_language = Rc::clone(&controller);
+    window.on_settings_cycle_language(move |delta| {
+        controller_for_language.borrow_mut().cycle_language(delta);
+        if let Some(window) = weak_window.upgrade() {
+            apply_snapshot(&window, &controller_for_language.borrow().snapshot());
+        }
+    });
+
+    let weak_window = window.as_weak();
     let controller_for_opacity = Rc::clone(&controller);
     window.on_settings_adjust_window_opacity(move |delta| {
         controller_for_opacity
@@ -388,6 +399,7 @@ fn apply_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
     window.set_show_theme_panel(snapshot.theme_panel_open);
     window.set_show_settings_panel(snapshot.settings_panel_open);
     window.set_settings(SettingsData {
+        language_label: SharedString::from(snapshot.settings.language_label.as_str()),
         font_family: SharedString::from(snapshot.settings.font_family.as_str()),
         font_size: snapshot.settings.font_size,
         font_size_label: SharedString::from(snapshot.settings.font_size_label.as_str()),
@@ -404,7 +416,7 @@ fn apply_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
         window_opacity: snapshot.settings.window_opacity,
         window_opacity_label: SharedString::from(snapshot.settings.window_opacity_label.as_str()),
     });
-    window.set_theme_items(
+        window.set_theme_items(
         Rc::new(VecModel::from(
             snapshot
                 .theme_items
@@ -421,6 +433,45 @@ fn apply_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
         ))
         .into(),
     );
+    window.set_ui_text(UiText {
+        app_title: SharedString::from(snapshot.ui_text.app_title.as_str()),
+        launcher_hint: SharedString::from(snapshot.ui_text.launcher_hint.as_str()),
+        files_menu: SharedString::from(snapshot.ui_text.files_menu.as_str()),
+        new_file: SharedString::from(snapshot.ui_text.new_file.as_str()),
+        open_file: SharedString::from(snapshot.ui_text.open_file.as_str()),
+        save_file: SharedString::from(snapshot.ui_text.save_file.as_str()),
+        save_as_file: SharedString::from(snapshot.ui_text.save_as_file.as_str()),
+        settings_title: SharedString::from(snapshot.ui_text.settings_title.as_str()),
+        settings_close: SharedString::from(snapshot.ui_text.settings_close.as_str()),
+        themes_title: SharedString::from(snapshot.ui_text.themes_title.as_str()),
+        theme_cancel: SharedString::from(snapshot.ui_text.theme_cancel.as_str()),
+        theme_preview: SharedString::from(snapshot.ui_text.theme_preview.as_str()),
+        theme_apply: SharedString::from(snapshot.ui_text.theme_apply.as_str()),
+        theme_active: SharedString::from(snapshot.ui_text.theme_active.as_str()),
+        appearance_section: SharedString::from(snapshot.ui_text.appearance_section.as_str()),
+        appearance_themes: SharedString::from(snapshot.ui_text.appearance_themes.as_str()),
+        editor_section: SharedString::from(snapshot.ui_text.editor_section.as_str()),
+        language: SharedString::from(snapshot.ui_text.language.as_str()),
+        font_size: SharedString::from(snapshot.ui_text.font_size.as_str()),
+        line_height: SharedString::from(snapshot.ui_text.line_height.as_str()),
+        tab_size: SharedString::from(snapshot.ui_text.tab_size.as_str()),
+        word_wrap: SharedString::from(snapshot.ui_text.word_wrap.as_str()),
+        word_wrap_detail: SharedString::from(snapshot.ui_text.word_wrap_detail.as_str()),
+        vim_section: SharedString::from(snapshot.ui_text.vim_section.as_str()),
+        sync_clipboard: SharedString::from(snapshot.ui_text.sync_clipboard.as_str()),
+        sync_clipboard_detail: SharedString::from(snapshot.ui_text.sync_clipboard_detail.as_str()),
+        startup_section: SharedString::from(snapshot.ui_text.startup_section.as_str()),
+        restore_last_session: SharedString::from(snapshot.ui_text.restore_last_session.as_str()),
+        restore_last_session_detail: SharedString::from(snapshot.ui_text.restore_last_session_detail.as_str()),
+        show_launcher_on_startup: SharedString::from(snapshot.ui_text.show_launcher_on_startup.as_str()),
+        show_launcher_on_startup_detail: SharedString::from(snapshot.ui_text.show_launcher_on_startup_detail.as_str()),
+        window_section: SharedString::from(snapshot.ui_text.window_section.as_str()),
+        remember_window_geometry: SharedString::from(snapshot.ui_text.remember_window_geometry.as_str()),
+        remember_window_geometry_detail: SharedString::from(snapshot.ui_text.remember_window_geometry_detail.as_str()),
+        blur_behind: SharedString::from(snapshot.ui_text.blur_behind.as_str()),
+        blur_behind_detail: SharedString::from(snapshot.ui_text.blur_behind_detail.as_str()),
+        window_opacity: SharedString::from(snapshot.ui_text.window_opacity.as_str()),
+    });
 }
 
 fn apply_editor_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
