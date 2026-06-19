@@ -433,6 +433,21 @@ impl Pane {
         (!buffer.search.pattern.is_empty()).then_some(buffer.search.pattern.as_str())
     }
 
+    pub fn search_match_current(&self, buffer: &TextBuffer) -> usize {
+        if buffer.search.matches.is_empty() {
+            return 0;
+        }
+        let cursor_flat = {
+            let line_start = self.line_start_flat(buffer, self.cursor_line);
+            line_start + self.cursor_col
+        };
+        buffer.search.matches.iter().position(|m| cursor_flat >= m.start && cursor_flat < m.end).unwrap_or(0)
+    }
+
+    pub fn search_match_total(&self, buffer: &TextBuffer) -> usize {
+        buffer.search.matches.len()
+    }
+
     pub fn unnamed_register_text<'a>(&self, buffer: &'a TextBuffer) -> &'a str {
         &buffer.registers.unnamed.text
     }
@@ -4184,13 +4199,11 @@ impl Pane {
             while end_line + 1 < lines.len() && lines[end_line + 1].trim().is_empty() {
                 end_line += 1;
                 end = self.line_end_flat_including_newline(buffer, end_line);
-                break;
             }
             if end == self.content_char_len(buffer) {
                 while start_line > 0 && lines[start_line - 1].trim().is_empty() {
                     start_line -= 1;
                     start = self.line_start_flat(buffer, start_line);
-                    break;
                 }
             }
         }
