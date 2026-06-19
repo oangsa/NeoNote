@@ -398,7 +398,7 @@ export component AppWindow inherits Window {
     in property <bool> enable-cursor-glide: true;
     in property <bool> enable-smooth-scroll: true;
     in property <bool> enable-cursor-blink: true;
-    in property <bool> enable-cursor-smear: true;
+    in property <bool> enable-cursor-smear: false;
     in property <bool> cursor-blink-visible: true;
     in property <bool> cursor-insert-mode: false;
     in property <int> anim-duration-short: 80;
@@ -420,8 +420,7 @@ export component AppWindow inherits Window {
     property <bool> smear-is-vertical:
         root.previous-cursor-column == root.cursor-column
         && root.previous-cursor-line != root.cursor-line;
-    property <bool> smear-eligible:
-        root.enable-cursor-smear && (root.smear-is-horizontal || root.smear-is-vertical);
+    property <bool> smear-eligible: false;
     property <length> cursor-smear-x: root.cursor-target-x;
     property <length> cursor-smear-y: root.cursor-target-y;
     property <length> previous-cursor-smear-x: root.previous-cursor-target-x;
@@ -477,7 +476,6 @@ export component AppWindow inherits Window {
     callback settings-toggle-cursor-glide();
     callback settings-toggle-smooth-scroll();
     callback settings-toggle-cursor-blink();
-    callback settings-toggle-cursor-smear();
     callback editor-key(string);
     callback editor-pointer-event(int, float, string);
 
@@ -955,7 +953,7 @@ export component AppWindow inherits Window {
 
                         // Cursor smear overlay (behind cursor)
                         Rectangle {
-                            visible: root.show-cursor-smear && root.smear-eligible && root.has-document;
+                            visible: false;
                             x: root.smear-x;
                             y: root.smear-y;
                             width: root.smear-width;
@@ -1575,19 +1573,6 @@ export component AppWindow inherits Window {
                     row-text-muted: root.theme-text-muted;
                     row-accent: root.theme-accent-primary;
                     toggled => { root.settings-toggle-cursor-blink(); }
-                }
-
-                ToggleRow {
-                    title: root.ui-text.cursor-smear;
-                    detail: root.ui-text.cursor-smear-detail;
-                    checked: root.settings.enable-cursor-smear;
-                    row-background: root.theme-background;
-                    row-hover: root.theme-background-alt;
-                    row-border: root.theme-border;
-                    row-text: root.theme-text;
-                    row-text-muted: root.theme-text-muted;
-                    row-accent: root.theme-accent-primary;
-                    toggled => { root.settings-toggle-cursor-smear(); }
                 }
 
                 Text {

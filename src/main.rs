@@ -453,15 +453,6 @@ fn install_callbacks(
     });
 
     let weak_window = window.as_weak();
-    let controller_for_cursor_smear = Rc::clone(&controller);
-    window.on_settings_toggle_cursor_smear(move || {
-        controller_for_cursor_smear.borrow_mut().toggle_cursor_smear();
-        if let Some(window) = weak_window.upgrade() {
-            apply_snapshot(&window, &controller_for_cursor_smear.borrow().snapshot());
-        }
-    });
-
-    let weak_window = window.as_weak();
     let controller_for_editor = Rc::clone(&controller);
     let editor_activity = Rc::clone(&last_editor_activity);
     let editor_blink = Rc::clone(&blink_state);
@@ -486,28 +477,6 @@ fn install_callbacks(
             let snapshot = controller_for_editor.borrow().snapshot();
             apply_editor_snapshot(&window, &snapshot);
             window.invoke_focus_editor();
-
-            if snapshot.smear_eligible && snapshot.enable_cursor_smear {
-                let gen = snapshot.cursor_smear_generation;
-                window.set_smear_opacity(0.40);
-                window.set_show_cursor_smear(true);
-                let weak_window_inner = window.as_weak();
-                slint::Timer::single_shot(std::time::Duration::from_millis(100), move || {
-                    if let Some(w) = weak_window_inner.upgrade() {
-                        if w.get_cursor_smear_generation() == gen {
-                            w.set_smear_opacity(0.0);
-                            let weak_window_inner2 = w.as_weak();
-                            slint::Timer::single_shot(std::time::Duration::from_millis(100), move || {
-                                if let Some(w2) = weak_window_inner2.upgrade() {
-                                    if w2.get_cursor_smear_generation() == gen {
-                                        w2.set_show_cursor_smear(false);
-                                    }
-                                }
-                            });
-                        }
-                    }
-                });
-            }
 
             if has_highlight {
                 let weak_window_inner = window.as_weak();
@@ -735,6 +704,8 @@ fn apply_editor_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
     window.set_viewport_top_line(snapshot.viewport_top_line);
     window.set_cursor_animation_kind(snapshot.cursor_animation_kind);
     window.set_cursor_smear_generation(snapshot.cursor_smear_generation);
+    window.set_smear_opacity(0.0);
+    window.set_show_cursor_smear(false);
     window.set_scroll_animation_kind(snapshot.scroll_animation_kind);
     window.set_search_match_current(snapshot.search_match_current);
     window.set_search_match_total(snapshot.search_match_total);

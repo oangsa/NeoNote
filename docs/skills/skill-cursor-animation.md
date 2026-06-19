@@ -56,34 +56,19 @@ rendered by Slint.
   text. It creates a second text layout path and can look like a misaligned dark
   overlay. Prefer a translucent block cursor over the authoritative row text.
 
-## Smear (1.1.0)
+## Smear (1.1.0 fallback-disabled)
 
-- **Rust controller** (`src/app.rs`): owns `previous_cursor_line`,
-  `previous_cursor_column`, and `cursor_smear_generation`. The function
-  `classify_cursor_smear_eligible()` decides whether a movement triggers the
-  effect. It excludes Insert/Replace/Command/Search modes and movements beyond
-  `MAX_VERTICAL_SMEAR_LINES` (8) or `MAX_HORIZONTAL_SMEAR_COLUMNS` (24).
-- **Snapshot** (`AppSnapshot`): carries `previous_cursor_line`,
-  `previous_cursor_column`, `previous_cursor_prefix`, `cursor_smear_generation`,
-  `smear_eligible`, and `enable_cursor_smear`.
-- **Slint rendering** (`ui/app-window.slint`):
-  - `previous-cursor-prefix-measure` is an invisible Text that measures the text
-    before the previous cursor column, mirroring `cursor-prefix-measure`.
-  - `scroll-viewport-offset` tracks `editor-scroll.viewport-y` through a
-    `changed viewport-y` handler so the smear overlay stays aligned with the
-    scrolled content even though it is rendered outside the `ScrollView`.
-  - Computed `smear-x/y/width/height` stretch between current and previous
-    cursor pixel positions for horizontal or vertical movement only; diagonal
-    movement disables the effect.
-  - A second `Rectangle` overlay renders the smear with
-    `theme-cursor.with-alpha(smear-opacity)` and `border-radius: 2px`.
-- **Opacity animation** (`src/main.rs`): a one-shot `slint::Timer` sets
-  `smear-opacity = 0.40`, waits 100 ms, then sets `smear-opacity = 0.0`. The
-  Slint `animate opacity` block interpolates the fade. A generation counter
-  guards the timers so rapid repeated movements never queue stale fades.
-- Smear only fires when `enable_animations && enable_cursor_glide &&
-  enable_cursor_smear` are all true. Settings UI toggle lives in the Editor
-  section.
+- Cursor smear produced an unwanted grey vertical column in normal mode during
+  same-column vertical movements, so the 1.1.0 fallback rule is active: keep the
+  compatibility fields, but do not render or expose the effect.
+- `AppConfig::normalize_disabled_features()` clamps `enable_cursor_smear` to
+  `false`, including old config files that saved it as `true`.
+- `AppSnapshot` and `SettingsSnapshot` report `enable_cursor_smear == false` and
+  `smear_eligible == false` even if a test or old code forces the config field
+  true.
+- `ui/app-window.slint` keeps the generated properties for compatibility, but
+  the smear overlay is never visible and the Settings panel does not expose a
+  Cursor Smear toggle.
 
 ## Visual Selection
 

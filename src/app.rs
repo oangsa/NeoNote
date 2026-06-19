@@ -204,7 +204,7 @@ impl SettingsSnapshot {
             enable_cursor_glide: config.enable_cursor_glide,
             enable_smooth_scroll: config.enable_smooth_scroll,
             enable_cursor_blink: config.enable_cursor_blink,
-            enable_cursor_smear: config.enable_cursor_smear,
+            enable_cursor_smear: false,
         }
     }
 }
@@ -531,7 +531,7 @@ impl AppController {
     }
 
     pub fn toggle_cursor_smear(&mut self) {
-        self.config.enable_cursor_smear = !self.config.enable_cursor_smear;
+        self.config.enable_cursor_smear = false;
         self.save_config_silent();
     }
 
@@ -650,17 +650,7 @@ impl AppController {
             self.previous_cursor_column = before_col;
         }
 
-        if self.config.enable_cursor_smear
-            && classify_cursor_smear_eligible(
-                before_line,
-                before_col,
-                after_line,
-                after_col,
-                self.active_pane().mode(self.active_buffer()),
-            )
-        {
-            self.cursor_smear_generation = self.cursor_smear_generation.wrapping_add(1);
-        }
+        self.config.enable_cursor_smear = false;
 
         if is_insert {
             // Insert mode keeps scroll snap-to-cursor so typed text never drifts.
@@ -992,7 +982,7 @@ impl AppController {
             enable_cursor_glide: self.config.enable_cursor_glide,
             enable_smooth_scroll: self.config.enable_smooth_scroll,
             enable_cursor_blink: self.config.enable_cursor_blink,
-            enable_cursor_smear: self.config.enable_cursor_smear,
+            enable_cursor_smear: false,
             cursor_insert_mode: note.mode(buffer) == VimMode::Insert || note.mode(buffer) == VimMode::Replace,
             animation_duration_short_ms: if self.config.enable_animations { 80 } else { 0 },
             animation_duration_normal_ms: if self.config.enable_animations { 120 } else { 0 },
@@ -1001,13 +991,7 @@ impl AppController {
             viewport_top_line: note.viewport_top_line(buffer) as i32,
             cursor_animation_kind: self.cursor_animation_kind as i32,
             cursor_smear_generation: self.cursor_smear_generation,
-            smear_eligible: classify_cursor_smear_eligible(
-                self.previous_cursor_line,
-                self.previous_cursor_column,
-                note.cursor_line(buffer),
-                note.display_cursor_col(buffer),
-                note.mode(buffer),
-            ),
+            smear_eligible: false,
             scroll_animation_kind: self.scroll_animation_kind as i32,
             search_match_current: note.search_match_current(buffer) as i32,
             search_match_total: note.search_match_total(buffer) as i32,
@@ -1838,6 +1822,57 @@ mod tests {
     #[test]
     fn visual_mode_is_smear_eligible() {
         assert!(classify_cursor_smear_eligible(5, 3, 5, 7, VimMode::Visual));
+    }
+
+    #[test]
+    fn default_snapshot_has_smear_disabled() {
+        let mut controller = AppController::new();
+        controller.new_file();
+        controller.handle_editor_key("i");
+        controller.handle_editor_key("a");
+        controller.handle_editor_key("escape");
+
+        let snapshot = controller.snapshot();
+        assert!(!snapshot.enable_cursor_smear);
+        assert!(!snapshot.smear_eligible);
+
+        controller.handle_editor_key("j");
+        let snapshot = controller.snapshot();
+        assert!(!snapshot.smear_eligible);
+    }
+
+    #[test]
+    fn cursor_smear_stays_disabled_even_if_config_is_true() {
+        let mut controller = AppController::new();
+        controller.config.enable_cursor_smear = true;
+        controller.config.enable_animations = true;
+        controller.config.enable_cursor_glide = true;
+        controller.new_file();
+        controller.handle_editor_key("i");
+        controller.handle_editor_key("a");
+        controller.handle_editor_key("escape");
+
+        let snapshot = controller.snapshot();
+        assert!(!snapshot.enable_cursor_smear);
+        assert!(!snapshot.settings.enable_cursor_smear);
+        assert!(!snapshot.smear_eligible);
+
+        controller.handle_editor_key("j");
+        let snapshot = controller.snapshot();
+        assert!(!snapshot.enable_cursor_smear);
+        assert!(!snapshot.settings.enable_cursor_smear);
+        assert!(!snapshot.smear_eligible);
+
+        controller.config.enable_animations = false;
+        controller.handle_editor_key("k");
+        let snapshot = controller.snapshot();
+        assert!(!snapshot.smear_eligible);
+
+        controller.config.enable_animations = true;
+        controller.config.enable_cursor_glide = false;
+        controller.handle_editor_key("j");
+        let snapshot = controller.snapshot();
+        assert!(!snapshot.smear_eligible);
     }
 
     #[test]
