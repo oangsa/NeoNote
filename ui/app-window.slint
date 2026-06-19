@@ -217,6 +217,9 @@ export struct EditorLine {
     is-line-selected: bool,
     selection-continues-before: bool,
     selection-continues-after: bool,
+    selection-start-column: int,
+    selection-end-column: int,
+    selection-render-end-column: int,
 }
 
 export struct ThemeItem {
@@ -889,29 +892,14 @@ export component AppWindow inherits Window {
                                 width: 100%;
                                 background: line.is-search-match ? root.theme-warning.with_alpha(0.16) : (line.is-cursor-line ? root.theme-surface.with_alpha(0.28) : transparent);
 
-                                selection-prefix-measure := Text {
-                                    text: line.selected-prefix;
-                                    font-family: root.editor-font-family;
-                                    font-size: root.editor-font-size * 1px;
-                                    visible: false;
-                                }
-
-                                selection-measure := Text {
-                                    text: line.selected-text;
-                                    font-family: root.editor-font-family;
-                                    font-size: root.editor-font-size * 1px;
-                                    visible: false;
-                                }
-
                                 Rectangle {
                                     property <bool> has-selection: line.is-line-selected;
                                     property <bool> continues-before: line.selection-continues-before;
                                     property <bool> continues-after: line.selection-continues-after;
-                                    x: root.editor-content-x + (line.selected-prefix == "" ? 0px : selection-prefix-measure.preferred-width);
+                                    property <length> cell-width: char-width-measure.preferred-width;
+                                    x: root.editor-content-x + line.selection-start-column * cell-width;
                                     y: self.continues-before ? -1px : 0px;
-                                    width: line.selected-text == ""
-                                        ? (line.is-line-selected ? char-width-measure.preferred-width : 0px)
-                                        : selection-measure.preferred-width;
+                                    width: max((line.selection-render-end-column - line.selection-start-column) * cell-width, cell-width);
                                     height: root.line-height-px
                                         + (self.continues-before ? 1px : 0px)
                                         + (self.continues-after ? 1px : 0px);

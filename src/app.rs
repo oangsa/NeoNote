@@ -225,6 +225,9 @@ pub struct EditorLineSnapshot {
     pub is_line_selected: bool,
     pub selection_continues_before: bool,
     pub selection_continues_after: bool,
+    pub selection_start_column: i32,
+    pub selection_end_column: i32,
+    pub selection_render_end_column: i32,
 }
 
 #[derive(Clone, Debug)]
@@ -1600,20 +1603,66 @@ fn editor_lines(note: &Pane, buffer: &TextBuffer) -> Vec<EditorLineSnapshot> {
         .map(|index| note.line_selection_cols(buffer, index))
         .collect::<Vec<_>>();
 
+    // Compute logical selection columns clamped to each line's character bounds.
+    let line_selections: Vec<Option<(usize, usize)>> = selected_cols
+        .iter()
+        .enumerate()
+        .map(|(index, cols)| {
+            cols.map(|(start_col, end_col)| {
+                let chars: Vec<char> = lines[index].chars().collect();
+                let len = chars.len();
+                let start = start_col.min(len);
+                let end = end_col.min(len).max(start);
+                (start, end)
+            })
+        })
+        .collect();
+
+    // Compute render end columns for connected multi-line selections.
+    // Interior lines extend to a shared "bridge" right edge so empty lines don't collapse.
+    let mut render_ends: Vec<Option<usize>> = vec![None; lines.len()];
+    let mut i = 0;
+    while i < lines.len() {
+        if line_selections[i].is_none() {
+            i += 1;
+            continue;
+        }
+        let group_start = i;
+        while i < lines.len() && line_selections[i].is_some() {
+            i += 1;
+        }
+        let group_end = i.saturating_sub(1);
+
+        let bridge_right_edge = (group_start..=group_end)
+            .filter_map(|idx| line_selections[idx].map(|(_, end)| end))
+            .max()
+            .unwrap_or(1)
+            .max(1);
+
+        for idx in group_start..=group_end {
+            let (_, end) = line_selections[idx].unwrap();
+            let render_end = if idx == group_start || idx == group_end {
+                end.max(1)
+            } else {
+                bridge_right_edge
+            };
+            render_ends[idx] = Some(render_end);
+        }
+    }
+
     lines
         .into_iter()
         .enumerate()
         .map(|(index, text)| {
-            let (selected_prefix, selected_text, is_line_selected) = {
-                let cols = selected_cols[index];
-                if let Some((start_col, end_col)) = cols {
-                    let chars: Vec<char> = text.chars().collect();
-                    let start = start_col.min(chars.len());
-                    let end = end_col.min(chars.len()).max(start);
-                    (chars[..start].iter().collect(), chars[start..end].iter().collect(), true)
-                } else {
-                    (String::new(), String::new(), false)
-                }
+            let cols = selected_cols[index];
+            let is_line_selected = cols.is_some();
+            let (selected_prefix, selected_text) = if let Some((start_col, end_col)) = cols {
+                let chars: Vec<char> = text.chars().collect();
+                let start = start_col.min(chars.len());
+                let end = end_col.min(chars.len()).max(start);
+                (chars[..start].iter().collect(), chars[start..end].iter().collect())
+            } else {
+                (String::new(), String::new())
             };
             let selection_continues_before =
                 is_line_selected && index > 0 && selected_cols[index - 1].is_some();
@@ -1621,34 +1670,45 @@ fn editor_lines(note: &Pane, buffer: &TextBuffer) -> Vec<EditorLineSnapshot> {
                 && index + 1 < selected_cols.len()
                 && selected_cols[index + 1].is_some();
 
+            let (selection_start_column, selection_end_column, selection_render_end_column) =
+                match (line_selections[index], render_ends[index]) {
+                    (Some((start, end)), Some(render_end)) => {
+                        (start as i32, end as i32, render_end as i32)
+                    }
+                    _ => (0, 0, 0),
+                };
+
             EditorLineSnapshot {
-            number: (index + 1) as i32,
-            is_cursor_line: index == cursor_line,
-            selected_prefix,
-            selected_text,
-            is_line_selected,
-            selection_continues_before,
-            selection_continues_after,
-            is_search_match: note.line_has_search_match(buffer, index),
-            cursor_column,
-            cursor_prefix: if index == cursor_line {
-                cursor.prefix.clone()
-            } else {
-                String::new()
-            },
-            cursor_cell: if index == cursor_line {
-                cursor.cell.clone()
-            } else {
-                String::new()
-            },
-            cursor_suffix: if index == cursor_line {
-                cursor.suffix.clone()
-            } else {
-                String::new()
-            },
-            text,
-            cursor_block,
-        }
+                number: (index + 1) as i32,
+                is_cursor_line: index == cursor_line,
+                selected_prefix,
+                selected_text,
+                is_line_selected,
+                selection_continues_before,
+                selection_continues_after,
+                is_search_match: note.line_has_search_match(buffer, index),
+                cursor_column,
+                cursor_prefix: if index == cursor_line {
+                    cursor.prefix.clone()
+                } else {
+                    String::new()
+                },
+                cursor_cell: if index == cursor_line {
+                    cursor.cell.clone()
+                } else {
+                    String::new()
+                },
+                cursor_suffix: if index == cursor_line {
+                    cursor.suffix.clone()
+                } else {
+                    String::new()
+                },
+                text,
+                cursor_block,
+                selection_start_column,
+                selection_end_column,
+                selection_render_end_column,
+            }
         })
         .collect()
 }
@@ -1824,6 +1884,9 @@ mod tests {
                     is_line_selected: false,
                     selection_continues_before: false,
                     selection_continues_after: false,
+                    selection_start_column: 0,
+                    selection_end_column: 0,
+                    selection_render_end_column: 0,
                 },
                 EditorLineSnapshot {
                     number: 2,
@@ -1840,6 +1903,9 @@ mod tests {
                     is_line_selected: false,
                     selection_continues_before: false,
                     selection_continues_after: false,
+                    selection_start_column: 0,
+                    selection_end_column: 0,
+                    selection_render_end_column: 0,
                 },
             ]
         );
@@ -1982,6 +2048,76 @@ mod tests {
         let snapshot = controller.snapshot();
         assert!(snapshot.editor_lines[1].is_search_match);
         assert!(snapshot.status_right.contains("/two"));
+    }
+
+    #[test]
+    fn visual_selection_bridge_extends_empty_interior_lines() {
+        let mut controller = AppController::new();
+        controller.new_file();
+        {
+            let (p, b) = controller.active_pane_and_buffer();
+            *p.content_mut(b) = "longline\n\n\n\nshort\n".to_string();
+        }
+        { let (p, b) = controller.active_pane_and_buffer(); p.enter_normal(b); }
+
+        // Select all five lines in Visual Line mode (trailing newline creates a sixth empty line).
+        controller.handle_editor_key("g");
+        controller.handle_editor_key("g");
+        controller.handle_editor_key("V");
+        controller.handle_editor_key("4");
+        controller.handle_editor_key("j");
+
+        let snapshot = controller.snapshot();
+        assert_eq!(snapshot.mode_text, "V-LINE");
+        assert!(snapshot.editor_lines[0].is_line_selected);
+        assert!(snapshot.editor_lines[1].is_line_selected);
+        assert!(snapshot.editor_lines[2].is_line_selected);
+        assert!(snapshot.editor_lines[3].is_line_selected);
+        assert!(snapshot.editor_lines[4].is_line_selected);
+        assert!(!snapshot.editor_lines[5].is_line_selected);
+
+        // First line: real selected width.
+        assert_eq!(snapshot.editor_lines[0].selection_start_column, 0);
+        assert_eq!(snapshot.editor_lines[0].selection_end_column, 8);
+        assert_eq!(snapshot.editor_lines[0].selection_render_end_column, 8);
+
+        // Empty interior lines: bridge to the widest selected line.
+        for index in 1..=3 {
+            assert_eq!(snapshot.editor_lines[index].text, "");
+            assert_eq!(snapshot.editor_lines[index].selection_start_column, 0);
+            assert_eq!(snapshot.editor_lines[index].selection_end_column, 0);
+            assert_eq!(snapshot.editor_lines[index].selection_render_end_column, 8);
+        }
+
+        // Last line: real selected width.
+        assert_eq!(snapshot.editor_lines[4].selection_start_column, 0);
+        assert_eq!(snapshot.editor_lines[4].selection_end_column, 5);
+        assert_eq!(snapshot.editor_lines[4].selection_render_end_column, 5);
+    }
+
+    #[test]
+    fn single_line_visual_selection_uses_real_end_column() {
+        let mut controller = AppController::new();
+        controller.new_file();
+        {
+            let (p, b) = controller.active_pane_and_buffer();
+            *p.content_mut(b) = "hello world".to_string();
+        }
+        { let (p, b) = controller.active_pane_and_buffer(); p.enter_normal(b); }
+
+        // Move to the 'w' and select four characters: "worl".
+        controller.handle_editor_key("0");
+        controller.handle_editor_key("w");
+        controller.handle_editor_key("v");
+        controller.handle_editor_key("3");
+        controller.handle_editor_key("l");
+
+        let snapshot = controller.snapshot();
+        assert_eq!(snapshot.mode_text, "VISUAL");
+        assert!(snapshot.editor_lines[0].is_line_selected);
+        assert_eq!(snapshot.editor_lines[0].selection_start_column, 6);
+        assert_eq!(snapshot.editor_lines[0].selection_end_column, 10);
+        assert_eq!(snapshot.editor_lines[0].selection_render_end_column, 10);
     }
 
     #[test]

@@ -681,6 +681,9 @@ fn apply_editor_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
                     is_line_selected: line.is_line_selected,
                     selection_continues_before: line.selection_continues_before,
                     selection_continues_after: line.selection_continues_after,
+                    selection_start_column: line.selection_start_column,
+                    selection_end_column: line.selection_end_column,
+                    selection_render_end_column: line.selection_render_end_column,
                 })
                 .collect::<Vec<_>>(),
         ))
