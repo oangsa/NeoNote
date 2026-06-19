@@ -895,6 +895,7 @@ export component AppWindow inherits Window {
                                     property <bool> continues-before: line.selection-continues-before;
                                     property <bool> continues-after: line.selection-continues-after;
                                     property <length> cell-width: char-width-measure.preferred-width;
+                                    visible: self.has-selection;
                                     x: root.editor-content-x + line.selection-start-column * cell-width;
                                     y: self.continues-before ? -1px : 0px;
                                     width: max((line.selection-render-end-column - line.selection-start-column) * cell-width, cell-width);
