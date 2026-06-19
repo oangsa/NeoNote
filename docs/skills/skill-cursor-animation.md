@@ -32,6 +32,9 @@ rendered by Slint.
 
 - `CursorAnimationKind` (`Immediate`, `SmallMove`, `LargeJump`) is computed from
   line/column diffs in `handle_editor_key`.
+- Vertical cursor movement is forced to `Immediate`; Slint must not animate
+  cursor `y`. Animating the block cursor vertically can look like a persistent
+  tinted column in front of each traversed line.
 - **Insert mode is NOT forced to Immediate.** Insert uses the same diff logic as
   Normal mode, but the Slint duration expression selects `anim-duration-insert`
   (50 ms) when `cursor-insert-mode == true`, which is snappy enough that fast

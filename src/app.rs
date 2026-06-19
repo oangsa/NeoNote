@@ -637,9 +637,11 @@ impl AppController {
 
         let line_diff = (after_line as isize - before_line as isize).unsigned_abs();
         let col_diff = (after_col as isize - before_col as isize).unsigned_abs();
-        if line_diff > 3 || col_diff > 10 {
+        if line_diff > 0 {
+            self.cursor_animation_kind = CursorAnimationKind::Immediate;
+        } else if col_diff > 10 {
             self.cursor_animation_kind = CursorAnimationKind::LargeJump;
-        } else if line_diff > 0 || col_diff > 0 {
+        } else if col_diff > 0 {
             self.cursor_animation_kind = CursorAnimationKind::SmallMove;
         } else {
             self.cursor_animation_kind = CursorAnimationKind::Immediate;
@@ -2406,6 +2408,24 @@ mod tests {
             controller.cursor_animation_kind,
             CursorAnimationKind::SmallMove,
             "Insert mode should glide via SmallMove, not Immediate, after the cursor moves"
+        );
+    }
+
+    #[test]
+    fn cursor_animation_kind_vertical_normal_move_is_immediate() {
+        let mut controller = AppController::new();
+        controller.new_file();
+        controller.handle_editor_key("i");
+        for key in ["o", "n", "e", "return", "t", "w", "o", "escape"] {
+            controller.handle_editor_key(key);
+        }
+
+        controller.handle_editor_key("k");
+
+        assert_eq!(
+            controller.cursor_animation_kind,
+            CursorAnimationKind::Immediate,
+            "Normal-mode vertical moves should snap to avoid a cursor travel column"
         );
     }
 }
