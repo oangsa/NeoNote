@@ -17,14 +17,24 @@ pub struct AppConfig {
     pub word_wrap: bool,
     #[serde(default = "default_true")]
     pub sync_clipboard: bool,
-    pub cursor_trail_enabled: bool,
-    pub cursor_vfx_override: Option<String>,
     pub startup_mode: StartupMode,
     pub window_opacity: u8,
     pub blur_behind: bool,
     pub remember_window_geometry: bool,
     pub restore_last_session: bool,
     pub show_launcher_on_startup: bool,
+    #[serde(default = "default_true")]
+    pub enable_mica: bool,
+    #[serde(default = "default_true")]
+    pub enable_animations: bool,
+    #[serde(default = "default_true")]
+    pub enable_cursor_glide: bool,
+    #[serde(default = "default_true")]
+    pub enable_smooth_scroll: bool,
+    #[serde(default = "default_true")]
+    pub enable_cursor_trail: bool,
+    #[serde(default = "default_true")]
+    pub enable_cursor_blink: bool,
     pub default_open_folder: Option<String>,
     pub keybindings: serde_json::Map<String, serde_json::Value>,
 }
@@ -48,14 +58,18 @@ impl Default for AppConfig {
             tab_size: 2,
             word_wrap: false,
             sync_clipboard: true,
-            cursor_trail_enabled: true,
-            cursor_vfx_override: None,
             startup_mode: StartupMode::Windowed,
             window_opacity: 100,
             blur_behind: false,
             remember_window_geometry: true,
             restore_last_session: true,
             show_launcher_on_startup: true,
+            enable_mica: true,
+            enable_animations: true,
+            enable_cursor_glide: true,
+            enable_smooth_scroll: true,
+            enable_cursor_trail: true,
+            enable_cursor_blink: true,
             default_open_folder: None,
             keybindings: serde_json::Map::new(),
         }

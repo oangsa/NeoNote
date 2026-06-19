@@ -79,9 +79,12 @@ pub struct AppSnapshot {
     pub enable_cursor_glide: bool,
     pub enable_smooth_scroll: bool,
     pub enable_cursor_trail: bool,
+    pub enable_cursor_blink: bool,
+    pub cursor_insert_mode: bool,
     pub animation_duration_short_ms: i32,
     pub animation_duration_normal_ms: i32,
     pub animation_duration_long_ms: i32,
+    pub animation_duration_insert_ms: i32,
     pub viewport_top_line: i32,
     pub cursor_animation_kind: i32,
     pub scroll_animation_kind: i32,
@@ -131,6 +134,7 @@ pub struct SettingsSnapshot {
     pub enable_cursor_glide: bool,
     pub enable_smooth_scroll: bool,
     pub enable_cursor_trail: bool,
+    pub enable_cursor_blink: bool,
 }
 
 impl Default for SettingsSnapshot {
@@ -164,6 +168,7 @@ impl SettingsSnapshot {
             enable_cursor_glide: config.enable_cursor_glide,
             enable_smooth_scroll: config.enable_smooth_scroll,
             enable_cursor_trail: config.enable_cursor_trail,
+            enable_cursor_blink: config.enable_cursor_blink,
         }
     }
 }
@@ -285,6 +290,7 @@ impl AppController {
             self.documents.push(note);
             self.active_document = self.documents.len().saturating_sub(1);
         }
+        self.reset_cursor_visual_state();
         self.last_message.clear();
         self.flush_deferred_action();
     }
@@ -481,6 +487,11 @@ impl AppController {
         self.save_config_silent();
     }
 
+    pub fn toggle_cursor_blink(&mut self) {
+        self.config.enable_cursor_blink = !self.config.enable_cursor_blink;
+        self.save_config_silent();
+    }
+
     pub fn flush_deferred_action(&mut self) -> bool {
         if !self.active_pane().is_open(self.active_buffer()) {
             return false;
@@ -581,20 +592,20 @@ impl AppController {
             (p.cursor_line(b), p.display_cursor_col(b), p.viewport_top_line(b))
         };
 
-        if is_insert {
+        let line_diff = (after_line as isize - before_line as isize).unsigned_abs();
+        let col_diff = (after_col as isize - before_col as isize).unsigned_abs();
+        if line_diff > 3 || col_diff > 10 {
+            self.cursor_animation_kind = CursorAnimationKind::LargeJump;
+        } else if line_diff > 0 || col_diff > 0 {
+            self.cursor_animation_kind = CursorAnimationKind::SmallMove;
+        } else {
             self.cursor_animation_kind = CursorAnimationKind::Immediate;
+        }
+
+        if is_insert {
+            // Insert mode keeps scroll snap-to-cursor so typed text never drifts.
             self.scroll_animation_kind = ScrollAnimationKind::Immediate;
         } else {
-            let line_diff = (after_line as isize - before_line as isize).unsigned_abs();
-            let col_diff = (after_col as isize - before_col as isize).unsigned_abs();
-            if line_diff > 3 || col_diff > 10 {
-                self.cursor_animation_kind = CursorAnimationKind::LargeJump;
-            } else if line_diff > 0 || col_diff > 0 {
-                self.cursor_animation_kind = CursorAnimationKind::SmallMove;
-            } else {
-                self.cursor_animation_kind = CursorAnimationKind::Immediate;
-            }
-
             let top_diff = (after_top as isize - before_top as isize).unsigned_abs();
             if top_diff > 10 {
                 self.scroll_animation_kind = ScrollAnimationKind::LargeJump;
@@ -623,6 +634,11 @@ impl AppController {
     fn set_animation_kinds_immediate(&mut self) {
         self.cursor_animation_kind = CursorAnimationKind::Immediate;
         self.scroll_animation_kind = ScrollAnimationKind::Immediate;
+    }
+
+    fn reset_cursor_visual_state(&mut self) {
+        self.cursor_trail.clear();
+        self.set_animation_kinds_immediate();
     }
 
     fn update_viewport_visible_lines(&mut self) {
@@ -739,6 +755,7 @@ impl AppController {
         } else {
             self.active_document - 1
         };
+        self.reset_cursor_visual_state();
         self.last_message.clear();
     }
 
@@ -748,12 +765,14 @@ impl AppController {
         }
 
         self.active_document = (self.active_document + 1) % self.documents.len();
+        self.reset_cursor_visual_state();
         self.last_message.clear();
     }
 
     pub fn switch_to_document(&mut self, index: usize) {
         if index < self.documents.len() {
             self.active_document = index;
+            self.reset_cursor_visual_state();
             self.last_message.clear();
         }
     }
@@ -835,12 +854,13 @@ impl AppController {
         }
         
         self.documents.remove(index);
-        
+
         if self.documents.is_empty() {
             self.new_file();
         } else if self.active_document >= self.documents.len() {
             self.active_document = self.documents.len().saturating_sub(1);
         }
+        self.reset_cursor_visual_state();
         self.save_session_state(false);
     }
 
@@ -923,9 +943,12 @@ impl AppController {
             enable_cursor_glide: self.config.enable_cursor_glide,
             enable_smooth_scroll: self.config.enable_smooth_scroll,
             enable_cursor_trail: self.config.enable_cursor_trail,
+            enable_cursor_blink: self.config.enable_cursor_blink,
+            cursor_insert_mode: note.mode(buffer) == VimMode::Insert || note.mode(buffer) == VimMode::Replace,
             animation_duration_short_ms: if self.config.enable_animations { 80 } else { 0 },
             animation_duration_normal_ms: if self.config.enable_animations { 120 } else { 0 },
             animation_duration_long_ms: if self.config.enable_animations { 180 } else { 0 },
+            animation_duration_insert_ms: if self.config.enable_animations { 50 } else { 0 },
             viewport_top_line: note.viewport_top_line(buffer) as i32,
             cursor_animation_kind: self.cursor_animation_kind as i32,
             scroll_animation_kind: self.scroll_animation_kind as i32,
@@ -1139,6 +1162,7 @@ impl AppController {
 
         if let Some(index) = self.find_open_document_by_path(&canonical_path) {
             self.active_document = index;
+            self.reset_cursor_visual_state();
             self.last_message = format!("Focused existing file: {}", canonical_path.display());
             return Ok(());
         }
@@ -1218,6 +1242,7 @@ impl AppController {
     fn open_path(&mut self, path: PathBuf) {
         if let Some(index) = self.document_index_for_path(&path) {
             self.active_document = index;
+            self.reset_cursor_visual_state();
             self.last_message = self.language().file_already_open_message().to_string();
             return;
         }
@@ -1250,6 +1275,7 @@ impl AppController {
             }
             Err(error) => self.last_message = format!("Could not open note: {error}"),
         }
+        self.reset_cursor_visual_state();
     }
 
     fn remember_recent(&mut self, path: PathBuf) {
@@ -1526,10 +1552,15 @@ fn editor_lines(note: &Pane, buffer: &TextBuffer, cursor_trail: &[(usize, usize)
                 }
             };
 
+            let line_char_count = text.chars().count();
             let trail_columns: Vec<i32> = cursor_trail
                 .iter()
                 .filter_map(|(t_line, t_col)| {
-                    if *t_line == index { Some(*t_col as i32) } else { None }
+                    if *t_line == index && *t_col <= line_char_count {
+                        Some(*t_col as i32)
+                    } else {
+                        None
+                    }
                 })
                 .collect();
 
@@ -2066,5 +2097,94 @@ mod tests {
         if controller.config.sync_clipboard {
             assert_eq!(clipboard::read_text().unwrap().replace("\r\n", "\n"), "line1\n");
         }
+    }
+
+    #[test]
+    fn cursor_trail_clears_on_document_switch() {
+        let mut controller = AppController::new();
+        controller.config.enable_cursor_trail = true;
+        controller.new_file();
+        controller.handle_editor_key("i");
+        for key in ["a", "b", "c", "escape", "l", "l"] {
+            controller.handle_editor_key(key);
+        }
+
+        // Trail should have accumulated at least one ghost.
+        assert!(!controller.cursor_trail.is_empty());
+
+        controller.new_file();
+        assert!(
+            controller.cursor_trail.is_empty(),
+            "cursor_trail must clear when creating a new document"
+        );
+
+        // Build trail again, then switch back via previous_document.
+        controller.handle_editor_key("i");
+        controller.handle_editor_key("z");
+        controller.handle_editor_key("escape");
+        assert!(!controller.cursor_trail.is_empty());
+
+        controller.previous_document();
+        assert!(
+            controller.cursor_trail.is_empty(),
+            "cursor_trail must clear when switching documents"
+        );
+
+        // Trail should also be empty in the snapshot's editor lines.
+        let snapshot = controller.snapshot();
+        assert!(
+            snapshot
+                .editor_lines
+                .iter()
+                .all(|line| line.trail_columns.is_empty()),
+            "no ghost columns should appear after a document switch"
+        );
+    }
+
+    #[test]
+    fn cursor_trail_filtered_by_line_length() {
+        let mut controller = AppController::new();
+        controller.config.enable_cursor_trail = true;
+        controller.new_file();
+        controller.handle_editor_key("i");
+        // Type "hello" then move left twice to build a trail at cols 5 and 4.
+        for key in ["h", "e", "l", "l", "o", "escape", "h", "h"] {
+            controller.handle_editor_key(key);
+        }
+
+        // Now delete the whole word with dw, shortening the line to empty.
+        controller.handle_editor_key("0");
+        controller.handle_editor_key("d");
+        controller.handle_editor_key("w");
+
+        let snapshot = controller.snapshot();
+        // After dw on the only word, the line is empty; no trail column may exceed 0.
+        for (index, line) in snapshot.editor_lines.iter().enumerate() {
+            let line_len = line.text.chars().count() as i32;
+            for col in &line.trail_columns {
+                assert!(
+                    *col <= line_len,
+                    "trail column {} on line {} exceeds line length {}",
+                    col,
+                    index,
+                    line_len
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn cursor_animation_kind_insert_uses_small_move() {
+        let mut controller = AppController::new();
+        controller.new_file();
+        // Enter Insert mode and type a character; the cursor column advances by 1.
+        controller.handle_editor_key("i");
+        controller.handle_editor_key("a");
+
+        assert_eq!(
+            controller.cursor_animation_kind,
+            CursorAnimationKind::SmallMove,
+            "Insert mode should glide via SmallMove, not Immediate, after the cursor moves"
+        );
     }
 }

@@ -248,6 +248,7 @@ export struct SettingsData {
     enable-cursor-glide: bool,
     enable-smooth-scroll: bool,
     enable-cursor-trail: bool,
+    enable-cursor-blink: bool,
 }
 
 export struct DocumentTab {
@@ -306,6 +307,8 @@ export struct UiText {
     smooth-scroll-detail: string,
     cursor-trail: string,
     cursor-trail-detail: string,
+    cursor-blink: string,
+    cursor-blink-detail: string,
 }
 
 export component AppWindow inherits Window {
@@ -355,9 +358,13 @@ export component AppWindow inherits Window {
     in property <bool> enable-cursor-glide: true;
     in property <bool> enable-smooth-scroll: true;
     in property <bool> enable-cursor-trail: true;
+    in property <bool> enable-cursor-blink: true;
+    in property <bool> cursor-blink-visible: true;
+    in property <bool> cursor-insert-mode: false;
     in property <int> anim-duration-short: 80;
     in property <int> anim-duration-normal: 120;
     in property <int> anim-duration-long: 180;
+    in property <int> anim-duration-insert: 50;
     in property <int> viewport-top-line: 0;
     in property <int> cursor-animation-kind: 0;
     in property <int> scroll-animation-kind: 0;
@@ -396,6 +403,7 @@ export component AppWindow inherits Window {
     callback settings-toggle-cursor-glide();
     callback settings-toggle-smooth-scroll();
     callback settings-toggle-cursor-trail();
+    callback settings-toggle-cursor-blink();
     callback editor-key(string);
     callback editor-pointer-event(int, float, string);
 
@@ -863,7 +871,6 @@ export component AppWindow inherits Window {
                                     width: char-width-measure.preferred-width;
                                     height: root.editor-line-height * 1px;
                                     background: root.theme-cursor.with_alpha(0.15);
-                                    animate opacity { duration: 140ms; easing: ease-out; }
                                 }
 
 
@@ -917,12 +924,17 @@ export component AppWindow inherits Window {
                             height: root.editor-line-height * 1px;
                             width: root.has-document ? (root.cursor-block ? max(cursor-cell-measure.preferred-width - root.cursor-x-adjust, 2px) : 2px) : 0px;
                             background: root.cursor-block ? root.theme-cursor.with_alpha(0.58) : root.mode-color;
+                            opacity: root.has-document && (!root.enable-cursor-blink || root.cursor-blink-visible) ? 1.0 : 0.0;
                             animate x {
-                                duration: (root.enable-animations && root.enable-cursor-glide ? (root.cursor-animation-kind == 0 ? 0 : (root.cursor-animation-kind == 1 ? root.anim-duration-short : root.anim-duration-normal)) : 0) * 1ms;
+                                duration: (root.enable-animations && root.enable-cursor-glide ? (root.cursor-animation-kind == 0 ? 0 : (root.cursor-insert-mode ? root.anim-duration-insert : (root.cursor-animation-kind == 1 ? root.anim-duration-short : root.anim-duration-normal))) : 0) * 1ms;
                                 easing: ease-out;
                             }
                             animate y {
-                                duration: (root.enable-animations && root.enable-cursor-glide ? (root.cursor-animation-kind == 0 ? 0 : (root.cursor-animation-kind == 1 ? root.anim-duration-short : root.anim-duration-normal)) : 0) * 1ms;
+                                duration: (root.enable-animations && root.enable-cursor-glide ? (root.cursor-animation-kind == 0 ? 0 : (root.cursor-insert-mode ? root.anim-duration-insert : (root.cursor-animation-kind == 1 ? root.anim-duration-short : root.anim-duration-normal))) : 0) * 1ms;
+                                easing: ease-out;
+                            }
+                            animate opacity {
+                                duration: 100ms;
                                 easing: ease-out;
                             }
                         }
@@ -1472,6 +1484,19 @@ export component AppWindow inherits Window {
                     row-text-muted: root.theme-text-muted;
                     row-accent: root.theme-accent-primary;
                     toggled => { root.settings-toggle-cursor-trail(); }
+                }
+
+                ToggleRow {
+                    title: root.ui-text.cursor-blink;
+                    detail: root.ui-text.cursor-blink-detail;
+                    checked: root.settings.enable-cursor-blink;
+                    row-background: root.theme-background;
+                    row-hover: root.theme-background-alt;
+                    row-border: root.theme-border;
+                    row-text: root.theme-text;
+                    row-text-muted: root.theme-text-muted;
+                    row-accent: root.theme-accent-primary;
+                    toggled => { root.settings-toggle-cursor-blink(); }
                 }
 
                 Text {

@@ -11,7 +11,7 @@ mod vim;
 
 mod startup;
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, time::Instant};
 
 use app::{AppController, AppSnapshot};
 use slint::{Brush, Color, ComponentHandle, SharedString, VecModel};
@@ -42,7 +42,62 @@ fn main() -> Result<(), slint::PlatformError> {
 
     controller.borrow_mut().run_startup_flow(startup_args);
 
-    install_callbacks(&window, Rc::clone(&controller));
+    #[cfg(target_os = "windows")]
+    {
+        let enable_mica = controller.borrow().config.enable_mica;
+        if enable_mica {
+            if let Some(hwnd) = platform::window_effects::find_main_window_hwnd() {
+                let _ = platform::window_effects::apply_mica_for_hwnd(hwnd, true);
+            }
+        }
+    }
+
+    let last_editor_activity = Rc::new(RefCell::new(Instant::now()));
+    let blink_state = Rc::new(RefCell::new(true));
+
+    install_callbacks(
+        &window,
+        Rc::clone(&controller),
+        Rc::clone(&last_editor_activity),
+        Rc::clone(&blink_state),
+    );
+
+    let _blink_timer = {
+        let weak_window = window.as_weak();
+        let blink_controller = Rc::clone(&controller);
+        let blink_activity = Rc::clone(&last_editor_activity);
+        let blink_visible = Rc::clone(&blink_state);
+        let blink_timer = slint::Timer::default();
+        blink_timer.start(
+            slint::TimerMode::Repeated,
+            std::time::Duration::from_millis(500),
+            move || {
+                if let Some(w) = weak_window.upgrade() {
+                    let enable_blink = blink_controller.borrow().config.enable_cursor_blink;
+                    let has_doc = blink_controller.borrow().snapshot().has_document;
+                    if !enable_blink || !has_doc {
+                        let mut vis = blink_visible.borrow_mut();
+                        if *vis != true {
+                            *vis = true;
+                            w.set_cursor_blink_visible(true);
+                        }
+                        return;
+                    }
+                    let elapsed = Instant::now().duration_since(*blink_activity.borrow());
+                    let visible = if elapsed.as_millis() < 1000 {
+                        true
+                    } else {
+                        let mut vis = blink_visible.borrow_mut();
+                        *vis = !*vis;
+                        *vis
+                    };
+                    w.set_cursor_blink_visible(visible);
+                }
+            },
+        );
+        blink_timer
+    };
+
     apply_snapshot(&window, &controller.borrow().snapshot());
 
     #[cfg(target_os = "windows")]
@@ -81,7 +136,12 @@ fn main() -> Result<(), slint::PlatformError> {
     result
 }
 
-fn install_callbacks(window: &AppWindow, controller: Rc<RefCell<AppController>>) {
+fn install_callbacks(
+    window: &AppWindow,
+    controller: Rc<RefCell<AppController>>,
+    last_editor_activity: Rc<RefCell<Instant>>,
+    blink_state: Rc<RefCell<bool>>,
+) {
     let weak_window = window.as_weak();
     let controller_for_new = Rc::clone(&controller);
     window.on_new_file(move || {
@@ -348,11 +408,73 @@ fn install_callbacks(window: &AppWindow, controller: Rc<RefCell<AppController>>)
     });
 
     let weak_window = window.as_weak();
+    let controller_for_mica = Rc::clone(&controller);
+    window.on_settings_toggle_mica(move || {
+        controller_for_mica.borrow_mut().toggle_mica();
+        if let Some(window) = weak_window.upgrade() {
+            apply_snapshot(&window, &controller_for_mica.borrow().snapshot());
+        }
+    });
+
+    let weak_window = window.as_weak();
+    let controller_for_anim = Rc::clone(&controller);
+    window.on_settings_toggle_animations(move || {
+        controller_for_anim.borrow_mut().toggle_animations();
+        if let Some(window) = weak_window.upgrade() {
+            apply_snapshot(&window, &controller_for_anim.borrow().snapshot());
+        }
+    });
+
+    let weak_window = window.as_weak();
+    let controller_for_cursor_glide = Rc::clone(&controller);
+    window.on_settings_toggle_cursor_glide(move || {
+        controller_for_cursor_glide.borrow_mut().toggle_cursor_glide();
+        if let Some(window) = weak_window.upgrade() {
+            apply_snapshot(&window, &controller_for_cursor_glide.borrow().snapshot());
+        }
+    });
+
+    let weak_window = window.as_weak();
+    let controller_for_smooth_scroll = Rc::clone(&controller);
+    window.on_settings_toggle_smooth_scroll(move || {
+        controller_for_smooth_scroll.borrow_mut().toggle_smooth_scroll();
+        if let Some(window) = weak_window.upgrade() {
+            apply_snapshot(&window, &controller_for_smooth_scroll.borrow().snapshot());
+        }
+    });
+
+    let weak_window = window.as_weak();
+    let controller_for_cursor_trail = Rc::clone(&controller);
+    window.on_settings_toggle_cursor_trail(move || {
+        controller_for_cursor_trail.borrow_mut().toggle_cursor_trail();
+        if let Some(window) = weak_window.upgrade() {
+            apply_snapshot(&window, &controller_for_cursor_trail.borrow().snapshot());
+        }
+    });
+
+    let weak_window = window.as_weak();
+    let controller_for_cursor_blink = Rc::clone(&controller);
+    window.on_settings_toggle_cursor_blink(move || {
+        controller_for_cursor_blink.borrow_mut().toggle_cursor_blink();
+        if let Some(window) = weak_window.upgrade() {
+            apply_snapshot(&window, &controller_for_cursor_blink.borrow().snapshot());
+        }
+    });
+
+    let weak_window = window.as_weak();
     let controller_for_editor = Rc::clone(&controller);
+    let editor_activity = Rc::clone(&last_editor_activity);
+    let editor_blink = Rc::clone(&blink_state);
     window.on_editor_key(move |key| {
         controller_for_editor
             .borrow_mut()
             .handle_editor_key(key.as_str());
+
+        *editor_activity.borrow_mut() = Instant::now();
+        if let Some(window) = weak_window.upgrade() {
+            *editor_blink.borrow_mut() = true;
+            window.set_cursor_blink_visible(true);
+        }
 
         let has_highlight = {
             let ctrl = controller_for_editor.borrow();
@@ -384,13 +506,18 @@ fn install_callbacks(window: &AppWindow, controller: Rc<RefCell<AppController>>)
 
     let weak_window = window.as_weak();
     let controller_for_pointer = Rc::clone(&controller);
+    let pointer_activity = Rc::clone(&last_editor_activity);
+    let pointer_blink = Rc::clone(&blink_state);
     window.on_editor_pointer_event(move |line, x_pixels, event_kind| {
         controller_for_pointer.borrow_mut().handle_editor_pointer(
             line,
             x_pixels,
             event_kind.as_str(),
         );
+        *pointer_activity.borrow_mut() = Instant::now();
         if let Some(window) = weak_window.upgrade() {
+            *pointer_blink.borrow_mut() = true;
+            window.set_cursor_blink_visible(true);
             apply_editor_snapshot(&window, &controller_for_pointer.borrow().snapshot());
             window.invoke_focus_editor();
         }
@@ -430,6 +557,12 @@ fn apply_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
         blur_behind: snapshot.settings.blur_behind,
         window_opacity: snapshot.settings.window_opacity,
         window_opacity_label: SharedString::from(snapshot.settings.window_opacity_label.as_str()),
+        enable_mica: snapshot.settings.enable_mica,
+        enable_animations: snapshot.settings.enable_animations,
+        enable_cursor_glide: snapshot.settings.enable_cursor_glide,
+        enable_smooth_scroll: snapshot.settings.enable_smooth_scroll,
+        enable_cursor_trail: snapshot.settings.enable_cursor_trail,
+        enable_cursor_blink: snapshot.settings.enable_cursor_blink,
     });
         window.set_theme_items(
         Rc::new(VecModel::from(
@@ -486,6 +619,19 @@ fn apply_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
         blur_behind: SharedString::from(snapshot.ui_text.blur_behind.as_str()),
         blur_behind_detail: SharedString::from(snapshot.ui_text.blur_behind_detail.as_str()),
         window_opacity: SharedString::from(snapshot.ui_text.window_opacity.as_str()),
+        visual_section: SharedString::from(snapshot.ui_text.visual_section.as_str()),
+        use_mica: SharedString::from(snapshot.ui_text.use_mica.as_str()),
+        use_mica_detail: SharedString::from(snapshot.ui_text.use_mica_detail.as_str()),
+        enable_animations: SharedString::from(snapshot.ui_text.enable_animations.as_str()),
+        enable_animations_detail: SharedString::from(snapshot.ui_text.enable_animations_detail.as_str()),
+        cursor_glide: SharedString::from(snapshot.ui_text.cursor_glide.as_str()),
+        cursor_glide_detail: SharedString::from(snapshot.ui_text.cursor_glide_detail.as_str()),
+        smooth_scroll: SharedString::from(snapshot.ui_text.smooth_scroll.as_str()),
+        smooth_scroll_detail: SharedString::from(snapshot.ui_text.smooth_scroll_detail.as_str()),
+        cursor_trail: SharedString::from(snapshot.ui_text.cursor_trail.as_str()),
+        cursor_trail_detail: SharedString::from(snapshot.ui_text.cursor_trail_detail.as_str()),
+        cursor_blink: SharedString::from(snapshot.ui_text.cursor_blink.as_str()),
+        cursor_blink_detail: SharedString::from(snapshot.ui_text.cursor_blink_detail.as_str()),
     });
 }
 
@@ -509,6 +655,10 @@ fn apply_editor_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
                     cursor_cell: SharedString::from(line.cursor_cell.as_str()),
                     cursor_suffix: SharedString::from(line.cursor_suffix.as_str()),
                     cursor_block: line.cursor_block,
+                    trail_columns: Rc::new(VecModel::from(
+                        line.trail_columns.clone(),
+                    ))
+                    .into(),
                 })
                 .collect::<Vec<_>>(),
         ))
@@ -544,6 +694,22 @@ fn apply_editor_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
     window.set_editor_font_size(snapshot.editor_font_size);
     window.set_editor_line_height(snapshot.editor_line_height);
     window.set_mode_color(brush_from_hex(&snapshot.mode_color));
+    window.set_enable_animations(snapshot.enable_animations);
+    window.set_enable_cursor_glide(snapshot.enable_cursor_glide);
+    window.set_enable_smooth_scroll(snapshot.enable_smooth_scroll);
+    window.set_enable_cursor_trail(snapshot.enable_cursor_trail);
+    window.set_enable_cursor_blink(snapshot.enable_cursor_blink);
+    window.set_cursor_insert_mode(snapshot.cursor_insert_mode);
+    window.set_anim_duration_short(snapshot.animation_duration_short_ms);
+    window.set_anim_duration_normal(snapshot.animation_duration_normal_ms);
+    window.set_anim_duration_long(snapshot.animation_duration_long_ms);
+    window.set_anim_duration_insert(snapshot.animation_duration_insert_ms);
+    window.set_viewport_top_line(snapshot.viewport_top_line);
+    window.set_cursor_animation_kind(snapshot.cursor_animation_kind);
+    window.set_scroll_animation_kind(snapshot.scroll_animation_kind);
+    window.set_search_match_current(snapshot.search_match_current);
+    window.set_search_match_total(snapshot.search_match_total);
+    window.set_search_match_label(SharedString::from(snapshot.search_match_label.as_str()));
     window.invoke_scroll_to_cursor();
 }
 
