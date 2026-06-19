@@ -44,7 +44,6 @@ pub struct AppController {
     next_buffer_id: usize,
     cursor_animation_kind: CursorAnimationKind,
     scroll_animation_kind: ScrollAnimationKind,
-    cursor_trail: Vec<(usize, usize)>,
     window_height_px: f32,
 }
 
@@ -78,7 +77,6 @@ pub struct AppSnapshot {
     pub enable_animations: bool,
     pub enable_cursor_glide: bool,
     pub enable_smooth_scroll: bool,
-    pub enable_cursor_trail: bool,
     pub enable_cursor_blink: bool,
     pub cursor_insert_mode: bool,
     pub animation_duration_short_ms: i32,
@@ -133,7 +131,6 @@ pub struct SettingsSnapshot {
     pub enable_animations: bool,
     pub enable_cursor_glide: bool,
     pub enable_smooth_scroll: bool,
-    pub enable_cursor_trail: bool,
     pub enable_cursor_blink: bool,
 }
 
@@ -167,7 +164,6 @@ impl SettingsSnapshot {
             enable_animations: config.enable_animations,
             enable_cursor_glide: config.enable_cursor_glide,
             enable_smooth_scroll: config.enable_smooth_scroll,
-            enable_cursor_trail: config.enable_cursor_trail,
             enable_cursor_blink: config.enable_cursor_blink,
         }
     }
@@ -186,7 +182,7 @@ pub struct EditorLineSnapshot {
     pub cursor_cell: String,
     pub cursor_suffix: String,
     pub cursor_block: bool,
-    pub trail_columns: Vec<i32>,
+    pub is_line_selected: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -264,7 +260,6 @@ impl AppController {
             next_buffer_id: 2,
             cursor_animation_kind: CursorAnimationKind::Immediate,
             scroll_animation_kind: ScrollAnimationKind::Immediate,
-            cursor_trail: Vec::new(),
             window_height_px: 800.0,
         }
     }
@@ -482,11 +477,6 @@ impl AppController {
         self.save_config_silent();
     }
 
-    pub fn toggle_cursor_trail(&mut self) {
-        self.config.enable_cursor_trail = !self.config.enable_cursor_trail;
-        self.save_config_silent();
-    }
-
     pub fn toggle_cursor_blink(&mut self) {
         self.config.enable_cursor_blink = !self.config.enable_cursor_blink;
         self.save_config_silent();
@@ -618,10 +608,6 @@ impl AppController {
             }
         }
 
-        if after_line != before_line || after_col != before_col {
-            self.update_cursor_trail(after_line, after_col);
-        }
-
         self.export_unnamed_register_if_changed(before_register);
 
         if let Some(action) = { let (p, b) = self.active_pane_and_buffer(); p.take_ex_action(b) } {
@@ -637,7 +623,6 @@ impl AppController {
     }
 
     fn reset_cursor_visual_state(&mut self) {
-        self.cursor_trail.clear();
         self.set_animation_kinds_immediate();
     }
 
@@ -648,20 +633,6 @@ impl AppController {
         let visible_lines = (editor_viewport_height / editor_line_height) as usize;
         let (p, _) = self.active_pane_and_buffer();
         p.set_visible_lines(visible_lines);
-    }
-
-    fn update_cursor_trail(&mut self, line: usize, col: usize) {
-        if !self.config.enable_cursor_trail {
-            self.cursor_trail.clear();
-            return;
-        }
-        if self.cursor_trail.last() == Some(&(line, col)) {
-            return;
-        }
-        self.cursor_trail.push((line, col));
-        if self.cursor_trail.len() > 3 {
-            self.cursor_trail.remove(0);
-        }
     }
 
     fn handle_clipboard_paste_shortcut(&mut self) {
@@ -879,7 +850,7 @@ impl AppController {
         AppSnapshot {
             file_title: self.localized_title(note, self.active_buffer()),
             file_path: note.path_string(self.active_buffer()).unwrap_or_default(),
-            editor_lines: editor_lines(note, self.active_buffer(), &self.cursor_trail),
+            editor_lines: editor_lines(note, self.active_buffer()),
             document_tabs: self.document_tabs(),
             status_text: if note.is_open(self.active_buffer()) {
                 match note.vim_state.mode {
@@ -942,7 +913,6 @@ impl AppController {
             enable_animations: self.config.enable_animations,
             enable_cursor_glide: self.config.enable_cursor_glide,
             enable_smooth_scroll: self.config.enable_smooth_scroll,
-            enable_cursor_trail: self.config.enable_cursor_trail,
             enable_cursor_blink: self.config.enable_cursor_blink,
             cursor_insert_mode: note.mode(buffer) == VimMode::Insert || note.mode(buffer) == VimMode::Replace,
             animation_duration_short_ms: if self.config.enable_animations { 80 } else { 0 },
@@ -991,11 +961,6 @@ impl AppController {
         self.last_message.clear();
         self.cursor_animation_kind = CursorAnimationKind::LargeJump;
         self.scroll_animation_kind = ScrollAnimationKind::Immediate;
-        let (line, col) = {
-            let (p, b) = self.active_pane_and_buffer();
-            (p.cursor_line(b), p.display_cursor_col(b))
-        };
-        self.update_cursor_trail(line, col);
     }
                     Err(error) => self.last_message = format!("Could not save note: {error}"),
                 }
@@ -1530,7 +1495,7 @@ fn cursor_snapshot(note: &Pane, buffer: &TextBuffer) -> CursorSnapshot {
     }
 }
 
-fn editor_lines(note: &Pane, buffer: &TextBuffer, cursor_trail: &[(usize, usize)]) -> Vec<EditorLineSnapshot> {
+fn editor_lines(note: &Pane, buffer: &TextBuffer) -> Vec<EditorLineSnapshot> {
     let cursor_line = note.cursor_line(buffer);
     let cursor_column = note.display_cursor_col(buffer) as i32;
     let cursor_block = note.mode(buffer) != VimMode::Insert;
@@ -1540,35 +1505,24 @@ fn editor_lines(note: &Pane, buffer: &TextBuffer, cursor_trail: &[(usize, usize)
         .into_iter()
         .enumerate()
         .map(|(index, text)| {
-            let (selected_prefix, selected_text) = {
+            let (selected_prefix, selected_text, is_line_selected) = {
                 let cols = note.line_selection_cols(buffer, index);
                 if let Some((start_col, end_col)) = cols {
                     let chars: Vec<char> = text.chars().collect();
                     let start = start_col.min(chars.len());
                     let end = end_col.min(chars.len()).max(start);
-                    (chars[..start].iter().collect(), chars[start..end].iter().collect())
+                    (chars[..start].iter().collect(), chars[start..end].iter().collect(), true)
                 } else {
-                    (String::new(), String::new())
+                    (String::new(), String::new(), false)
                 }
             };
-
-            let line_char_count = text.chars().count();
-            let trail_columns: Vec<i32> = cursor_trail
-                .iter()
-                .filter_map(|(t_line, t_col)| {
-                    if *t_line == index && *t_col <= line_char_count {
-                        Some(*t_col as i32)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
 
             EditorLineSnapshot {
             number: (index + 1) as i32,
             is_cursor_line: index == cursor_line,
             selected_prefix,
             selected_text,
+            is_line_selected,
             is_search_match: note.line_has_search_match(buffer, index),
             cursor_column,
             cursor_prefix: if index == cursor_line {
@@ -1588,7 +1542,6 @@ fn editor_lines(note: &Pane, buffer: &TextBuffer, cursor_trail: &[(usize, usize)
             },
             text,
             cursor_block,
-            trail_columns,
         }
         })
         .collect()
@@ -1684,7 +1637,6 @@ mod tests {
     #[test]
     fn editor_lines_preserve_content_and_cursor_row() {
         let mut controller = AppController::new();
-        controller.config.enable_cursor_trail = false;
         controller.new_file();
         controller.handle_editor_key("i");
         for key in ["o", "n", "e", "return", "t", "w", "o", "escape"] {
@@ -1707,7 +1659,7 @@ mod tests {
                     cursor_cell: String::new(),
                     cursor_suffix: String::new(),
                     cursor_block: true,
-                    trail_columns: vec![],
+                    is_line_selected: false,
                 },
                 EditorLineSnapshot {
                     number: 2,
@@ -1721,7 +1673,7 @@ mod tests {
                     cursor_cell: "o".to_string(),
                     cursor_suffix: String::new(),
                     cursor_block: true,
-                    trail_columns: vec![],
+                    is_line_selected: false,
                 },
             ]
         );
@@ -2096,80 +2048,6 @@ mod tests {
         assert_eq!(controller.active_note().unnamed_register_text(controller.active_buffer()), "line1\n");
         if controller.config.sync_clipboard {
             assert_eq!(clipboard::read_text().unwrap().replace("\r\n", "\n"), "line1\n");
-        }
-    }
-
-    #[test]
-    fn cursor_trail_clears_on_document_switch() {
-        let mut controller = AppController::new();
-        controller.config.enable_cursor_trail = true;
-        controller.new_file();
-        controller.handle_editor_key("i");
-        for key in ["a", "b", "c", "escape", "l", "l"] {
-            controller.handle_editor_key(key);
-        }
-
-        // Trail should have accumulated at least one ghost.
-        assert!(!controller.cursor_trail.is_empty());
-
-        controller.new_file();
-        assert!(
-            controller.cursor_trail.is_empty(),
-            "cursor_trail must clear when creating a new document"
-        );
-
-        // Build trail again, then switch back via previous_document.
-        controller.handle_editor_key("i");
-        controller.handle_editor_key("z");
-        controller.handle_editor_key("escape");
-        assert!(!controller.cursor_trail.is_empty());
-
-        controller.previous_document();
-        assert!(
-            controller.cursor_trail.is_empty(),
-            "cursor_trail must clear when switching documents"
-        );
-
-        // Trail should also be empty in the snapshot's editor lines.
-        let snapshot = controller.snapshot();
-        assert!(
-            snapshot
-                .editor_lines
-                .iter()
-                .all(|line| line.trail_columns.is_empty()),
-            "no ghost columns should appear after a document switch"
-        );
-    }
-
-    #[test]
-    fn cursor_trail_filtered_by_line_length() {
-        let mut controller = AppController::new();
-        controller.config.enable_cursor_trail = true;
-        controller.new_file();
-        controller.handle_editor_key("i");
-        // Type "hello" then move left twice to build a trail at cols 5 and 4.
-        for key in ["h", "e", "l", "l", "o", "escape", "h", "h"] {
-            controller.handle_editor_key(key);
-        }
-
-        // Now delete the whole word with dw, shortening the line to empty.
-        controller.handle_editor_key("0");
-        controller.handle_editor_key("d");
-        controller.handle_editor_key("w");
-
-        let snapshot = controller.snapshot();
-        // After dw on the only word, the line is empty; no trail column may exceed 0.
-        for (index, line) in snapshot.editor_lines.iter().enumerate() {
-            let line_len = line.text.chars().count() as i32;
-            for col in &line.trail_columns {
-                assert!(
-                    *col <= line_len,
-                    "trail column {} on line {} exceeds line length {}",
-                    col,
-                    index,
-                    line_len
-                );
-            }
         }
     }
 

@@ -444,15 +444,6 @@ fn install_callbacks(
     });
 
     let weak_window = window.as_weak();
-    let controller_for_cursor_trail = Rc::clone(&controller);
-    window.on_settings_toggle_cursor_trail(move || {
-        controller_for_cursor_trail.borrow_mut().toggle_cursor_trail();
-        if let Some(window) = weak_window.upgrade() {
-            apply_snapshot(&window, &controller_for_cursor_trail.borrow().snapshot());
-        }
-    });
-
-    let weak_window = window.as_weak();
     let controller_for_cursor_blink = Rc::clone(&controller);
     window.on_settings_toggle_cursor_blink(move || {
         controller_for_cursor_blink.borrow_mut().toggle_cursor_blink();
@@ -561,7 +552,6 @@ fn apply_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
         enable_animations: snapshot.settings.enable_animations,
         enable_cursor_glide: snapshot.settings.enable_cursor_glide,
         enable_smooth_scroll: snapshot.settings.enable_smooth_scroll,
-        enable_cursor_trail: snapshot.settings.enable_cursor_trail,
         enable_cursor_blink: snapshot.settings.enable_cursor_blink,
     });
         window.set_theme_items(
@@ -628,8 +618,6 @@ fn apply_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
         cursor_glide_detail: SharedString::from(snapshot.ui_text.cursor_glide_detail.as_str()),
         smooth_scroll: SharedString::from(snapshot.ui_text.smooth_scroll.as_str()),
         smooth_scroll_detail: SharedString::from(snapshot.ui_text.smooth_scroll_detail.as_str()),
-        cursor_trail: SharedString::from(snapshot.ui_text.cursor_trail.as_str()),
-        cursor_trail_detail: SharedString::from(snapshot.ui_text.cursor_trail_detail.as_str()),
         cursor_blink: SharedString::from(snapshot.ui_text.cursor_blink.as_str()),
         cursor_blink_detail: SharedString::from(snapshot.ui_text.cursor_blink_detail.as_str()),
     });
@@ -655,10 +643,7 @@ fn apply_editor_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
                     cursor_cell: SharedString::from(line.cursor_cell.as_str()),
                     cursor_suffix: SharedString::from(line.cursor_suffix.as_str()),
                     cursor_block: line.cursor_block,
-                    trail_columns: Rc::new(VecModel::from(
-                        line.trail_columns.clone(),
-                    ))
-                    .into(),
+                    is_line_selected: line.is_line_selected,
                 })
                 .collect::<Vec<_>>(),
         ))
@@ -697,7 +682,6 @@ fn apply_editor_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
     window.set_enable_animations(snapshot.enable_animations);
     window.set_enable_cursor_glide(snapshot.enable_cursor_glide);
     window.set_enable_smooth_scroll(snapshot.enable_smooth_scroll);
-    window.set_enable_cursor_trail(snapshot.enable_cursor_trail);
     window.set_enable_cursor_blink(snapshot.enable_cursor_blink);
     window.set_cursor_insert_mode(snapshot.cursor_insert_mode);
     window.set_anim_duration_short(snapshot.animation_duration_short_ms);

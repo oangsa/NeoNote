@@ -214,7 +214,7 @@ export struct EditorLine {
     cursor-cell: string,
     cursor-suffix: string,
     cursor-block: bool,
-    trail-columns: [int],
+    is-line-selected: bool,
 }
 
 export struct ThemeItem {
@@ -247,7 +247,6 @@ export struct SettingsData {
     enable-animations: bool,
     enable-cursor-glide: bool,
     enable-smooth-scroll: bool,
-    enable-cursor-trail: bool,
     enable-cursor-blink: bool,
 }
 
@@ -305,8 +304,6 @@ export struct UiText {
     cursor-glide-detail: string,
     smooth-scroll: string,
     smooth-scroll-detail: string,
-    cursor-trail: string,
-    cursor-trail-detail: string,
     cursor-blink: string,
     cursor-blink-detail: string,
 }
@@ -357,7 +354,6 @@ export component AppWindow inherits Window {
     in property <bool> enable-animations: true;
     in property <bool> enable-cursor-glide: true;
     in property <bool> enable-smooth-scroll: true;
-    in property <bool> enable-cursor-trail: true;
     in property <bool> enable-cursor-blink: true;
     in property <bool> cursor-blink-visible: true;
     in property <bool> cursor-insert-mode: false;
@@ -402,7 +398,6 @@ export component AppWindow inherits Window {
     callback settings-toggle-animations();
     callback settings-toggle-cursor-glide();
     callback settings-toggle-smooth-scroll();
-    callback settings-toggle-cursor-trail();
     callback settings-toggle-cursor-blink();
     callback editor-key(string);
     callback editor-pointer-event(int, float, string);
@@ -834,9 +829,12 @@ export component AppWindow inherits Window {
 
                                 Rectangle {
                                     x: 58px + root.editor-left-padding + (line.selected-prefix == "" ? 0px : selection-prefix-measure.preferred-width);
-                                    width: line.selected-text == "" ? 0px : selection-measure.preferred-width;
+                                    width: line.selected-text == ""
+                                        ? (line.is-line-selected ? char-width-measure.preferred-width : 0px)
+                                        : selection-measure.preferred-width;
                                     height: root.editor-line-height * 1px;
                                     background: root.theme-accent-primary.with_alpha(0.18);
+                                    border-radius: 4px;
                                 }
 
                                 Text {
@@ -865,19 +863,10 @@ export component AppWindow inherits Window {
                                     wrap: no-wrap;
                                 }
 
-                                for ghost-col in line.trail-columns: Rectangle {
-                                    x: 58px + root.editor-left-padding + ghost-col * char-width-measure.preferred-width + root.cursor-x-adjust;
-                                    y: 0px;
-                                    width: char-width-measure.preferred-width;
-                                    height: root.editor-line-height * 1px;
-                                    background: root.theme-cursor.with_alpha(0.15);
-                                }
-
-
                             }
                         }
 
-                        // Character width calibration for trail ghost cursors
+                        // Character width calibration for empty-line selection rendering
                         char-width-measure := Text {
                             x: 0px;
                             y: 0px;
@@ -924,6 +913,7 @@ export component AppWindow inherits Window {
                             height: root.editor-line-height * 1px;
                             width: root.has-document ? (root.cursor-block ? max(cursor-cell-measure.preferred-width - root.cursor-x-adjust, 2px) : 2px) : 0px;
                             background: root.cursor-block ? root.theme-cursor.with_alpha(0.58) : root.mode-color;
+                            border-radius: 2px;
                             opacity: root.has-document && (!root.enable-cursor-blink || root.cursor-blink-visible) ? 1.0 : 0.0;
                             animate x {
                                 duration: (root.enable-animations && root.enable-cursor-glide ? (root.cursor-animation-kind == 0 ? 0 : (root.cursor-insert-mode ? root.anim-duration-insert : (root.cursor-animation-kind == 1 ? root.anim-duration-short : root.anim-duration-normal))) : 0) * 1ms;
@@ -1471,19 +1461,6 @@ export component AppWindow inherits Window {
                     row-text-muted: root.theme-text-muted;
                     row-accent: root.theme-accent-primary;
                     toggled => { root.settings-toggle-smooth-scroll(); }
-                }
-
-                ToggleRow {
-                    title: root.ui-text.cursor-trail;
-                    detail: root.ui-text.cursor-trail-detail;
-                    checked: root.settings.enable-cursor-trail;
-                    row-background: root.theme-background;
-                    row-hover: root.theme-background-alt;
-                    row-border: root.theme-border;
-                    row-text: root.theme-text;
-                    row-text-muted: root.theme-text-muted;
-                    row-accent: root.theme-accent-primary;
-                    toggled => { root.settings-toggle-cursor-trail(); }
                 }
 
                 ToggleRow {
