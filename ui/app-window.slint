@@ -1013,7 +1013,7 @@ export component AppWindow inherits Window {
                             y: root.cursor-target-y;
                             height: root.cursor-height;
                             width: root.has-document ? root.cursor-width : 0px;
-                            background: root.cursor-block ? #808080.with-alpha(0.82) : root.mode-color;
+                            background: root.cursor-block ? root.theme-cursor.with-alpha(0.45) : root.mode-color;
                             border-radius: 0px;
                             opacity: root.has-document && (!root.enable-cursor-blink || root.cursor-blink-visible) ? 1.0 : 0.0;
                             animate x {
@@ -1026,29 +1026,6 @@ export component AppWindow inherits Window {
                             }
                             animate opacity {
                                 duration: 100ms;
-                                easing: ease-out;
-                            }
-                        }
-
-                        // Character under cursor drawn with contrasting color for readability
-                        Text {
-                            x: root.cursor-target-x;
-                            y: root.cursor-target-y;
-                            width: root.cursor-width;
-                            height: root.cursor-height;
-                            text: root.cursor-cell;
-                            font-family: root.editor-font-family;
-                            font-size: root.editor-font-size * 1px;
-                            color: root.theme-background;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                            visible: root.has-document && root.cursor-block;
-                            animate x {
-                                duration: root.glide-duration * 1ms;
-                                easing: ease-out;
-                            }
-                            animate y {
-                                duration: root.glide-duration * 1ms;
                                 easing: ease-out;
                             }
                         }

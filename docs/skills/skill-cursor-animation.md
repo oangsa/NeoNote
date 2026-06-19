@@ -43,15 +43,18 @@ rendered by Slint.
 ## Cursor Geometry
 
 - Keep cursor placement geometry centralized in `ui/app-window.slint` root
-  metrics. Text rows, selection rectangles, the cursor rectangle, the inverted
-  cursor character, pointer coordinate conversion, and smear should all consume
-  the same gutter, content padding, line height, measured prefix width, measured
-  cell width, target x/y, cursor width, and cursor height properties.
+  metrics. Text rows, selection rectangles, the cursor rectangle, pointer
+  coordinate conversion, and smear should all consume the same gutter, content
+  padding, line height, measured prefix width, measured cell width, target x/y,
+  cursor width, and cursor height properties.
 - Guard empty cursor prefixes explicitly with `0px`; hidden empty `Text`
   measurement can otherwise report a width that nudges the first-column cursor.
 - Do not apply a hard-coded cursor x offset unless a measured reproduction proves
   Slint text metrics need it. If an offset is ever required, apply it through the
   shared target/width metrics so every cursor path moves together.
+- Avoid drawing a separate single-character inverted cursor glyph over the row
+  text. It creates a second text layout path and can look like a misaligned dark
+  overlay. Prefer a translucent block cursor over the authoritative row text.
 
 ## Smear (1.1.0)
 
