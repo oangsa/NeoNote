@@ -215,6 +215,8 @@ export struct EditorLine {
     cursor-suffix: string,
     cursor-block: bool,
     is-line-selected: bool,
+    selection-continues-before: bool,
+    selection-continues-after: bool,
 }
 
 export struct ThemeItem {
@@ -902,13 +904,22 @@ export component AppWindow inherits Window {
                                 }
 
                                 Rectangle {
+                                    property <bool> has-selection: line.is-line-selected;
+                                    property <bool> continues-before: line.selection-continues-before;
+                                    property <bool> continues-after: line.selection-continues-after;
                                     x: root.editor-content-x + (line.selected-prefix == "" ? 0px : selection-prefix-measure.preferred-width);
+                                    y: self.continues-before ? -1px : 0px;
                                     width: line.selected-text == ""
                                         ? (line.is-line-selected ? char-width-measure.preferred-width : 0px)
                                         : selection-measure.preferred-width;
-                                    height: root.line-height-px;
+                                    height: root.line-height-px
+                                        + (self.continues-before ? 1px : 0px)
+                                        + (self.continues-after ? 1px : 0px);
                                     background: root.theme-accent-primary.with_alpha(0.18);
-                                    border-radius: 4px;
+                                    border-top-left-radius: self.has-selection && !self.continues-before ? 4px : 0px;
+                                    border-top-right-radius: self.has-selection && !self.continues-before ? 4px : 0px;
+                                    border-bottom-left-radius: self.has-selection && !self.continues-after ? 4px : 0px;
+                                    border-bottom-right-radius: self.has-selection && !self.continues-after ? 4px : 0px;
                                 }
 
                                 Text {

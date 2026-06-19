@@ -223,6 +223,8 @@ pub struct EditorLineSnapshot {
     pub cursor_suffix: String,
     pub cursor_block: bool,
     pub is_line_selected: bool,
+    pub selection_continues_before: bool,
+    pub selection_continues_after: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -1593,13 +1595,17 @@ fn editor_lines(note: &Pane, buffer: &TextBuffer) -> Vec<EditorLineSnapshot> {
     let cursor_column = note.display_cursor_col(buffer) as i32;
     let cursor_block = note.mode(buffer) != VimMode::Insert;
     let cursor = cursor_snapshot(note, buffer);
+    let lines = content_lines(buffer);
+    let selected_cols = (0..lines.len())
+        .map(|index| note.line_selection_cols(buffer, index))
+        .collect::<Vec<_>>();
 
-    content_lines(buffer)
+    lines
         .into_iter()
         .enumerate()
         .map(|(index, text)| {
             let (selected_prefix, selected_text, is_line_selected) = {
-                let cols = note.line_selection_cols(buffer, index);
+                let cols = selected_cols[index];
                 if let Some((start_col, end_col)) = cols {
                     let chars: Vec<char> = text.chars().collect();
                     let start = start_col.min(chars.len());
@@ -1609,6 +1615,11 @@ fn editor_lines(note: &Pane, buffer: &TextBuffer) -> Vec<EditorLineSnapshot> {
                     (String::new(), String::new(), false)
                 }
             };
+            let selection_continues_before =
+                is_line_selected && index > 0 && selected_cols[index - 1].is_some();
+            let selection_continues_after = is_line_selected
+                && index + 1 < selected_cols.len()
+                && selected_cols[index + 1].is_some();
 
             EditorLineSnapshot {
             number: (index + 1) as i32,
@@ -1616,6 +1627,8 @@ fn editor_lines(note: &Pane, buffer: &TextBuffer) -> Vec<EditorLineSnapshot> {
             selected_prefix,
             selected_text,
             is_line_selected,
+            selection_continues_before,
+            selection_continues_after,
             is_search_match: note.line_has_search_match(buffer, index),
             cursor_column,
             cursor_prefix: if index == cursor_line {
@@ -1809,6 +1822,8 @@ mod tests {
                     cursor_suffix: String::new(),
                     cursor_block: true,
                     is_line_selected: false,
+                    selection_continues_before: false,
+                    selection_continues_after: false,
                 },
                 EditorLineSnapshot {
                     number: 2,
@@ -1823,6 +1838,8 @@ mod tests {
                     cursor_suffix: String::new(),
                     cursor_block: true,
                     is_line_selected: false,
+                    selection_continues_before: false,
+                    selection_continues_after: false,
                 },
             ]
         );
@@ -1922,6 +1939,12 @@ mod tests {
         assert!(!snapshot.editor_lines[0].selected_text.is_empty());
         assert!(!snapshot.editor_lines[1].selected_text.is_empty());
         assert!(!snapshot.editor_lines[2].selected_text.is_empty());
+        assert!(!snapshot.editor_lines[0].selection_continues_before);
+        assert!(snapshot.editor_lines[0].selection_continues_after);
+        assert!(snapshot.editor_lines[1].selection_continues_before);
+        assert!(snapshot.editor_lines[1].selection_continues_after);
+        assert!(snapshot.editor_lines[2].selection_continues_before);
+        assert!(!snapshot.editor_lines[2].selection_continues_after);
 
         controller.handle_editor_pointer(2, 0.0, "up");
         assert!(!controller.snapshot().editor_lines[1].selected_text.is_empty());

@@ -679,6 +679,8 @@ fn apply_editor_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
                     cursor_suffix: SharedString::from(line.cursor_suffix.as_str()),
                     cursor_block: line.cursor_block,
                     is_line_selected: line.is_line_selected,
+                    selection_continues_before: line.selection_continues_before,
+                    selection_continues_after: line.selection_continues_after,
                 })
                 .collect::<Vec<_>>(),
         ))
