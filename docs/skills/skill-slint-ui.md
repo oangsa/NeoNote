@@ -47,4 +47,4 @@ Theme binding pattern validated in this repo:
 - For user-visible numeric values, send preformatted string labels from Rust instead of binding raw `float` values directly to `Text`; raw float conversion can expose awkward precision such as `1.4000`.
 - In dense rows with labels plus trailing controls, reserve a fixed-width trailing action/value column and elide long text. This keeps settings and theme panel controls aligned at smaller panel widths.
 - For editor mouse input, keep Slint responsible for pointer position and scroll presentation, then route compact line/column intent through Rust controller callbacks. Do not let a Slint text editing widget own the Vim caret.
-- For multi-line visual selections, expose previous/next selection continuity from the Rust snapshot instead of inferring it in Slint. Use those flags to flatten internal highlight corners and slightly overlap adjacent selected rows so the highlight reads as one connected shape.
+- For polished multi-line visual selections, let Rust emit grouped highlight path data and let Slint render it with `Path` plus `viewbox-*` scaling. Avoid overlap hacks or viewport-width slabs.

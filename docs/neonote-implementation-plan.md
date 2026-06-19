@@ -1,823 +1,863 @@
-# NeoNote - Implementation Plan
+# NeoNote 1.1.0 — UI Polish Release
 
-## Summary
+## Vision
 
-NeoNote is a native Windows note-taking app built in Rust with a Slint UI, `windows-rs` platform helpers, `serde` persistence, and native Windows file dialogs.
+NeoNote 1.1.0 is a polish release focused on improving perceived quality, smoothness, and native feel.
 
-The editor is an in-process Vim-style editing layer implemented in Rust. NeoNote does not spawn, embed, wrap, connect to, or render Neovide or Neovim for normal editing.
+This release must not introduce major product features.
 
-The current codebase may still contain legacy egui-era structure. Future UI work should migrate the application to Slint and should not add new egui/eframe UI surfaces.
+The goal is:
 
-## Product Rules
+> NeoNote should feel like a finished native Windows application while remaining lightweight, fast, and focused on note-taking with Vim.
 
-- Native Rust application with Slint as the UI toolkit.
-- No WebView, Electron, Tauri, Chromium, or browser-rendered UI.
-- No terminal UI.
-- No `neovide.exe`, `nvim.exe`, RPC editor backend, external editor process, or HWND editor embedding in the normal note workflow.
-- New File, Open File, Save, Save As, Recent Files, launcher note actions, and ordinary editing use the in-process editor state.
-- `.txt` is the default note extension and default save name.
-- All user-facing data lives under `%APPDATA%\NeoNote\`.
+---
 
-## Target Architecture
+# Goals
 
-```text
-NeoNote process
-  |
-  +-- Slint UI
-  |     +-- app window
-  |     +-- custom title/menu area
-  |     +-- launcher
-  |     +-- editor view
-  |     +-- status bar
-  |     +-- theme panel
-  |     +-- settings panel
-  |
-  +-- Rust app controller
-  |     +-- file dialogs and file commands
-  |     +-- recent files
-  |     +-- config/session persistence
-  |     +-- theme store
-  |     +-- Slint model/property updates
-  |
-  +-- in-process editor core
-        +-- text buffer
-        +-- Vim mode state
-        +-- cursor / selection
-        +-- motions
-        +-- operators
-        +-- command mode
-        +-- undo / repeat / registers
-```
+## Visual
 
-Slint owns presentation. Rust owns behavior.
+* Windows 11 Mica support
+* Theme transition animations
+* Tab hover animations
+* Dialog open animations
+* Settings UI polish
 
-Slint callbacks should be narrow:
+## Editor
 
-```text
-on-new-file        -> controller.new_file()
-on-open-file       -> controller.open_file_dialog()
-on-save            -> controller.save()
-on-editor-key      -> controller.handle_editor_key(...)
-on-theme-selected  -> controller.apply_theme(...)
-```
+* Cursor glide
+* Smooth scrolling
+* Lightweight cursor trail
+* Search match counter
 
-## Active And Target Modules
+Cursor trail is included, but it is the first feature to disable internally if it threatens performance, complexity, or release quality.
 
-Current modules to preserve conceptually:
+---
+
+# Non Goals
+
+Do not implement:
+
+* Workspace support
+* File explorer
+* Plugin system
+* Markdown preview
+* Split panes
+* Vault system
+* Obsidian-style features
+* Heavy particle effects
+* GPU-intensive animations
+* NeoVide-style particle cursor effects
+
+NeoNote must remain:
+
+* Lightweight
+* Native
+* Fast
+* Focused on notes
+
+---
+
+# Architecture Rules
+
+Keep the existing architecture:
 
 ```text
-src/
-  main.rs
-  app.rs                  <- migrate to Slint controller/bootstrap
-  notes.rs                <- current text buffer + first Vim-layer slice
-  persistence/
-  platform/
-  theme/
+Slint UI
+    ↓
+AppController
+    ↓
+Rust Editor State
+    ↓
+Snapshot Model
+    ↓
+Slint Rendering
 ```
-
-Target UI/module layout:
-
-```text
-ui/
-  app-window.slint
-  components/
-    title-bar.slint
-    menu-bar.slint
-    launcher.slint
-    editor-view.slint
-    status-bar.slint
-    theme-panel.slint
-    settings-panel.slint
-
-src/
-  main.rs                 <- Slint bootstrap
-  app.rs                  <- controller/state orchestration
-  notes.rs                <- temporary editor model until src/vim extraction
-  vim/
-    mod.rs
-    key.rs
-    state.rs
-    buffer.rs
-    position.rs
-    motion.rs
-    operator.rs
-    text_object.rs
-    visual.rs
-    registers.rs
-    undo.rs
-    repeat.rs
-    search.rs
-    marks.rs
-    jump_list.rs
-    change_list.rs
-    command.rs
-    substitute.rs
-    macros.rs
-    surround.rs
-    splits.rs
-  slint_bridge/
-    mod.rs                <- generated-binding helpers and model adapters
-  persistence/
-  platform/
-  theme/
-```
-
-Retired modules must not be reintroduced for normal editing:
-
-- `src/embed/`
-- `src/rpc/`
-- `src/nvim/`
-- Neovide-backed `src/tabs/`
-- editor RPC color application
-
-## UI Toolkit Direction
-
-### Slint Is The Target
-
-All new UI work should be implemented in Slint.
-
-Use Slint for:
-
-- window layout
-- title/menu/status/launcher/settings/theme surfaces
-- editor surface rendering
-- panels, dialogs, popups, lists, and controls
-- theme token binding
-
-Keep Rust responsible for:
-
-- Vim/editor logic
-- file I/O
-- native file dialogs
-- persistence
-- platform effects
-- theme loading and validation
-- transforming editor state into Slint-friendly models
-
-### egui / eframe Migration
-
-Existing egui code is legacy. The migration should remove it in controlled phases:
-
-1. Add Slint dependencies and build integration.
-2. Create a Slint shell that can open and render the main window.
-3. Move launcher, menu, title/status bars, theme panel, and settings panel to Slint.
-4. Move the editor view to Slint while preserving Rust-owned Vim state.
-5. Remove egui/eframe dependencies once Slint reaches feature parity.
-
-Do not add new egui features unless they are tiny temporary shims needed to keep the app compiling during migration.
-
-## Editor Model
-
-### `NoteDocument`
-
-Current owner of:
-
-- text content
-- optional file path
-- dirty flag
-- open/launcher state
-- Vim mode
-- cursor line and column
-- count prefix
-- pending command/operator state
-
-This may later be split into `TextBuffer` plus `VimState`, but the same rules apply.
-
-### Future `TextBuffer`
-
-All text edits should flow through controlled APIs:
-
-```rust
-insert_text(pos, text)
-delete_range(range)
-replace_range(range, text)
-get_range(range)
-line_range(line)
-word_range_at(pos)
-cursor()
-set_cursor(pos)
-selection()
-set_selection(selection)
-```
-
-### Future `VimState`
-
-Pure editor state only:
-
-```text
-mode
-pending_operator
-pending_motion
-count
-register
-visual
-command_line
-search
-registers
-marks
-jumplist
-changelist
-repeat
-macros
-surround
-```
-
-`VimState` must not render UI, spawn processes, open dialogs, write files, call RPC, or call platform APIs directly.
-
-## Core Editing Rules
-
-- Normal mode is the default for new and opened documents.
-- Insert mode mutates the project-owned text buffer directly.
-- Do not let a Slint text input widget own the core editor caret if that conflicts with Vim cursor ownership.
-- Counts are parsed before commands.
-- Leading `0` is a line-start motion when no count is pending.
-- Cursor movement clamps at file and line boundaries.
-- Internal text ranges are half-open and normalized before mutation.
-- Visual selections may have reversed anchor/cursor; mutation ranges must still be normalized.
-- File operations are app-level commands. Vim command mode may request file actions, but the app performs filesystem work.
-- Scroll commands affect viewport state, not buffer text.
-- When `sync_clipboard` is enabled, the app controller syncs the Vim unnamed register with the system clipboard. The Vim layer must still remain platform-free.
-
-## Theme Model
-
-Themes style NeoNote's Slint UI and Vim mode colors. They do not apply external editor colorschemes.
-
-ThemeStore remains the Rust authority for:
-
-- loading built-in themes
-- loading user themes from `%APPDATA%\NeoNote\themes\user\`
-- skipping malformed JSON
-- committed active theme
-- preview theme
-- persistence of `active_theme` in `config.json`
-
-Slint receives resolved theme tokens through properties/globals/models.
-
-### Theme JSON
-
-```json
-{
-  "name": "Tokyo Night",
-  "variant": "dark",
-  "author": "NeoNote",
-  "colors": {
-    "background": "#111318",
-    "background_alt": "#181b22",
-    "surface": "#222631",
-    "border": "#343a46",
-    "text": "#e6e8ef",
-    "text_muted": "#9aa3b2",
-    "accent_primary": "#6ea8fe",
-    "accent_secondary": "#8fd7c7",
-    "success": "#8bd17c",
-    "warning": "#f5c56b",
-    "error": "#ff7b86",
-    "cursor": "#f2d16b"
-  },
-  "vim_modes": {
-    "normal": "#6ea8fe",
-    "insert": "#8bd17c",
-    "visual": "#b38cff",
-    "command": "#f5c56b",
-    "replace": "#ff7b86"
-  }
-}
-```
-
-Old theme files may contain obsolete external-editor fields. The active Rust schema should ignore them and only use NeoNote UI colors and Vim mode colors.
-
-## Data And Persistence
-
-All user-facing data lives under:
-
-```text
-%APPDATA%\NeoNote\
-  config.json
-  session.json
-  recent_files.json
-  themes\
-    user\
-```
-
-### `config.json`
-
-```json
-{
-  "active_theme": "tokyonight",
-  "font_family": "JetBrains Mono",
-  "font_size": 14,
-  "line_height": 1.4,
-  "tab_size": 4,
-  "word_wrap": false,
-  "sync_clipboard": true,
-  "startup_mode": "windowed",
-  "window_opacity": 100,
-  "blur_behind": false,
-  "remember_window_geometry": true,
-  "restore_last_session": true,
-  "show_launcher_on_startup": true,
-  "default_open_folder": null,
-  "keybindings": {}
-}
-```
-
-### `recent_files.json`
-
-```json
-[
-  {
-    "path": "C:/Users/you/notes/today.txt",
-    "last_opened": "1781200000"
-  }
-]
-```
-
-Recent files are capped at 20 and sorted descending by `last_opened`.
-
-## Milestones
-
-### Phase 0 - Stabilize Current Native Editor Baseline
-
-Status: complete.
-
-Scope:
-
-- in-process document model
-- native file dialogs
-- recent files
-- theme loading
-- settings shell
-- launcher/editor routing
-- no external editor processes
-
-Acceptance:
-
-- `cargo test` passes.
-- App opens without spawning external editor processes.
-- Launcher can create/open a note.
-- Save/Save As use `.txt` defaults.
-
-### Phase 1 - Slint Foundation
-
-Status: complete.
-
-Scope:
-
-- Add Slint dependencies and build integration.
-- Add initial `.slint` app window.
-- Bootstrap Slint from `main.rs`.
-- Create Rust controller object for app state.
-- Wire basic callbacks: New, Open, Save, Save As, theme panel open, settings panel open.
-- Preserve current file workflows.
-
-Acceptance:
-
-- App launches through Slint.
-- No egui/eframe UI is required for the main window.
-- Existing persistence and file workflow tests still pass.
-- No `neovide.exe` or `nvim.exe` starts.
-
-### Phase 2 - Slint Shell Feature Parity
-
-Status: complete.
-
-Scope:
-
-- Title/menu/status bars in Slint.
-- Launcher in Slint.
-- Theme panel in Slint.
-- Settings panel in Slint.
-- Toasts/notifications in Slint.
-- ThemeStore tokens applied to Slint properties.
-
-Acceptance:
-
-- Slint shell matches current app workflows.
-- Theme preview/apply works.
-- Recent files render and update.
-- Status bar shows native document state.
-
-### Phase 3 - Slint Editor View
-
-Status: complete.
-
-Scope:
-
-- Render text buffer, line numbers, cursor, selections, mode indicators, and command line in Slint.
-- Forward key events from Slint to Rust key normalization.
-- Keep Rust as the owner of buffer and cursor state.
-- Support focus handoff after New/Open and insert-entry commands.
-
-Acceptance:
-
-- Typing after `i`, `a`, `o`, or `O` works without clicking.
-- `Esc`, `hjkl`, counts, word motions, line motions, `dd`, and `x` work through Slint.
-- No Slint text input widget owns the core Vim caret.
-
-Current implementation note:
-
-- The Slint editor renders from an `EditorLine` model, one row per buffer line.
-- Rust owns text, cursor line/column, Vim mode, and cursor row metadata (`cursor_prefix`, `cursor_cell`, `cursor_suffix`, `cursor_block`).
-- Slint renders each row's visible text through one full-line `Text` item. The cursor is a background rectangle behind that text, positioned from the measured cursor-prefix width and sized from the measured cursor-cell width.
-- For column 0, the cursor uses the editor text origin directly instead of the empty prefix measurement. A small `cursor-x-adjust` compensates for glyph side-bearing.
-- Do not render the focused row as visible prefix/cursor/suffix text segments; that creates a separate text layout path and can misalign the focused line.
-- The editor viewport is scrollable through Slint `ScrollView`. Mouse clicks and drags route through narrow controller callbacks that update Rust-owned cursor and selection state.
-
-### Phase 4 - Extract Vim Core
-
-Status: complete.
-
-Scope:
-
-- Create `src/vim/`.
-- Move key normalization out of app/controller code. Initial `src/vim/key.rs` extraction normalizes Slint/app key strings into pure normal-mode and insert-mode key intents.
-- Split `NoteDocument` into text-buffer APIs and `VimState`.
-- Define canonical `CursorPos` and `TextRange`.
-- Preserve current behavior while improving testability.
-
-Acceptance:
-
-- Existing tests still pass.
-- Slint controller routes normalized keys into the Vim layer.
-- Vim logic has no Slint dependencies except optional key conversion at the boundary.
-
-### Phase 5 - Minimal Vim Navigation Completion
-
-Status: complete.
-
-Scope:
-
-- Normal mode
-- Insert mode
-- `Esc`
-- direct insert text, enter, backspace, delete
-- `h j k l`
-- `w b e`
-- `W B E`
-- `0 ^ $`
-- `gg G {n}G`
-- `i I a A o O`
-- count prefixes
-- `dd`
-- `x`
-
-Acceptance:
-
-- User can create/open a `.txt` note.
-- User can press `i`, type immediately, press `Esc`, and navigate without clicking.
-- Motions clamp safely at file boundaries.
-- Unit tests cover counts, word motions, line motions, insert mutation, `dd`, and `hjkl`.
-
-### Phase 6 - Operators And Text Objects
-
-Status: complete.
-
-Scope:
-
-- Operators: `d`, `y`, `c`, `>`, `<`, `=`, `gu`, `gU`, `~`
-- Doubled operators: `dd`, `yy`, `cc`
-- Operator + motion: `dw`, `d$`, `caw`, `ygg`
-- Counts: `3dw`, `d3w`
-- Text objects: `iw`, `aw`, quotes, brackets, paragraphs, lines
-
-Acceptance:
-
-- Operators compose with motions and text objects.
-- Range calculation is unit-tested.
-- Buffer mutation is undo-transaction-ready.
-
-### Phase 7 - Undo, Redo, Registers, Repeat
-
-Status: complete.
-
-Scope:
-
-- Edit transactions
-- `u`
-- `Ctrl+r`
-- `.`
-- unnamed register
-- yank register `0`
-- named registers `a-z`
-- clipboard register `+`
-- black-hole register `_`
-- register prefixes such as `"ayy`, `"ap`, `"_dd`
-
-Acceptance:
-
-- Common edits are undoable and redoable.
-- Yank/delete/change populate expected registers.
-- Dot repeat works for common edits.
-
-### Phase 8 - Visual Mode And Search
-
-Status: complete.
-
-Scope:
-
-- `v`
-- `V`
-- visual char and line selection
-- visual operators
-- `o`
-- `gv`
-- `/`, `?`
-- `n`, `N`
-- `*`, `#`
-- `:noh`
-- search highlights
-- marks and jumplist basics
-
-Acceptance:
-
-- Visual selections render from Vim state in Slint.
-- Operators work on visual selection.
-- Search navigation updates cursor and highlights matches.
-
-### Phase 9 - Command Mode
-
-Status: complete.
-
-Scope:
-
-- command-line state
-- `:w`
-- `:w {path}`
-- `:q`
-- `:q!`
-- `:wq`
-- `ZZ`
-- `:e {path}`
-- `:enew`
-- `:{n}`
-- `:/pattern`
-- `:s/foo/bar/`
-- `:s/foo/bar/g`
-- `:%s/foo/bar/g`
-- `:%s/foo/bar/gc`
-- `:wa`
-- `:wall`
-- command-line cursor movement and history
-- `:reg`
-- `:marks`
-- `:jumps`
-- `:changes`
-
-Acceptance:
-
-- Command parser is unit-tested.
-- File commands emit app-level actions.
-- Substitute works for line and whole-file ranges.
-
-### Phase 10 - Advanced Motions And Viewport
-
-Status: complete.
-
-Scope:
-
-- `f`, `F`, `t`, `T`, `;`, `,`
-- `%`
-- `{`, `}`
-- `(`, `)`
-- `Ctrl+d`, `Ctrl+u`
-- `Ctrl+f`, `Ctrl+b`
-- `Ctrl+e`, `Ctrl+y`
-- `zz`, `zt`, `zb`
-
-Acceptance:
-
-- Character search repeats correctly.
-- Bracket matching handles `()`, `[]`, `{}`, `<>`.
-- Viewport commands are separated from buffer mutation.
-
-### Phase 11 - Macros, Changelist, Visual Block
-
-Status: in progress.
-
-Scope:
-
-- `q{a-z}`
-- `q`
-- `@{a-z}`
-- `@@`
-- `g;`
-- `g,`
-- `Ctrl+v`
-- visual block selection
-- visual block delete/yank/change
-- block insert
-
-Acceptance:
-
-- Macro playback is deterministic and guarded against recursion.
-- Changelist navigation works for edits.
-- Visual block supports virtual columns and pads short lines when needed.
-
-Current implementation note:
-
-- `g;` and `g,` are implemented on top of a Rust-owned changelist.
-- Visual block selection, delete, yank, change, block insert/append, and blockwise paste are implemented in the current `NoteDocument`.
-- Block registers carry `blockwise` metadata and paste through a dedicated blockwise path.
-- Macro state is only scaffolded at the moment. `q{a-z}`, `q`, `@{a-z}`, and `@@` are not complete yet and should still be treated as pending work.
-
-### Phase 12 - Surround
-
-Scope:
-
-- `ys{motion}{char}`
-- `ysiw"`
-- `yss(`
-- `yss)`
-- `ys$"`
-- `ysiw<div>`
-- `ds"`
-- `ds(`
-- `dst`
-- `cs"'`
-- `cs({`
-- `cs(}`
-- `cst<span>`
-- visual `S"`
-
-Acceptance:
-
-- Required add/delete/change surround commands work.
-- Surround changes are undoable.
-- Surround parser is unit-tested.
-
-### Phase 13 - File Context Menu And Open With
-
-Scope:
-
-- Add a Windows-style right-click context menu for files.
-- Add an “Open with” submenu like File Explorer.
-- Show available apps such as Notepad, VS Code, Zed, and “Choose another app”.
-- Support “Open with” for one file, multiple selected files, and unsaved/untitled files when applicable.
-- Preserve dirty-check prompts before replacing, closing, or exporting unsaved content.
-
-Acceptance:
-
-- Right-clicking a file shows Open, Open with, Rename, Delete, Properties-style actions.
-- “Open with” opens the selected file or files in the chosen external app.
-- Unsaved notes are not lost and are clearly marked dirty/untitled.
-
-### Phase 14 - Splits
-
-Scope:
-
-- `Ctrl+w s`
-- `Ctrl+w v`
-- `Ctrl+w h/j/k/l`
-- `Ctrl+w c`
-- `Ctrl+w o`
 
 Rules:
 
-- Vim state emits split commands.
-- App owns split tree, panes, active pane, and buffer IDs.
-- Panes own Vim state and reference buffers.
+* Editor logic stays in Rust.
+* Slint remains presentation-only.
+* No Vim logic inside `.slint`.
+* Animation state may exist in snapshots.
+* Rust provides logical state and animation hints.
+* Slint owns interpolation.
 
-Acceptance:
+---
 
-- Split commands create, close, and focus panes.
-- Multiple panes can reference the same buffer.
+# Animation Architecture
 
-### Phase 15 - Remove Legacy egui / eframe
+Prefer Slint declarative animations over Rust-driven frame timers.
 
-Scope:
+Rust provides:
 
-- Remove egui-specific UI modules after Slint parity.
-- Remove `egui` and `eframe` dependencies.
-- Replace egui color conversions with Slint-compatible color/token adapters.
-- Keep only reusable non-UI Rust logic.
+* logical cursor position
+* logical viewport position
+* animation hints
+* configuration flags
 
-Acceptance:
+Slint performs:
 
-- App builds and runs on Slint only.
-- `cargo test` passes.
-- No `egui`/`eframe` dependency remains unless explicitly retained for non-UI tooling with documented justification.
+* cursor interpolation
+* scroll interpolation
+* opacity animations
+* theme transitions
+* hover transitions
 
-### Phase 16 - Navigation and Basic Editing Gaps
+Do not create a permanent Rust timer running at 60 FPS.
 
-Scope:
+Rust timers are allowed only for:
 
-- Display line motions: `gj`, `gk`
-- Screen position jumps: `H`, `M`, `L`
-- Advanced word motions: `ge`, `gE`
-- Line/column jumps: `g_`, `|`
-- Section jumps: `]]`, `[[`, `][`, `[]`
-- Backwards delete: `X`
-- Substitution: `s`, `S`
-- Line joining: `J`, `gJ`
-- Replace mode: `R`, `r{char}`
-- Visual mode additions: `o` / `O` for swapping cursor, `gv` for reselect.
+* one-shot effects
+* delayed state clearing
+* temporary notifications
 
-Acceptance:
+Rust timers must stop automatically.
 
-- Motions correctly navigate text and update cursor.
-- Commands correctly manipulate text and are undoable.
+---
 
-### Phase 17 - Insert Mode Enhancements & Advanced Paste
+# Editor Metrics Contract
 
-Scope:
+Cursor glide and smooth scrolling require pixel coordinates.
 
-- Start positions: `ea`, `gi`
-- In-insert commands: `Ctrl+o`, `Ctrl+w`, `Ctrl+u`, `Ctrl+t`, `Ctrl+d`
-- Digraphs / Special: `Ctrl+k`, `Ctrl+v`
-- Paste variations: `gp`, `gP`, `]p`, `[p`
+Rust must not guess rendered text metrics.
 
-Acceptance:
+Slint owns visual metrics.
 
-- `Ctrl+o` correctly executes a single normal mode command and returns to insert mode.
-- Insert shortcuts and paste variations work accurately and preserve register formatting.
+Rust owns logical editor state.
 
-### Phase 18 - Advanced Operators and Folds
+Selection highlight polish follows the same split:
 
-Scope:
+* Rust computes logical selection groups and normalized highlight path data.
+* Slint scales and paints the highlight via `Path` using editor text metrics.
+* Keep highlights behind text/cursor.
+* Do not use viewport fill, longest-line bridging, or vertical overlap hacks to fake connected selections.
 
-- Case toggling: `g~`
-- Formatting: `gw`, `gq`
-- External filters: `!`
-- Basic folding: `zf`, `zd`, `za`, `zo`, `zc`
-- Number adjustments: `Ctrl+a`, `Ctrl+x`
+---
 
-Acceptance:
+## Required Metrics
 
-- Operators successfully process visual selections and motions.
-- Simple folds correctly hide/show text lines in the UI.
+```rust
+pub struct EditorMetricsSnapshot {
+    pub editor_origin_x: f32,
+    pub editor_origin_y: f32,
 
-### Future Phase - Autocomplete and Spelling
+    pub gutter_width: f32,
 
-Scope:
+    pub content_padding_x: f32,
+    pub content_padding_y: f32,
 
-- `Ctrl+x` autocomplete sub-mode with word suggestions.
-- Spell checking integration.
+    pub line_height_px: f32,
+    pub char_width_px: f32,
 
-## Testing Strategy
-
-Run `cargo test` after each phase and before commits.
-
-Unit-test pure editor logic:
-
-- key normalization
-- count parsing
-- cursor clamping
-- motion resolver
-- text object resolver
-- operator range calculation
-- insert/delete/replace buffer mutation
-- undo transactions
-- registers
-- dot repeat
-- visual range normalization
-- search
-- command parser
-- substitute engine
-- surround parser
-- macro playback
-
-Unit-test UI/controller boundaries where practical:
-
-- Slint callback methods call the correct controller command.
-- Controller updates Slint models/properties after document changes.
-- ThemeStore maps active/preview theme tokens into Slint-facing state.
-
-Add golden tests for editing fixtures:
-
-```text
-name: change_inner_word
-input: hello world
-keys: ciwtest<Esc>
-output: test world
-cursor: [0, 3]
-mode: Normal
+    pub cursor_width_px: f32,
+}
 ```
 
-Manual checks:
+---
 
-- Launch app and verify no `neovide.exe` or `nvim.exe` process starts during New/Open/Edit.
-- New File creates an untitled `.txt` note.
-- Open File and Save As default to `.txt`.
-- Typing after `i`, `a`, `o`, or `O` works without clicking.
-- `Esc`, `hjkl`, counts, word motions, line motions, `dd`, and `x` work.
-- Verify `R`, `r{char}`, `s`, `S`, `D`, `C`, `X`, `J`, and `gJ`.
-- Verify visual counts, backtick mark jumps, changelist navigation, and blockwise paste.
-- Verify command-line cursor movement/history and insert-mode `Ctrl-r {register}`.
-- Status bar shows mode, file title/path, cursor line/column, and document stats.
-- Theme switching affects Slint wrapper/editor UI and mode colors.
+## Cursor Target Formula
 
-## Migration Notes
+```text
+cursor_target_x =
+    editor_origin_x
+    + gutter_width
+    + content_padding_x
+    + cursor_column * char_width_px
 
-The project previously explored Neovide HWND embedding, direct embedded Neovim rendering, and egui UI. Those approaches are retired for future work.
+cursor_target_y =
+    editor_origin_y
+    + content_padding_y
+    + visible_line_index * line_height_px
+```
 
-Do not add new dependencies or modules for:
+```text
+visible_line_index = cursor_line - viewport_top_line
+```
 
-- `nvim-rs`
-- Neovim msgpack RPC
-- Neovide process management
-- HWND editor embedding
-- terminal rendering
-- browser/WebView rendering
-- new egui/eframe UI surfaces
+---
 
-Old theme files may contain obsolete fields from those explorations. The active Rust theme schema should ignore external-editor fields and only use NeoNote UI colors and Vim mode colors.
+## Required Slint Properties
+
+```slint
+property <float> editor-origin-x;
+property <float> editor-origin-y;
+
+property <float> gutter-width;
+
+property <float> content-padding-x;
+property <float> content-padding-y;
+
+property <float> line-height-px;
+property <float> char-width-px;
+
+property <int> cursor-line;
+property <int> cursor-column;
+
+property <int> viewport-top-line;
+
+property <float> cursor-target-x;
+property <float> cursor-target-y;
+
+property <float> visual-cursor-x;
+property <float> visual-cursor-y;
+```
+
+---
+
+## Monospace Assumption
+
+For NeoNote 1.1.0:
+
+```text
+cursor_x = column * char_width_px
+```
+
+is acceptable.
+
+Known limitations:
+
+* Emoji
+* Full-width Unicode
+* Combining marks
+* Complex scripts
+* Tabs
+
+These may not animate perfectly.
+
+Do not implement full display-column correctness in 1.1.0.
+
+---
+
+# Phase 1 — UI Configuration
+
+Add config flags:
+
+```rust
+pub struct AppConfig {
+    pub enable_mica: bool,
+    pub enable_animations: bool,
+    pub enable_cursor_glide: bool,
+    pub enable_smooth_scroll: bool,
+    pub enable_cursor_trail: bool,
+}
+```
+
+Defaults:
+
+```text
+enable_mica = true
+enable_animations = true
+enable_cursor_glide = true
+enable_smooth_scroll = true
+enable_cursor_trail = true
+```
+
+Requirements:
+
+* Persist normally
+* Old config files continue working
+* Missing fields load defaults
+
+---
+
+# Phase 2 — Windows 11 Mica Support
+
+Use:
+
+```toml
+raw-window-handle
+windows
+```
+
+Create:
+
+```text
+src/platform/window_effects.rs
+```
+
+Add:
+
+```rust
+pub fn apply_mica_for_window(
+    window: &slint::Window,
+    enabled: bool,
+) -> anyhow::Result<()>
+```
+
+Implementation requirements:
+
+1. Obtain HWND through raw-window-handle.
+2. Use DWM APIs through windows-rs.
+3. Apply backdrop after window creation.
+
+Use:
+
+```text
+DwmSetWindowAttribute
+DWMWA_SYSTEMBACKDROP_TYPE
+```
+
+Preferred order:
+
+```text
+DWMSBT_MAINWINDOW
+DWMSBT_TRANSIENTWINDOW
+Fallback
+```
+
+Windows 10 behavior:
+
+* Do not attempt Mica
+* Use `theme_surface` or `theme_background_alt` for title bar and top chrome
+* UI must still look intentional
+
+Error rules:
+
+* Never panic
+* Never block startup
+* Silently fall back
+
+---
+
+# Phase 3 — Animation Infrastructure
+
+Add snapshot fields:
+
+```rust
+pub struct AppSnapshot {
+    pub enable_animations: bool,
+    pub enable_cursor_glide: bool,
+    pub enable_smooth_scroll: bool,
+    pub enable_cursor_trail: bool,
+
+    pub animation_duration_short_ms: i32,
+    pub animation_duration_normal_ms: i32,
+    pub animation_duration_long_ms: i32,
+}
+```
+
+Defaults:
+
+```text
+Short  = 80ms
+Normal = 120ms
+Long   = 180ms
+```
+
+When animations are disabled:
+
+```text
+All durations = 0ms
+```
+
+---
+
+# Phase 4 — Theme Transition
+
+Animate:
+
+* Background
+* Surface
+* Border
+* Text
+* Accent colors
+
+Duration:
+
+```text
+120–200ms
+```
+
+Easing:
+
+```text
+ease-out
+```
+
+When animations are disabled:
+
+```text
+duration = 0ms
+```
+
+---
+
+# Phase 5 — Tab & Dialog Polish
+
+## Tab Hover
+
+Animate:
+
+* Background
+* Border
+* Opacity
+
+Duration:
+
+```text
+80–120ms
+```
+
+Rules:
+
+* No layout shift
+* No height changes
+* No large shadows
+
+---
+
+## Dialog Open
+
+Animation:
+
+```text
+Opacity: 0 → 1
+Scale:   0.985 → 1.0
+Y:       +6px → 0px
+```
+
+Duration:
+
+```text
+120–160ms
+```
+
+---
+
+## Dialog Close
+
+Animation:
+
+```text
+Opacity: 1 → 0
+Scale:   1.0 → 0.985
+```
+
+Duration:
+
+```text
+100ms
+```
+
+---
+
+# Phase 6 — Cursor Glide
+
+## Rust Responsibilities
+
+Rust provides:
+
+```rust
+pub cursor_line: i32,
+pub cursor_column: i32,
+pub cursor_animation_kind: CursorAnimationKind,
+```
+
+Rust does not compute cursor pixels.
+
+---
+
+## Slint Responsibilities
+
+Slint computes:
+
+```text
+cursor_target_x
+cursor_target_y
+```
+
+from:
+
+* editor metrics
+* logical cursor position
+* viewport position
+
+Slint animates:
+
+```text
+visual_cursor_x
+visual_cursor_y
+```
+
+toward target.
+
+---
+
+## Cursor Animation Kind
+
+```rust
+pub enum CursorAnimationKind {
+    Immediate,
+    SmallMove,
+    LargeJump,
+}
+```
+
+Small move examples:
+
+```vim
+h
+j
+k
+l
+w
+b
+e
+f
+%
+```
+
+Duration:
+
+```text
+80–100ms
+```
+
+Large jump examples:
+
+```vim
+gg
+G
+n
+N
+Ctrl+O
+Ctrl+I
+```
+
+Duration:
+
+```text
+120–140ms
+```
+
+Insert mode rule:
+
+```text
+Typing must remain immediate.
+Disable cursor glide in Insert mode.
+```
+
+---
+
+# Phase 7 — Smooth Scrolling
+
+## Rust Responsibilities
+
+Rust provides:
+
+```rust
+pub viewport_top_line: i32,
+pub scroll_animation_kind: ScrollAnimationKind,
+```
+
+---
+
+## Scroll Animation Kind
+
+```rust
+pub enum ScrollAnimationKind {
+    Immediate,
+    SmallMove,
+    PageMove,
+    LargeJump,
+}
+```
+
+Mapping:
+
+```text
+Immediate = insert typing, settings/font changes, disabled animation
+SmallMove = j/k or small scroll movement
+PageMove  = Ctrl+D / Ctrl+U / Ctrl+F / Ctrl+B
+LargeJump = gg / G / n / N / search jump
+```
+
+---
+
+## Slint Responsibilities
+
+Slint computes:
+
+```text
+viewport_target_y = viewport_top_line * line_height_px
+```
+
+Slint animates visible viewport offset.
+
+Durations:
+
+```text
+SmallMove: 80–100ms
+PageMove:  120–160ms
+LargeJump: 140–180ms
+Immediate: 0ms
+```
+
+Rules:
+
+* New target replaces old target
+* Never queue animations
+* Responsiveness wins
+* If lag appears, fall back to instant scrolling
+
+---
+
+# Phase 8 — Cursor Trail
+
+## Goal
+
+Add subtle cursor motion history.
+
+This is not a particle system.
+
+---
+
+## Rules
+
+Allowed:
+
+* 2–3 previous cursor positions
+* decreasing opacity
+* short fade
+
+Not allowed:
+
+* particles
+* sparkles
+* ripple
+* glow
+* permanent 60 FPS Rust loop
+
+---
+
+## Config
+
+Cursor trail depends on:
+
+```text
+enable_animations = true
+enable_cursor_glide = true
+enable_cursor_trail = true
+```
+
+If any are false:
+
+```text
+cursor trail disabled
+```
+
+---
+
+## Implementation
+
+Slint should render:
+
+```text
+Current cursor
+Ghost cursor 1
+Ghost cursor 2
+Ghost cursor 3
+```
+
+Ghost opacity:
+
+```text
+Ghost 1: 35%
+Ghost 2: 20%
+Ghost 3: 10%
+```
+
+Fade duration:
+
+```text
+100–160ms
+```
+
+---
+
+## Fallback Rule
+
+If this cannot be implemented cleanly with Slint animations:
+
+```text
+Keep the config flag.
+Ship with cursor trail disabled internally.
+Do not block 1.1.0 release.
+```
+
+---
+
+# Phase 9 — Search Match Counter
+
+Add snapshot fields:
+
+```rust
+pub struct SearchMatchSnapshot {
+    pub search_match_current: i32,
+    pub search_match_total: i32,
+    pub search_match_label: String,
+}
+```
+
+Behavior:
+
+```text
+No search:             hidden
+Search with matches:   current/total
+Search without match:  0/0
+```
+
+Must update after:
+
+```vim
+/
+?
+n
+N
+*
+#
+```
+
+Tests required:
+
+* no search
+* one match
+* multiple matches
+* n
+* N
+* zero matches
+
+---
+
+# Phase 10 — Settings Polish
+
+Add toggles:
+
+```text
+Visual
+────────────────────
+[ ] Use Mica
+[ ] Enable Animations
+
+Editor
+────────────────────
+[ ] Cursor Glide
+[ ] Smooth Scrolling
+[ ] Cursor Trail
+```
+
+Polish existing controls:
+
+* Font Size
+* Line Height
+* Window Opacity
+
+Preferred:
+
+```text
+Compact slider controls
+```
+
+Acceptable:
+
+```text
+- value +
+```
+
+with:
+
+* hover states
+* focus states
+* keyboard navigation
+* animation
+
+Settings must:
+
+* Save immediately
+* Apply immediately where possible
+* Not require restart
+
+---
+
+# Testing
+
+## Visual
+
+Verify:
+
+* Mica works on Windows 11
+* Windows 10 fallback works
+* Theme transitions work
+* Hover transitions work
+* Dialog animations work
+* Animation disable setting works
+
+## Editor
+
+Verify:
+
+* Cursor glide works
+* Cursor trail is subtle and does not lag
+* Insert mode remains responsive
+* Smooth scrolling works
+* Search counter updates correctly
+
+## Performance
+
+Verify:
+
+* Startup speed unchanged
+* Memory usage unchanged
+* No animation queue buildup
+* Holding j/k remains responsive
+* No permanent Rust animation loop exists
+
+---
+
+# Suggested Commit Order
+
+```text
+feat(config): add ui polish settings
+
+feat(windows): add mica window effect support
+
+feat(ui): add animation infrastructure
+
+feat(theme): add animated theme transitions
+
+feat(ui): add tab hover animations
+
+feat(ui): add dialog open animations
+
+feat(editor): add cursor glide
+
+feat(editor): add smooth scrolling
+
+feat(editor): add cursor trail with fallback-disable behavior
+
+feat(search): add search match counter
+
+feat(settings): polish settings controls
+
+test(search): add search counter coverage
+```
+
+---
+
+# Definition of Done
+
+NeoNote 1.1.0 is complete when:
+
+* UI feels noticeably smoother
+* Cursor movement feels modern
+* Cursor trail exists or is safely disabled behind config
+* Scrolling feels modern
+* Search counter is correct
+* Mica works on supported systems
+* Windows 10 fallback looks intentional
+* All effects can be disabled
+* No permanent animation loop exists
+* Startup speed remains unchanged
+* Memory usage remains unchanged
+* Existing Vim behavior remains unchanged
+* NeoNote still feels lightweight and native

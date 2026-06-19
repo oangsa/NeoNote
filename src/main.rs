@@ -658,6 +658,52 @@ fn apply_editor_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
         ))
         .into(),
     );
+    window.set_selection_highlight_segments(
+        Rc::new(VecModel::from(
+            snapshot
+                .selection_highlight_segments
+                .iter()
+                .map(|rect| SelectionHighlightSegment {
+                    visible_line_index: rect.visible_line_index,
+                    start_column: rect.start_column,
+                    end_column: rect.end_column,
+                    right_overshoot_cells: rect.right_overshoot_cells,
+                    round_top_left: rect.round_top_left,
+                    round_top_right: rect.round_top_right,
+                    round_bottom_left: rect.round_bottom_left,
+                    round_bottom_right: rect.round_bottom_right,
+                    kind: match rect.kind {
+                        crate::app::SelectionKind::Character => SelectionKind::Character,
+                        crate::app::SelectionKind::Line => SelectionKind::Line,
+                        crate::app::SelectionKind::Block => SelectionKind::Block,
+                    },
+                })
+                .collect::<Vec<_>>(),
+        ))
+        .into(),
+    );
+    window.set_selection_highlight_shapes(
+        Rc::new(VecModel::from(
+            snapshot
+                .selection_highlight_shapes
+                .iter()
+                .map(|shape| SelectionHighlightShape {
+                    visible_line_index: shape.visible_line_index,
+                    top_line: shape.top_line,
+                    left_column: shape.left_column,
+                    width_cells: shape.width_cells,
+                    height_lines: shape.height_lines,
+                    path_data: SharedString::from(shape.path_data.as_str()),
+                    kind: match shape.kind {
+                        crate::app::SelectionKind::Character => SelectionKind::Character,
+                        crate::app::SelectionKind::Line => SelectionKind::Line,
+                        crate::app::SelectionKind::Block => SelectionKind::Block,
+                    },
+                })
+                .collect::<Vec<_>>(),
+        ))
+        .into(),
+    );
     window.set_document_tabs(
         Rc::new(VecModel::from(
             snapshot

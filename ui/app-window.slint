@@ -202,6 +202,34 @@ component ToggleRow inherits Rectangle {
     }
 }
 
+export enum SelectionKind {
+    character,
+    line,
+    block,
+}
+
+export struct SelectionHighlightSegment {
+    visible-line-index: int,
+    start-column: int,
+    end-column: int,
+    right-overshoot-cells: float,
+    round-top-left: bool,
+    round-top-right: bool,
+    round-bottom-left: bool,
+    round-bottom-right: bool,
+    kind: SelectionKind,
+}
+
+export struct SelectionHighlightShape {
+    visible-line-index: int,
+    top-line: float,
+    left-column: float,
+    width-cells: float,
+    height-lines: float,
+    path-data: string,
+    kind: SelectionKind,
+}
+
 export struct EditorLine {
     number: int,
     text: string,
@@ -324,6 +352,8 @@ export component AppWindow inherits Window {
     in property <string> file-title: "Untitled";
     in property <string> file-path: "";
     in property <[EditorLine]> editor-lines;
+    in property <[SelectionHighlightSegment]> selection-highlight-segments;
+    in property <[SelectionHighlightShape]> selection-highlight-shapes;
     in property <[DocumentTab]> document-tabs;
     in property <string> status-text: "No note open";
     in property <string> status-right: "";
@@ -721,7 +751,7 @@ export component AppWindow inherits Window {
                                         overflow: elide;
                                     }
 
-                                    VerticalLayout {
+                        VerticalLayout {
                                         alignment: center;
                                         
                                         close-btn := Rectangle {
@@ -881,6 +911,20 @@ export component AppWindow inherits Window {
                             easing: ease-out;
                         }
 
+                        // Connected selection highlight overlay (behind text)
+                        for shape in root.selection-highlight-shapes: Path {
+                            property <length> cell-width: char-width-measure.preferred-width;
+                            x: root.editor-content-x + shape.left-column * cell-width;
+                            y: shape.top-line * root.line-height-px;
+                            width: max(shape.width-cells * cell-width, cell-width);
+                            height: max(shape.height-lines * root.line-height-px, root.line-height-px);
+                            viewbox-width: max(shape.width-cells, 1);
+                            viewbox-height: max(shape.height-lines, 1);
+                            fit: fill;
+                            commands: shape.path-data;
+                            fill: root.theme-accent-primary.with_alpha(0.18);
+                        }
+
                         VerticalLayout {
                             width: 100%;
                             spacing: 0px;
@@ -889,25 +933,6 @@ export component AppWindow inherits Window {
                                 height: root.line-height-px;
                                 width: 100%;
                                 background: line.is-search-match ? root.theme-warning.with_alpha(0.16) : (line.is-cursor-line ? root.theme-surface.with_alpha(0.28) : transparent);
-
-                                Rectangle {
-                                    property <bool> has-selection: line.is-line-selected;
-                                    property <bool> continues-before: line.selection-continues-before;
-                                    property <bool> continues-after: line.selection-continues-after;
-                                    property <length> cell-width: char-width-measure.preferred-width;
-                                    visible: self.has-selection;
-                                    x: root.editor-content-x + line.selection-start-column * cell-width;
-                                    y: self.continues-before ? -1px : 0px;
-                                    width: max((line.selection-render-end-column - line.selection-start-column) * cell-width, cell-width);
-                                    height: root.line-height-px
-                                        + (self.continues-before ? 1px : 0px)
-                                        + (self.continues-after ? 1px : 0px);
-                                    background: root.theme-accent-primary.with_alpha(0.18);
-                                    border-top-left-radius: self.has-selection && !self.continues-before ? 4px : 0px;
-                                    border-top-right-radius: self.has-selection && !self.continues-before ? 4px : 0px;
-                                    border-bottom-left-radius: self.has-selection && !self.continues-after ? 4px : 0px;
-                                    border-bottom-right-radius: self.has-selection && !self.continues-after ? 4px : 0px;
-                                }
 
                                 Text {
                                     x: 0px;

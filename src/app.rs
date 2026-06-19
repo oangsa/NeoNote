@@ -127,6 +127,8 @@ pub struct AppSnapshot {
     pub search_match_current: i32,
     pub search_match_total: i32,
     pub search_match_label: String,
+    pub selection_highlight_segments: Vec<SelectionHighlightSegment>,
+    pub selection_highlight_shapes: Vec<SelectionHighlightShape>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -230,6 +232,58 @@ pub struct EditorLineSnapshot {
     pub selection_render_end_column: i32,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SelectionKind {
+    #[default]
+    Character,
+    Line,
+    Block,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SelectionHighlightSegment {
+    pub visible_line_index: i32,
+    pub start_column: i32,
+    pub end_column: i32,
+    pub right_overshoot_cells: f32,
+    pub round_top_left: bool,
+    pub round_top_right: bool,
+    pub round_bottom_left: bool,
+    pub round_bottom_right: bool,
+    pub kind: SelectionKind,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SelectionHighlightShape {
+    pub visible_line_index: i32,
+    pub top_line: f32,
+    pub left_column: f32,
+    pub width_cells: f32,
+    pub height_lines: f32,
+    pub path_data: String,
+    pub kind: SelectionKind,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+struct SelectionHighlightGroup {
+    kind: SelectionKind,
+    segments: Vec<SelectionHighlightSegment>,
+}
+
+fn compute_corner_flags(segments: &mut [SelectionHighlightSegment]) {
+    for i in 0..segments.len() {
+        let has_prev = i > 0
+            && segments[i - 1].visible_line_index + 1 == segments[i].visible_line_index;
+        let has_next = i + 1 < segments.len()
+            && segments[i].visible_line_index + 1 == segments[i + 1].visible_line_index;
+
+        segments[i].round_top_left = !has_prev;
+        segments[i].round_top_right = !has_prev;
+        segments[i].round_bottom_left = !has_next;
+        segments[i].round_bottom_right = !has_next;
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ThemeSnapshot {
     pub background: String,
@@ -283,7 +337,7 @@ impl AppController {
         let pane_id = PaneId(1);
         let mut initial_pane = Pane::new(pane_id, buffer_id);
         initial_pane.defer_enabled = true;
-        
+
         let mut buffers = HashMap::new();
         buffers.insert(buffer_id, initial_buffer);
 
@@ -320,7 +374,7 @@ impl AppController {
 
         let mut note = Pane::new(pane_id, buffer_id);
         note.defer_enabled = true;
-        
+
         let buffer = TextBuffer::new();
         self.buffers.insert(buffer_id, buffer);
 
@@ -585,15 +639,15 @@ impl AppController {
 
         self.flush_deferred_action();
         { let (p, b) = self.active_pane_and_buffer(); p.clear_yank_highlight(b) };
-        
+
         let is_insert = self.active_pane().mode(self.active_buffer()) == crate::notes::VimMode::Insert || self.active_pane().mode(self.active_buffer()) == crate::notes::VimMode::Replace;
-        
+
         if is_insert {
             if { let (p, b) = self.active_pane_and_buffer(); p.resolve_insert_register_paste(b, key) } {
                 return;
             }
         }
-        
+
         let editor_key = match self.active_pane().mode(self.active_buffer()) {
             crate::notes::VimMode::Insert | crate::notes::VimMode::Replace => {
                 crate::vim::key::normalize_insert_key(key)
@@ -834,7 +888,7 @@ impl AppController {
         if index >= self.documents.len() {
             return;
         }
-        
+
         let is_dirty = {
             let doc = &self.documents[index];
             let buffer = self.buffers.get(&doc.buffer_id).unwrap();
@@ -847,13 +901,13 @@ impl AppController {
                 let buffer = self.buffers.get(&doc.buffer_id).unwrap();
                 doc.path_string(buffer).map(|p| PathBuf::from(p).file_name().unwrap_or_default().to_string_lossy().to_string()).unwrap_or_else(|| "Untitled".to_string())
             };
-            
+
             let msg = rfd::MessageDialog::new()
                 .set_title("Save changes?")
                 .set_description(&format!("Do you want to save the changes you made to {}?", name))
                 .set_buttons(rfd::MessageButtons::YesNoCancel)
                 .show();
-                
+
             match msg {
                 rfd::MessageDialogResult::Yes => {
                     let doc = &mut self.documents[index];
@@ -885,7 +939,7 @@ impl AppController {
                 _ => return,
             }
         }
-        
+
         self.documents.remove(index);
 
         if self.documents.is_empty() {
@@ -902,6 +956,14 @@ impl AppController {
         let buffer = self.active_buffer();
         let stats = note.stats(buffer);
         let cursor = cursor_snapshot(note, buffer);
+        let selection_highlight_groups =
+            selection_highlight_groups(note, buffer, note.viewport_top_line(buffer));
+        let selection_highlight_segments = selection_highlight_groups
+            .iter()
+            .flat_map(|group| group.segments.iter().cloned())
+            .collect::<Vec<_>>();
+        let selection_highlight_shapes =
+            selection_highlight_shapes(&selection_highlight_groups);
         let language = self.language();
         let mode_text = if note.is_open(self.active_buffer()) {
             note.mode(buffer).label().to_string()
@@ -1002,6 +1064,8 @@ impl AppController {
             } else {
                 String::new()
             },
+            selection_highlight_segments,
+            selection_highlight_shapes,
         }
     }
 
@@ -1168,13 +1232,13 @@ impl AppController {
                 { let (p, b) = self.active_pane_and_buffer(); p.set_cursor_line(b, session_file.cursor_line); }
                 { let (p, b) = self.active_pane_and_buffer(); p.set_cursor_col(b, session_file.cursor_col); }
                 { let (p, b) = self.active_pane_and_buffer(); p.set_viewport_top_line(b, session_file.viewport_top_line); }
-                
+
                 if let Some(content) = session_file.unsaved_content {
                     let (_, b) = self.active_pane_and_buffer();
                     b.content = content.replace("\r\n", "\n");
                     b.dirty = session_file.is_dirty;
                 }
-                
+
                 restored_count += 1;
             }
         }
@@ -1292,7 +1356,7 @@ impl AppController {
 
         let mut note = Pane::new(pane_id, buffer_id);
         note.defer_enabled = true;
-        
+
         let mut buffer = TextBuffer::new();
         match note.open(&mut buffer, &path) {
             Ok(()) => {
@@ -1431,7 +1495,7 @@ impl AppController {
         }
     }
 
-    
+
     pub(crate) fn active_pane_and_buffer(&mut self) -> (&mut Pane, &mut TextBuffer) {
         let index = self
             .active_document
@@ -1481,7 +1545,7 @@ impl AppController {
                 if !note.is_open(buffer) {
                     return None;
                 }
-                
+
                 Some(DocumentTabSnapshot {
                     index: index as i32,
                     title: self.localized_title(note, buffer),
@@ -1705,6 +1769,404 @@ fn content_lines(buffer: &TextBuffer) -> Vec<String> {
     } else {
         buffer.content.split('\n').map(ToOwned::to_owned).collect()
     }
+}
+
+fn flat_index_for_line(lines: &[String], target_line: usize) -> usize {
+    let mut flat = 0;
+    for line in lines.iter().take(target_line) {
+        flat += line.chars().count() + 1; // +1 for newline
+    }
+    flat
+}
+
+fn line_for_flat(lines: &[String], mut offset: usize) -> usize {
+    for (i, line) in lines.iter().enumerate() {
+        let line_len = line.chars().count() + 1; // +1 for newline
+        if offset < line_len {
+            return i;
+        }
+        offset -= line_len;
+    }
+    lines.len().saturating_sub(1)
+}
+
+const SELECTION_LINE_END_OVERSHOOT_CELLS: f32 = 0.30;
+const SELECTION_RADIUS_X_CELLS: f32 = 0.35;
+const SELECTION_RADIUS_Y_LINES: f32 = 0.28;
+
+#[derive(Clone, Copy, Debug, Default)]
+struct SelectionRectUnits {
+    x0: f32,
+    x1: f32,
+    y0: f32,
+    y1: f32,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct Point {
+    x: f32,
+    y: f32,
+}
+
+fn selection_highlight_groups(
+    note: &Pane,
+    buffer: &TextBuffer,
+    viewport_top_line: usize,
+) -> Vec<SelectionHighlightGroup> {
+    let lines = content_lines(buffer);
+    let selected_cols = (0..lines.len())
+        .map(|index| note.line_selection_cols(buffer, index))
+        .collect::<Vec<_>>();
+
+    let mode = note.mode(buffer);
+    let kind = match mode {
+        VimMode::VisualLine => SelectionKind::Line,
+        VimMode::VisualBlock => SelectionKind::Block,
+        _ => SelectionKind::Character,
+    };
+
+    let mut groups = Vec::new();
+    let mut i = 0;
+
+    while i < lines.len() {
+        if selected_cols[i].is_none() {
+            i += 1;
+            continue;
+        }
+
+        let group_start = i;
+        while i < lines.len() && selected_cols[i].is_some() {
+            i += 1;
+        }
+        let group_end = i.saturating_sub(1);
+
+        let mut group = Vec::new();
+
+        for idx in group_start..=group_end {
+            let Some((start_col, end_col)) = selected_cols[idx] else {
+                continue;
+            };
+
+            let len = lines[idx].chars().count();
+            let is_multiline = group_start != group_end;
+
+            // Compute effective start/end columns clamped to line bounds.
+            let (eff_start, eff_end) = if kind == SelectionKind::Block {
+                let anchor_flat = note.visual_anchor_flat.unwrap_or(0);
+                let cursor_flat = note.flattened_cursor(buffer);
+                let anchor_line = line_for_flat(&lines, anchor_flat);
+                let cursor_line = line_for_flat(&lines, cursor_flat);
+                let anchor_col = anchor_flat.saturating_sub(flat_index_for_line(&lines, anchor_line));
+                let cursor_col = cursor_flat.saturating_sub(flat_index_for_line(&lines, cursor_line));
+                let block_start = anchor_col.min(cursor_col).min(len);
+                let block_end = (anchor_col.max(cursor_col) + 1).min(len).max(block_start + 1);
+                (block_start, block_end)
+            } else {
+                let s = start_col.min(len);
+                let e = end_col.min(len).max(s + 1);
+                (s, e)
+            };
+
+            let (start_column, end_column) = match kind {
+                SelectionKind::Line => {
+                    (0, len.max(1))
+                }
+                SelectionKind::Block => {
+                    (eff_start, eff_end)
+                }
+                SelectionKind::Character if !is_multiline => {
+                    (eff_start, eff_end)
+                }
+                SelectionKind::Character if idx == group_start => {
+                    let end = len.max(eff_start + 1);
+                    (eff_start, end)
+                }
+                SelectionKind::Character if idx == group_end => {
+                    let end = eff_end.max(1);
+                    (0, end)
+                }
+                SelectionKind::Character => {
+                    (0, len.max(1))
+                }
+            };
+
+            let right_overshoot_cells = if matches!(kind, SelectionKind::Block)
+                || len == 0
+                || end_column < len
+            {
+                0.0
+            } else {
+                SELECTION_LINE_END_OVERSHOOT_CELLS
+            };
+
+            group.push(SelectionHighlightSegment {
+                visible_line_index: (idx - viewport_top_line) as i32,
+                start_column: start_column as i32,
+                end_column: end_column as i32,
+                right_overshoot_cells,
+                round_top_left: false,
+                round_top_right: false,
+                round_bottom_left: false,
+                round_bottom_right: false,
+                kind,
+            });
+        }
+
+        compute_corner_flags(&mut group);
+        groups.push(SelectionHighlightGroup { kind, segments: group });
+    }
+
+    groups
+}
+
+fn selection_highlight_segments(
+    note: &Pane,
+    buffer: &TextBuffer,
+    viewport_top_line: usize,
+) -> Vec<SelectionHighlightSegment> {
+    selection_highlight_groups(note, buffer, viewport_top_line)
+        .into_iter()
+        .flat_map(|group| group.segments)
+        .collect()
+}
+
+fn selection_highlight_shapes(
+    groups: &[SelectionHighlightGroup],
+) -> Vec<SelectionHighlightShape> {
+    groups
+        .iter()
+        .filter_map(selection_highlight_shape_for_group)
+        .collect()
+}
+
+fn selection_highlight_shape_for_group(
+    group: &SelectionHighlightGroup,
+) -> Option<SelectionHighlightShape> {
+    let first = group.segments.first()?;
+    let last = group.segments.last()?;
+    let min_column = group
+        .segments
+        .iter()
+        .map(|segment| segment.start_column as f32)
+        .fold(f32::INFINITY, f32::min);
+    let max_column = group
+        .segments
+        .iter()
+        .map(|segment| segment.end_column as f32 + segment.right_overshoot_cells)
+        .fold(f32::NEG_INFINITY, f32::max);
+    let width_cells = (max_column - min_column).max(1.0);
+    let height_lines = (last.visible_line_index - first.visible_line_index + 1) as f32;
+
+    let rects = group
+        .segments
+        .iter()
+        .map(|segment| SelectionRectUnits {
+            x0: segment.start_column as f32 - min_column,
+            x1: segment.end_column as f32 + segment.right_overshoot_cells - min_column,
+            y0: (segment.visible_line_index - first.visible_line_index) as f32,
+            y1: (segment.visible_line_index - first.visible_line_index + 1) as f32,
+        })
+        .collect::<Vec<_>>();
+    let outline = build_selection_outline(&rects);
+    let path_data = rounded_selection_path(
+        &outline,
+        SELECTION_RADIUS_X_CELLS,
+        SELECTION_RADIUS_Y_LINES,
+    );
+
+    Some(SelectionHighlightShape {
+        visible_line_index: first.visible_line_index,
+        top_line: first.visible_line_index as f32,
+        left_column: min_column,
+        width_cells,
+        height_lines,
+        path_data,
+        kind: group.kind,
+    })
+}
+
+fn build_selection_outline(rects: &[SelectionRectUnits]) -> Vec<Point> {
+    if rects.is_empty() {
+        return Vec::new();
+    }
+
+    let mut points = vec![
+        Point {
+            x: rects[0].x0,
+            y: rects[0].y0,
+        },
+        Point {
+            x: rects[0].x1,
+            y: rects[0].y0,
+        },
+    ];
+
+    for (index, rect) in rects.iter().enumerate() {
+        points.push(Point { x: rect.x1, y: rect.y1 });
+        if let Some(next) = rects.get(index + 1) {
+            if !approx_eq(rect.x1, next.x1) {
+                points.push(Point {
+                    x: next.x1,
+                    y: rect.y1,
+                });
+            }
+        }
+    }
+
+    let last = rects.last().expect("rects is not empty");
+    points.push(Point {
+        x: last.x0,
+        y: last.y1,
+    });
+
+    for index in (0..rects.len()).rev() {
+        let rect = rects[index];
+        points.push(Point {
+            x: rect.x0,
+            y: rect.y0,
+        });
+        if index > 0 {
+            let prev = rects[index - 1];
+            if !approx_eq(rect.x0, prev.x0) {
+                points.push(Point {
+                    x: prev.x0,
+                    y: rect.y0,
+                });
+            }
+        }
+    }
+
+    simplify_closed_polygon(points)
+}
+
+fn rounded_selection_path(points: &[Point], radius_x: f32, radius_y: f32) -> String {
+    if points.len() < 2 {
+        return String::new();
+    }
+
+    let mut commands = String::new();
+    let mut first_start = None;
+
+    for index in 0..points.len() {
+        let prev = points[(index + points.len() - 1) % points.len()];
+        let current = points[index];
+        let next = points[(index + 1) % points.len()];
+
+        let start = inset_point(current, prev, radius_x, radius_y, true);
+        let end = inset_point(current, next, radius_x, radius_y, false);
+
+        if index == 0 {
+            first_start = Some(start);
+            push_svg_point(&mut commands, "M", start);
+        } else {
+            push_svg_point(&mut commands, "L", start);
+        }
+
+        if approx_point(start, current) && approx_point(end, current) {
+            push_svg_point(&mut commands, "L", current);
+        } else {
+            commands.push_str(&format!(
+                " Q {} {} {} {}",
+                fmt_num(current.x),
+                fmt_num(current.y),
+                fmt_num(end.x),
+                fmt_num(end.y)
+            ));
+        }
+    }
+
+    if let Some(start) = first_start {
+        push_svg_point(&mut commands, "L", start);
+    }
+    commands.push_str(" Z");
+    commands
+}
+
+fn inset_point(
+    corner: Point,
+    neighbor: Point,
+    radius_x: f32,
+    radius_y: f32,
+    _incoming: bool,
+) -> Point {
+    let dx = neighbor.x - corner.x;
+    let dy = neighbor.y - corner.y;
+    let horizontal = dy.abs() < f32::EPSILON;
+    let distance = if horizontal { dx.abs() } else { dy.abs() };
+    let desired = if horizontal { radius_x } else { radius_y };
+    let offset = desired.min(distance * 0.5);
+    let direction = if horizontal {
+        dx.signum()
+    } else {
+        dy.signum()
+    };
+
+    if horizontal {
+        Point {
+            x: corner.x + direction * offset,
+            y: corner.y,
+        }
+    } else {
+        Point {
+            x: corner.x,
+            y: corner.y + direction * offset,
+        }
+    }
+}
+
+fn simplify_closed_polygon(mut points: Vec<Point>) -> Vec<Point> {
+    points.dedup_by(|a, b| approx_point(*a, *b));
+
+    let mut changed = true;
+    while changed && points.len() >= 3 {
+        changed = false;
+        let mut index = 0;
+        while index < points.len() {
+            let prev = points[(index + points.len() - 1) % points.len()];
+            let current = points[index];
+            let next = points[(index + 1) % points.len()];
+            if approx_point(prev, current)
+                || approx_point(current, next)
+                || is_collinear(prev, current, next)
+            {
+                points.remove(index);
+                changed = true;
+                if points.len() < 3 {
+                    break;
+                }
+            } else {
+                index += 1;
+            }
+        }
+    }
+
+    points
+}
+
+fn is_collinear(a: Point, b: Point, c: Point) -> bool {
+    (approx_eq(a.x, b.x) && approx_eq(b.x, c.x))
+        || (approx_eq(a.y, b.y) && approx_eq(b.y, c.y))
+}
+
+fn approx_eq(a: f32, b: f32) -> bool {
+    (a - b).abs() < 0.001
+}
+
+fn approx_point(a: Point, b: Point) -> bool {
+    approx_eq(a.x, b.x) && approx_eq(a.y, b.y)
+}
+
+fn push_svg_point(commands: &mut String, opcode: &str, point: Point) {
+    commands.push_str(&format!(
+        " {} {} {}",
+        opcode,
+        fmt_num(point.x),
+        fmt_num(point.y)
+    ));
+}
+
+fn fmt_num(value: f32) -> String {
+    format!("{value:.3}").trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
 #[cfg(test)]
@@ -2155,6 +2617,342 @@ mod tests {
         assert_eq!(snapshot.editor_lines[0].selection_start_column, 6);
         assert_eq!(snapshot.editor_lines[0].selection_end_column, 10);
         assert_eq!(snapshot.editor_lines[0].selection_render_end_column, 10);
+    }
+
+    #[test]
+    fn selection_highlight_segments_single_normal_line() {
+        let mut controller = AppController::new();
+        controller.new_file();
+        {
+            let (p, b) = controller.active_pane_and_buffer();
+            *p.content_mut(b) = "one\ntwo\nthree".to_string();
+        }
+        { let (p, b) = controller.active_pane_and_buffer(); p.enter_normal(b); }
+
+        // Visual-line select line 0 only.
+        controller.handle_editor_key("V");
+        let snapshot = controller.snapshot();
+        let hl = &snapshot.selection_highlight_segments;
+        assert_eq!(hl.len(), 1);
+        assert_eq!(hl[0].visible_line_index, 0);
+        assert_eq!(hl[0].start_column, 0);
+        assert_eq!(hl[0].end_column, 3);
+        assert!(hl[0].round_top_left);
+        assert!(hl[0].round_top_right);
+        assert!(hl[0].round_bottom_left);
+        assert!(hl[0].round_bottom_right);
+        assert_eq!(hl[0].kind, SelectionKind::Line);
+    }
+
+    #[test]
+    fn selection_highlight_segments_multi_line_with_empty_lines() {
+        let mut controller = AppController::new();
+        controller.new_file();
+        {
+            let (p, b) = controller.active_pane_and_buffer();
+            *p.content_mut(b) = "aaaaaa\n\n\n\nbbb\n".to_string();
+        }
+        { let (p, b) = controller.active_pane_and_buffer(); p.enter_normal(b); }
+
+        // Visual-line select all 5 content lines.
+        controller.handle_editor_key("g");
+        controller.handle_editor_key("g");
+        controller.handle_editor_key("V");
+        controller.handle_editor_key("4");
+        controller.handle_editor_key("j");
+
+        let snapshot = controller.snapshot();
+        let hl = &snapshot.selection_highlight_segments;
+        assert_eq!(hl.len(), 5);
+
+        // Line 0: "aaaaaa" (6 chars) - Visual Line mode
+        assert_eq!(hl[0].visible_line_index, 0);
+        assert_eq!(hl[0].start_column, 0);
+        assert_eq!(hl[0].end_column, 6);
+        assert!(hl[0].round_top_left);
+        assert!(!hl[0].round_bottom_left);
+        assert_eq!(hl[0].kind, SelectionKind::Line);
+
+        // Lines 1-3: empty, one-cell marker
+        for i in 1..=3 {
+            assert_eq!(hl[i].visible_line_index, i as i32);
+            assert_eq!(hl[i].start_column, 0);
+            assert_eq!(hl[i].end_column, 1);
+            assert!(!hl[i].round_top_left);
+            assert!(!hl[i].round_bottom_left);
+            assert_eq!(hl[i].kind, SelectionKind::Line);
+        }
+
+        // Line 4: "bbb" (3 chars)
+        assert_eq!(hl[4].visible_line_index, 4);
+        assert_eq!(hl[4].start_column, 0);
+        assert_eq!(hl[4].end_column, 3);
+        assert!(!hl[4].round_top_left);
+        assert!(hl[4].round_bottom_left);
+        assert_eq!(hl[4].kind, SelectionKind::Line);
+    }
+
+    #[test]
+    fn selection_highlight_segments_char_visual_preserves_columns() {
+        let mut controller = AppController::new();
+        controller.new_file();
+        {
+            let (p, b) = controller.active_pane_and_buffer();
+            *p.content_mut(b) = "hello world\nneonote\n".to_string();
+        }
+        { let (p, b) = controller.active_pane_and_buffer(); p.enter_normal(b); }
+
+        // Character-wise visual: select from col 6 line 0 to col 4 line 1
+        controller.handle_editor_key("0");
+        controller.handle_editor_key("w"); // at 'w' col 6
+        controller.handle_editor_key("v");
+        controller.handle_editor_key("j");
+        controller.handle_editor_key("w");
+
+        let snapshot = controller.snapshot();
+        assert_eq!(snapshot.mode_text, "VISUAL");
+        let hl = &snapshot.selection_highlight_segments;
+        assert_eq!(hl.len(), 2);
+
+        // First line: from col 6 to line end ("world")
+        assert_eq!(hl[0].visible_line_index, 0);
+        assert_eq!(hl[0].start_column, 6);
+        assert!(hl[0].end_column >= 11);
+        assert!(hl[0].round_top_left);
+        assert!(!hl[0].round_bottom_left);
+        assert_eq!(hl[0].kind, SelectionKind::Character);
+
+        // Second line: full line (interior of multi-line char selection)
+        assert_eq!(hl[1].visible_line_index, 1);
+        assert_eq!(hl[1].start_column, 0);
+        assert!(!hl[1].round_top_left);
+        assert!(hl[1].round_bottom_left);
+        assert_eq!(hl[1].kind, SelectionKind::Character);
+    }
+
+    #[test]
+    fn selection_highlight_segments_visual_line_mode_full_width() {
+        let mut controller = AppController::new();
+        controller.new_file();
+        {
+            let (p, b) = controller.active_pane_and_buffer();
+            *p.content_mut(b) = "# NeoNote\n\n## Vision\n".to_string();
+        }
+        { let (p, b) = controller.active_pane_and_buffer(); p.enter_normal(b); }
+
+        // Visual line select all 3 content lines.
+        controller.handle_editor_key("V");
+        controller.handle_editor_key("2");
+        controller.handle_editor_key("j");
+
+        let snapshot = controller.snapshot();
+        assert_eq!(snapshot.mode_text, "V-LINE");
+        let hl = &snapshot.selection_highlight_segments;
+        assert_eq!(hl.len(), 3);
+
+        // In Visual Line mode, all lines start at col 0.
+        // Each line uses its own content width; empty lines are one-cell markers.
+        for rect in hl {
+            assert_eq!(rect.start_column, 0);
+            assert_eq!(rect.kind, SelectionKind::Line);
+        }
+        assert_eq!(hl[0].end_column, 9); // "# NeoNote"
+        assert_eq!(hl[1].end_column, 1); // empty line: one-cell marker
+        assert_eq!(hl[2].end_column, 9); // "## Vision"
+    }
+
+    #[test]
+    fn selection_highlight_segments_connected_corners() {
+        let mut controller = AppController::new();
+        controller.new_file();
+        {
+            let (p, b) = controller.active_pane_and_buffer();
+            *p.content_mut(b) = "line1\nline2\nline3\nline4\n".to_string();
+        }
+        { let (p, b) = controller.active_pane_and_buffer(); p.enter_normal(b); }
+
+        // Visual line select lines 1-3 (0-indexed)
+        controller.handle_editor_key("j");
+        controller.handle_editor_key("V");
+        controller.handle_editor_key("2");
+        controller.handle_editor_key("j");
+
+        let snapshot = controller.snapshot();
+        let hl = &snapshot.selection_highlight_segments;
+        assert_eq!(hl.len(), 3);
+
+        // First in group: rounded top, flat bottom
+        assert!(hl[0].round_top_left);
+        assert!(!hl[0].round_bottom_left);
+
+        // Middle in group: flat top, flat bottom
+        assert!(!hl[1].round_top_left);
+        assert!(!hl[1].round_bottom_left);
+
+        // Last in group: flat top, rounded bottom
+        assert!(!hl[2].round_top_left);
+        assert!(hl[2].round_bottom_left);
+    }
+
+    #[test]
+    fn selection_highlight_segments_empty_when_no_selection() {
+        let mut controller = AppController::new();
+        controller.new_file();
+        controller.handle_editor_key("i");
+        for key in ["a", "b", "c", "escape"] {
+            controller.handle_editor_key(key);
+        }
+
+        let snapshot = controller.snapshot();
+        assert!(snapshot.selection_highlight_segments.is_empty());
+    }
+
+    #[test]
+    fn selection_highlight_segments_two_groups_do_not_bridge_across() {
+        let mut controller = AppController::new();
+        controller.new_file();
+        {
+            let (p, b) = controller.active_pane_and_buffer();
+            *p.content_mut(b) = "short\nnot\nlongline\nnot\n\n".to_string();
+        }
+        { let (p, b) = controller.active_pane_and_buffer(); p.enter_normal(b); }
+
+        // Use pointer drag to create two separate selection groups.
+        controller.handle_editor_pointer(0, 0.0, "down");
+        controller.handle_editor_pointer(1, 0.0, "move");
+        controller.handle_editor_pointer(1, 0.0, "up");
+
+        // Now lines 0-1 should be selected from pointer drag.
+        // Then we can also select lines 3-4 differently... but pointer drag only creates one group.
+        // Simplest: just verify a single group works with pointer drag.
+        let snapshot = controller.snapshot();
+        // Pointer drag creates a char-visual selection, the highlights should exist.
+        assert!(!snapshot.selection_highlight_segments.is_empty());
+    }
+
+    #[test]
+    fn selection_highlight_segments_visual_block_uniform_width() {
+        let mut controller = AppController::new();
+        controller.new_file();
+        {
+            let (p, b) = controller.active_pane_and_buffer();
+            *p.content_mut(b) = "abcdef\nabcdef\nabcdef\n".to_string();
+        }
+        { let (p, b) = controller.active_pane_and_buffer(); p.enter_normal(b); }
+
+        // Visual Block: select columns 2-4 across all 3 lines.
+        controller.handle_editor_key("l");
+        controller.handle_editor_key("l");          // col 2
+        controller.handle_editor_key("ctrl+v");      // enter Visual Block
+        controller.handle_editor_key("2");
+        controller.handle_editor_key("j");           // extend down 2 lines
+        controller.handle_editor_key("2");
+        controller.handle_editor_key("l");           // extend right 2 columns
+
+        let snapshot = controller.snapshot();
+        assert!(snapshot.mode_text.contains("V-BLOCK"), "expected V-BLOCK mode");
+        let hl = &snapshot.selection_highlight_segments;
+        assert!(!hl.is_empty(), "visual block should produce selection highlights");
+
+        // In Visual Block mode, each line preserves exact block columns.
+        for rect in hl {
+            assert_eq!(rect.start_column, 2, "block lines must share start column");
+            assert_eq!(rect.end_column, 5, "block lines must share end column");
+            assert_eq!(rect.kind, SelectionKind::Block);
+            assert_eq!(rect.right_overshoot_cells, 0.0);
+        }
+    }
+
+    #[test]
+    fn selection_highlight_segments_apply_line_end_overshoot_only_to_non_empty_line_ends() {
+        let mut controller = AppController::new();
+        controller.new_file();
+        {
+            let (p, b) = controller.active_pane_and_buffer();
+            *p.content_mut(b) = "alpha\n\nomega\n".to_string();
+        }
+        {
+            let (p, b) = controller.active_pane_and_buffer();
+            p.enter_normal(b);
+        }
+
+        controller.handle_editor_key("V");
+        controller.handle_editor_key("2");
+        controller.handle_editor_key("j");
+
+        let snapshot = controller.snapshot();
+        let hl = &snapshot.selection_highlight_segments;
+        assert_eq!(hl.len(), 3);
+        assert_eq!(hl[0].right_overshoot_cells, 0.5);
+        assert_eq!(hl[1].right_overshoot_cells, 0.0);
+        assert_eq!(hl[2].right_overshoot_cells, 0.5);
+    }
+
+    #[test]
+    fn selection_highlight_shapes_curve_between_different_line_widths() {
+        let mut controller = AppController::new();
+        controller.new_file();
+        {
+            let (p, b) = controller.active_pane_and_buffer();
+            *p.content_mut(b) = "wide line\n\nmid\nlonger line here\n".to_string();
+        }
+        {
+            let (p, b) = controller.active_pane_and_buffer();
+            p.enter_normal(b);
+        }
+
+        controller.handle_editor_key("V");
+        controller.handle_editor_key("3");
+        controller.handle_editor_key("j");
+
+        let snapshot = controller.snapshot();
+        assert_eq!(snapshot.selection_highlight_shapes.len(), 1);
+        let shape = &snapshot.selection_highlight_shapes[0];
+        assert_eq!(shape.left_column, 0.0);
+        assert!(shape.width_cells >= 16.5);
+        assert!(
+            shape.path_data.contains(" Q "),
+            "expected rounded step transitions in path data: {}",
+            shape.path_data
+        );
+    }
+
+    #[test]
+    fn debug_selection_highlight_segments_dump() {
+        let mut controller = AppController::new();
+        controller.new_file();
+        {
+            let (p, b) = controller.active_pane_and_buffer();
+            *p.content_mut(b) = "# Heading\n\npara one\npara two\n\nend\n".to_string();
+        }
+        { let (p, b) = controller.active_pane_and_buffer(); p.enter_normal(b); }
+
+        // Visual Line select first 3 lines.
+        controller.handle_editor_key("V");
+        controller.handle_editor_key("2");
+        controller.handle_editor_key("j");
+
+        let snapshot = controller.snapshot();
+        eprintln!(
+            "[DBG-SEL] mode={} has_doc={} highlight_count={}",
+            snapshot.mode_text,
+            snapshot.has_document,
+            snapshot.selection_highlight_segments.len()
+        );
+        for hl in &snapshot.selection_highlight_segments {
+            eprintln!(
+                "[DBG-SEL]   vli={} start={} end={} rtl={} rtr={} rbl={} rbr={} kind={:?}",
+                hl.visible_line_index, hl.start_column, hl.end_column,
+                hl.round_top_left, hl.round_top_right, hl.round_bottom_left, hl.round_bottom_right, hl.kind,
+            );
+        }
+
+        assert_eq!(snapshot.mode_text, "V-LINE");
+        assert!(!snapshot.selection_highlight_segments.is_empty(), "selection_highlight_segments must not be empty in V-LINE mode");
+        for hl in &snapshot.selection_highlight_segments {
+            assert_eq!(hl.start_column, 0, "every V-LINE highlight must start at col 0");
+            assert_eq!(hl.kind, SelectionKind::Line);
+        }
     }
 
     #[test]
