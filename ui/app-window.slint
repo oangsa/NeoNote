@@ -340,11 +340,27 @@ export component AppWindow inherits Window {
     // Editor metrics contract
     property <length> gutter-width: 58px;
     property <length> content-padding-x: root.editor-left-padding;
+    property <length> content-padding-y: 0px;
+    property <length> editor-content-x: root.gutter-width + root.content-padding-x;
+    property <length> editor-content-width: root.has-document
+        ? max(editor-scroll.width - root.gutter-width - (root.content-padding-x * 2), 0px)
+        : 0px;
     property <length> line-height-px: root.editor-line-height * 1px;
+    property <length> cursor-prefix-width:
+        root.cursor-prefix == "" ? 0px : cursor-prefix-measure.preferred-width;
+    property <length> previous-cursor-prefix-width:
+        root.previous-cursor-prefix == "" ? 0px : previous-cursor-prefix-measure.preferred-width;
+    property <length> cursor-cell-width: max(cursor-cell-measure.preferred-width, 2px);
     property <length> cursor-target-x:
-        root.gutter-width + root.content-padding-x + cursor-prefix-measure.preferred-width;
+        root.editor-content-x + root.cursor-prefix-width;
     property <length> cursor-target-y:
-        root.cursor-line * root.line-height-px;
+        root.content-padding-y + root.cursor-line * root.line-height-px;
+    property <length> previous-cursor-target-x:
+        root.editor-content-x + root.previous-cursor-prefix-width;
+    property <length> previous-cursor-target-y:
+        root.content-padding-y + root.previous-cursor-line * root.line-height-px;
+    property <length> cursor-width: root.cursor-block ? root.cursor-cell-width : 2px;
+    property <length> cursor-height: root.line-height-px;
 
     // Shared animation duration expression
     property <int> glide-duration:
@@ -402,12 +418,9 @@ export component AppWindow inherits Window {
     property <bool> smear-eligible:
         root.enable-cursor-smear && (root.smear-is-horizontal || root.smear-is-vertical);
     property <length> cursor-smear-x: root.cursor-target-x;
-    property <length> cursor-smear-y:
-        root.cursor-line * root.line-height-px;
-    property <length> previous-cursor-smear-x:
-        root.gutter-width + root.content-padding-x + previous-cursor-prefix-measure.preferred-width;
-    property <length> previous-cursor-smear-y:
-        root.previous-cursor-line * root.line-height-px;
+    property <length> cursor-smear-y: root.cursor-target-y;
+    property <length> previous-cursor-smear-x: root.previous-cursor-target-x;
+    property <length> previous-cursor-smear-y: root.previous-cursor-target-y;
     property <length> smear-x:
         root.smear-is-horizontal
             ? min(root.previous-cursor-smear-x, root.cursor-smear-x)
@@ -422,9 +435,8 @@ export component AppWindow inherits Window {
             : root.cursor-width;
     property <length> smear-height:
         root.smear-is-vertical
-            ? abs(root.cursor-smear-y - root.previous-cursor-smear-y) + root.line-height
-            : root.line-height;
-    property <length> cursor-width: root.cursor-block ? max(cursor-cell-measure.preferred-width, 2px) : 2px;
+            ? abs(root.cursor-smear-y - root.previous-cursor-smear-y) + root.cursor-height
+            : root.cursor-height;
     property <length> line-height: root.line-height-px;
     in property <float> smear-opacity: 0.0;
     in property <bool> show-cursor-smear: false;
@@ -469,7 +481,7 @@ export component AppWindow inherits Window {
     }
 
     public function scroll-to-cursor() {
-        let line_height = root.editor-line-height * 1px;
+        let line_height = root.line-height-px;
         let visible_height = editor-scroll.height;
         let viewport_target = root.viewport-top-line;
         let target_y = viewport_target * line_height;
@@ -822,7 +834,7 @@ export component AppWindow inherits Window {
                     Rectangle {
                         x: 0px;
                         y: 0px;
-                        width: 58px;
+                        width: root.gutter-width;
                         height: 100%;
                         background: root.theme-background-alt;
                         animate background {
@@ -832,9 +844,9 @@ export component AppWindow inherits Window {
                     }
 
                     Rectangle {
-                        x: 58px;
+                        x: root.gutter-width;
                         y: 0px;
-                        width: parent.width - 58px;
+                        width: parent.width - root.gutter-width;
                         height: 100%;
                         background: root.theme-background;
                         animate background {
@@ -844,9 +856,9 @@ export component AppWindow inherits Window {
                     }
 
                     Text {
-                        x: 58px + root.editor-left-padding;
+                        x: root.editor-content-x;
                         y: 0px;
-                        width: parent.width - 58px - (root.editor-left-padding * 2);
+                        width: parent.width - root.gutter-width - (root.content-padding-x * 2);
                         height: parent.height;
                         text: root.ui-text.launcher-hint;
                         color: root.theme-text-muted;
@@ -871,7 +883,7 @@ export component AppWindow inherits Window {
                             spacing: 0px;
 
                             for line in root.editor-lines: Rectangle {
-                                height: root.editor-line-height * 1px;
+                                height: root.line-height-px;
                                 width: 100%;
                                 background: line.is-search-match ? root.theme-warning.with_alpha(0.16) : (line.is-cursor-line ? root.theme-surface.with_alpha(0.28) : transparent);
 
@@ -890,11 +902,11 @@ export component AppWindow inherits Window {
                                 }
 
                                 Rectangle {
-                                    x: 58px + root.editor-left-padding + (line.selected-prefix == "" ? 0px : selection-prefix-measure.preferred-width);
+                                    x: root.editor-content-x + (line.selected-prefix == "" ? 0px : selection-prefix-measure.preferred-width);
                                     width: line.selected-text == ""
                                         ? (line.is-line-selected ? char-width-measure.preferred-width : 0px)
                                         : selection-measure.preferred-width;
-                                    height: root.editor-line-height * 1px;
+                                    height: root.line-height-px;
                                     background: root.theme-accent-primary.with_alpha(0.18);
                                     border-radius: 4px;
                                 }
@@ -903,7 +915,7 @@ export component AppWindow inherits Window {
                                     x: 0px;
                                     y: 0px;
                                     width: 48px;
-                                    height: root.editor-line-height * 1px;
+                                    height: root.line-height-px;
                                     text: line.number;
                                     color: root.theme-text-muted;
                                     font-family: root.editor-font-family;
@@ -913,10 +925,10 @@ export component AppWindow inherits Window {
                                 }
 
                                 Text {
-                                    x: 58px + root.editor-left-padding;
+                                    x: root.editor-content-x;
                                     y: 0px;
-                                    width: parent.width - 58px - (root.editor-left-padding * 2);
-                                    height: root.editor-line-height * 1px;
+                                    width: root.editor-content-width;
+                                    height: root.line-height-px;
                                     text: line.text;
                                     color: root.theme-text;
                                     font-family: root.editor-font-family;
@@ -999,8 +1011,8 @@ export component AppWindow inherits Window {
                         Rectangle {
                             x: root.cursor-target-x;
                             y: root.cursor-target-y;
-                            height: root.line-height-px;
-                            width: root.has-document ? (root.cursor-block ? max(cursor-cell-measure.preferred-width, 2px) : 2px) : 0px;
+                            height: root.cursor-height;
+                            width: root.has-document ? root.cursor-width : 0px;
                             background: root.cursor-block ? #808080.with-alpha(0.82) : root.mode-color;
                             border-radius: 0px;
                             opacity: root.has-document && (!root.enable-cursor-blink || root.cursor-blink-visible) ? 1.0 : 0.0;
@@ -1022,8 +1034,8 @@ export component AppWindow inherits Window {
                         Text {
                             x: root.cursor-target-x;
                             y: root.cursor-target-y;
-                            width: max(cursor-cell-measure.preferred-width, 2px);
-                            height: root.line-height-px;
+                            width: root.cursor-width;
+                            height: root.cursor-height;
                             text: root.cursor-cell;
                             font-family: root.editor-font-family;
                             font-size: root.editor-font-size * 1px;
@@ -1065,7 +1077,7 @@ export component AppWindow inherits Window {
 
                         pointer-event(event) => {
                             let physical_y = editor-touch.mouse-y - editor-scroll.viewport-y;
-                            let line_index = Math.floor(physical_y / (root.editor-line-height * 1px));
+                            let line_index = Math.floor(physical_y / root.line-height-px);
                             if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
                                 root.editor-pointer-event(line_index, (editor-touch.mouse-x - root.gutter-width - root.content-padding-x) / 1px, "down");
                             } else if (event.button == PointerEventButton.left && event.kind == PointerEventKind.up) {
@@ -1076,14 +1088,14 @@ export component AppWindow inherits Window {
                         moved => {
                             if (editor-touch.pressed) {
                                 let physical_y = editor-touch.mouse-y - editor-scroll.viewport-y;
-                                let line_index = Math.floor(physical_y / (root.editor-line-height * 1px));
+                                let line_index = Math.floor(physical_y / root.line-height-px);
                                 root.editor-pointer-event(line_index, (editor-touch.mouse-x - root.gutter-width - root.content-padding-x) / 1px, "move");
                             }
                         }
 
                         double-clicked => {
                             let physical_y = editor-touch.mouse-y - editor-scroll.viewport-y;
-                            let line_index = Math.floor(physical_y / (root.editor-line-height * 1px));
+                            let line_index = Math.floor(physical_y / root.line-height-px);
                             root.editor-pointer-event(line_index, (editor-touch.mouse-x - root.gutter-width - root.content-padding-x) / 1px, "double_click");
                         }
                     }

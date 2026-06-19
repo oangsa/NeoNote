@@ -40,6 +40,19 @@ rendered by Slint.
 - Scroll animation is forced to `Immediate` in Insert mode so the viewport
   snaps-to-cursor and typed text never drifts.
 
+## Cursor Geometry
+
+- Keep cursor placement geometry centralized in `ui/app-window.slint` root
+  metrics. Text rows, selection rectangles, the cursor rectangle, the inverted
+  cursor character, pointer coordinate conversion, and smear should all consume
+  the same gutter, content padding, line height, measured prefix width, measured
+  cell width, target x/y, cursor width, and cursor height properties.
+- Guard empty cursor prefixes explicitly with `0px`; hidden empty `Text`
+  measurement can otherwise report a width that nudges the first-column cursor.
+- Do not apply a hard-coded cursor x offset unless a measured reproduction proves
+  Slint text metrics need it. If an offset is ever required, apply it through the
+  shared target/width metrics so every cursor path moves together.
+
 ## Smear (1.1.0)
 
 - **Rust controller** (`src/app.rs`): owns `previous_cursor_line`,
@@ -92,4 +105,3 @@ rendered by Slint.
   to a `_blink_timer` variable (like the IPC timer) so it is not dropped early.
 - `slint::Timer::start` with `TimerMode::Repeated` fires on the UI thread; keep
   the closure cheap (read a config bool, compute elapsed, set one property).
-
