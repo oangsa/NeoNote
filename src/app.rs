@@ -9,9 +9,26 @@ use crate::{
     theme::ThemeStore,
 };
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum CursorAnimationKind {
+    #[default]
+    Immediate,
+    SmallMove,
+    LargeJump,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ScrollAnimationKind {
+    #[default]
+    Immediate,
+    SmallMove,
+    PageMove,
+    LargeJump,
+}
+
 pub struct AppController {
     paths: AppDataPaths,
-    config: AppConfig,
+    pub config: AppConfig,
     session: SessionState,
     recent_files: RecentFiles,
     themes: ThemeStore,
@@ -25,6 +42,10 @@ pub struct AppController {
     last_session_save: Option<std::time::Instant>,
     next_pane_id: usize,
     next_buffer_id: usize,
+    cursor_animation_kind: CursorAnimationKind,
+    scroll_animation_kind: ScrollAnimationKind,
+    cursor_trail: Vec<(usize, usize)>,
+    window_height_px: f32,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -54,6 +75,19 @@ pub struct AppSnapshot {
     pub settings: SettingsSnapshot,
     pub theme: ThemeSnapshot,
     pub ui_text: UiTextSnapshot,
+    pub enable_animations: bool,
+    pub enable_cursor_glide: bool,
+    pub enable_smooth_scroll: bool,
+    pub enable_cursor_trail: bool,
+    pub animation_duration_short_ms: i32,
+    pub animation_duration_normal_ms: i32,
+    pub animation_duration_long_ms: i32,
+    pub viewport_top_line: i32,
+    pub cursor_animation_kind: i32,
+    pub scroll_animation_kind: i32,
+    pub search_match_current: i32,
+    pub search_match_total: i32,
+    pub search_match_label: String,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -92,6 +126,11 @@ pub struct SettingsSnapshot {
     pub blur_behind: bool,
     pub window_opacity: i32,
     pub window_opacity_label: String,
+    pub enable_mica: bool,
+    pub enable_animations: bool,
+    pub enable_cursor_glide: bool,
+    pub enable_smooth_scroll: bool,
+    pub enable_cursor_trail: bool,
 }
 
 impl Default for SettingsSnapshot {
@@ -120,6 +159,11 @@ impl SettingsSnapshot {
             blur_behind: config.blur_behind,
             window_opacity: i32::from(config.window_opacity),
             window_opacity_label: format!("{}%", config.window_opacity),
+            enable_mica: config.enable_mica,
+            enable_animations: config.enable_animations,
+            enable_cursor_glide: config.enable_cursor_glide,
+            enable_smooth_scroll: config.enable_smooth_scroll,
+            enable_cursor_trail: config.enable_cursor_trail,
         }
     }
 }
@@ -137,6 +181,7 @@ pub struct EditorLineSnapshot {
     pub cursor_cell: String,
     pub cursor_suffix: String,
     pub cursor_block: bool,
+    pub trail_columns: Vec<i32>,
 }
 
 #[derive(Clone, Debug)]
@@ -212,6 +257,10 @@ impl AppController {
             last_session_save: None,
             next_pane_id: 2,
             next_buffer_id: 2,
+            cursor_animation_kind: CursorAnimationKind::Immediate,
+            scroll_animation_kind: ScrollAnimationKind::Immediate,
+            cursor_trail: Vec::new(),
+            window_height_px: 800.0,
         }
     }
 
@@ -407,6 +456,31 @@ impl AppController {
         self.save_config_silent();
     }
 
+    pub fn toggle_mica(&mut self) {
+        self.config.enable_mica = !self.config.enable_mica;
+        self.save_config_silent();
+    }
+
+    pub fn toggle_animations(&mut self) {
+        self.config.enable_animations = !self.config.enable_animations;
+        self.save_config_silent();
+    }
+
+    pub fn toggle_cursor_glide(&mut self) {
+        self.config.enable_cursor_glide = !self.config.enable_cursor_glide;
+        self.save_config_silent();
+    }
+
+    pub fn toggle_smooth_scroll(&mut self) {
+        self.config.enable_smooth_scroll = !self.config.enable_smooth_scroll;
+        self.save_config_silent();
+    }
+
+    pub fn toggle_cursor_trail(&mut self) {
+        self.config.enable_cursor_trail = !self.config.enable_cursor_trail;
+        self.save_config_silent();
+    }
+
     pub fn flush_deferred_action(&mut self) -> bool {
         if !self.active_pane().is_open(self.active_buffer()) {
             return false;
@@ -451,6 +525,7 @@ impl AppController {
         if key == "ctrl+shift+v" {
             self.handle_clipboard_paste_shortcut();
             self.save_session_state(false);
+            self.set_animation_kinds_immediate();
             return;
         }
 
@@ -487,6 +562,11 @@ impl AppController {
             }
         }
 
+        let (before_line, before_col, before_top): (usize, usize, usize) = {
+            let (p, b) = self.active_pane_and_buffer();
+            (p.cursor_line(b), p.display_cursor_col(b), p.viewport_top_line(b))
+        };
+
         let before_register = self
             .config
             .sync_clipboard
@@ -496,12 +576,76 @@ impl AppController {
             self.last_message.clear();
         }
 
+        let (after_line, after_col, after_top): (usize, usize, usize) = {
+            let (p, b) = self.active_pane_and_buffer();
+            (p.cursor_line(b), p.display_cursor_col(b), p.viewport_top_line(b))
+        };
+
+        if is_insert {
+            self.cursor_animation_kind = CursorAnimationKind::Immediate;
+            self.scroll_animation_kind = ScrollAnimationKind::Immediate;
+        } else {
+            let line_diff = (after_line as isize - before_line as isize).unsigned_abs();
+            let col_diff = (after_col as isize - before_col as isize).unsigned_abs();
+            if line_diff > 3 || col_diff > 10 {
+                self.cursor_animation_kind = CursorAnimationKind::LargeJump;
+            } else if line_diff > 0 || col_diff > 0 {
+                self.cursor_animation_kind = CursorAnimationKind::SmallMove;
+            } else {
+                self.cursor_animation_kind = CursorAnimationKind::Immediate;
+            }
+
+            let top_diff = (after_top as isize - before_top as isize).unsigned_abs();
+            if top_diff > 10 {
+                self.scroll_animation_kind = ScrollAnimationKind::LargeJump;
+            } else if top_diff > 3 {
+                self.scroll_animation_kind = ScrollAnimationKind::PageMove;
+            } else if top_diff > 0 {
+                self.scroll_animation_kind = ScrollAnimationKind::SmallMove;
+            } else {
+                self.scroll_animation_kind = ScrollAnimationKind::Immediate;
+            }
+        }
+
+        if after_line != before_line || after_col != before_col {
+            self.update_cursor_trail(after_line, after_col);
+        }
+
         self.export_unnamed_register_if_changed(before_register);
 
         if let Some(action) = { let (p, b) = self.active_pane_and_buffer(); p.take_ex_action(b) } {
             self.handle_ex_action(action);
         }
+        self.update_viewport_visible_lines();
         self.save_session_state(false);
+    }
+
+    fn set_animation_kinds_immediate(&mut self) {
+        self.cursor_animation_kind = CursorAnimationKind::Immediate;
+        self.scroll_animation_kind = ScrollAnimationKind::Immediate;
+    }
+
+    fn update_viewport_visible_lines(&mut self) {
+        let editor_line_height = self.config.font_size * self.config.line_height;
+        let chrome_height: f32 = 92.0;
+        let editor_viewport_height = (self.window_height_px - chrome_height).max(editor_line_height);
+        let visible_lines = (editor_viewport_height / editor_line_height) as usize;
+        let (p, _) = self.active_pane_and_buffer();
+        p.set_visible_lines(visible_lines);
+    }
+
+    fn update_cursor_trail(&mut self, line: usize, col: usize) {
+        if !self.config.enable_cursor_trail {
+            self.cursor_trail.clear();
+            return;
+        }
+        if self.cursor_trail.last() == Some(&(line, col)) {
+            return;
+        }
+        self.cursor_trail.push((line, col));
+        if self.cursor_trail.len() > 3 {
+            self.cursor_trail.remove(0);
+        }
     }
 
     fn handle_clipboard_paste_shortcut(&mut self) {
@@ -715,7 +859,7 @@ impl AppController {
         AppSnapshot {
             file_title: self.localized_title(note, self.active_buffer()),
             file_path: note.path_string(self.active_buffer()).unwrap_or_default(),
-            editor_lines: editor_lines(note, self.active_buffer()),
+            editor_lines: editor_lines(note, self.active_buffer(), &self.cursor_trail),
             document_tabs: self.document_tabs(),
             status_text: if note.is_open(self.active_buffer()) {
                 match note.vim_state.mode {
@@ -775,6 +919,23 @@ impl AppController {
             settings: SettingsSnapshot::from_config(&self.config),
             theme,
             ui_text: language.strings(),
+            enable_animations: self.config.enable_animations,
+            enable_cursor_glide: self.config.enable_cursor_glide,
+            enable_smooth_scroll: self.config.enable_smooth_scroll,
+            enable_cursor_trail: self.config.enable_cursor_trail,
+            animation_duration_short_ms: if self.config.enable_animations { 80 } else { 0 },
+            animation_duration_normal_ms: if self.config.enable_animations { 120 } else { 0 },
+            animation_duration_long_ms: if self.config.enable_animations { 180 } else { 0 },
+            viewport_top_line: note.viewport_top_line(buffer) as i32,
+            cursor_animation_kind: self.cursor_animation_kind as i32,
+            scroll_animation_kind: self.scroll_animation_kind as i32,
+            search_match_current: note.search_match_current(buffer) as i32,
+            search_match_total: note.search_match_total(buffer) as i32,
+            search_match_label: if note.search_match_total(buffer) > 0 {
+                format!("{}/{}", note.search_match_current(buffer) + 1, note.search_match_total(buffer))
+            } else {
+                String::new()
+            },
         }
     }
 
@@ -804,8 +965,15 @@ impl AppController {
                 match { let (p, b) = self.active_pane_and_buffer(); p.save_as(b, &path) } {
                     Ok(()) => {
                         self.remember_recent(path);
-                        self.last_message.clear();
-                    }
+        self.last_message.clear();
+        self.cursor_animation_kind = CursorAnimationKind::LargeJump;
+        self.scroll_animation_kind = ScrollAnimationKind::Immediate;
+        let (line, col) = {
+            let (p, b) = self.active_pane_and_buffer();
+            (p.cursor_line(b), p.display_cursor_col(b))
+        };
+        self.update_cursor_trail(line, col);
+    }
                     Err(error) => self.last_message = format!("Could not save note: {error}"),
                 }
             }
@@ -871,6 +1039,7 @@ impl AppController {
         }
 
         self.open_startup_fallback();
+        self.update_viewport_visible_lines();
     }
 
     pub fn open_startup_fallback(&mut self) {
@@ -1335,7 +1504,7 @@ fn cursor_snapshot(note: &Pane, buffer: &TextBuffer) -> CursorSnapshot {
     }
 }
 
-fn editor_lines(note: &Pane, buffer: &TextBuffer) -> Vec<EditorLineSnapshot> {
+fn editor_lines(note: &Pane, buffer: &TextBuffer, cursor_trail: &[(usize, usize)]) -> Vec<EditorLineSnapshot> {
     let cursor_line = note.cursor_line(buffer);
     let cursor_column = note.display_cursor_col(buffer) as i32;
     let cursor_block = note.mode(buffer) != VimMode::Insert;
@@ -1356,6 +1525,13 @@ fn editor_lines(note: &Pane, buffer: &TextBuffer) -> Vec<EditorLineSnapshot> {
                     (String::new(), String::new())
                 }
             };
+
+            let trail_columns: Vec<i32> = cursor_trail
+                .iter()
+                .filter_map(|(t_line, t_col)| {
+                    if *t_line == index { Some(*t_col as i32) } else { None }
+                })
+                .collect();
 
             EditorLineSnapshot {
             number: (index + 1) as i32,
@@ -1381,6 +1557,7 @@ fn editor_lines(note: &Pane, buffer: &TextBuffer) -> Vec<EditorLineSnapshot> {
             },
             text,
             cursor_block,
+            trail_columns,
         }
         })
         .collect()
@@ -1476,6 +1653,7 @@ mod tests {
     #[test]
     fn editor_lines_preserve_content_and_cursor_row() {
         let mut controller = AppController::new();
+        controller.config.enable_cursor_trail = false;
         controller.new_file();
         controller.handle_editor_key("i");
         for key in ["o", "n", "e", "return", "t", "w", "o", "escape"] {
@@ -1498,6 +1676,7 @@ mod tests {
                     cursor_cell: String::new(),
                     cursor_suffix: String::new(),
                     cursor_block: true,
+                    trail_columns: vec![],
                 },
                 EditorLineSnapshot {
                     number: 2,
@@ -1511,6 +1690,7 @@ mod tests {
                     cursor_cell: "o".to_string(),
                     cursor_suffix: String::new(),
                     cursor_block: true,
+                    trail_columns: vec![],
                 },
             ]
         );

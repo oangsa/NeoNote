@@ -94,9 +94,9 @@ component NumericSettingRow inherits Rectangle {
                         command-border-color: root.row-border;
                         text-color: root.row-text;
                         clicked => { root.decrement(); }
-                    }
+                                }
 
-                    Text {
+                                Text {
                         text: root.value;
                         color: root.row-text-muted;
                         font-size: 13px;
@@ -214,6 +214,7 @@ export struct EditorLine {
     cursor-cell: string,
     cursor-suffix: string,
     cursor-block: bool,
+    trail-columns: [int],
 }
 
 export struct ThemeItem {
@@ -242,6 +243,11 @@ export struct SettingsData {
     blur-behind: bool,
     window-opacity: int,
     window-opacity-label: string,
+    enable-mica: bool,
+    enable-animations: bool,
+    enable-cursor-glide: bool,
+    enable-smooth-scroll: bool,
+    enable-cursor-trail: bool,
 }
 
 export struct DocumentTab {
@@ -289,6 +295,17 @@ export struct UiText {
     blur-behind: string,
     blur-behind-detail: string,
     window-opacity: string,
+    visual-section: string,
+    use-mica: string,
+    use-mica-detail: string,
+    enable-animations: string,
+    enable-animations-detail: string,
+    cursor-glide: string,
+    cursor-glide-detail: string,
+    smooth-scroll: string,
+    smooth-scroll-detail: string,
+    cursor-trail: string,
+    cursor-trail-detail: string,
 }
 
 export component AppWindow inherits Window {
@@ -334,6 +351,19 @@ export component AppWindow inherits Window {
     in property <brush> theme-error: #f7768e;
     in property <brush> theme-cursor: #c0caf5;
     in property <brush> mode-color: #7aa2f7;
+    in property <bool> enable-animations: true;
+    in property <bool> enable-cursor-glide: true;
+    in property <bool> enable-smooth-scroll: true;
+    in property <bool> enable-cursor-trail: true;
+    in property <int> anim-duration-short: 80;
+    in property <int> anim-duration-normal: 120;
+    in property <int> anim-duration-long: 180;
+    in property <int> viewport-top-line: 0;
+    in property <int> cursor-animation-kind: 0;
+    in property <int> scroll-animation-kind: 0;
+    in property <int> search-match-current: 0;
+    in property <int> search-match-total: 0;
+    in property <string> search-match-label: "";
 
     callback new-file();
     callback open-file();
@@ -361,6 +391,11 @@ export component AppWindow inherits Window {
     callback settings-toggle-show-launcher-on-startup();
     callback settings-toggle-remember-window-geometry();
     callback settings-toggle-blur-behind();
+    callback settings-toggle-mica();
+    callback settings-toggle-animations();
+    callback settings-toggle-cursor-glide();
+    callback settings-toggle-smooth-scroll();
+    callback settings-toggle-cursor-trail();
     callback editor-key(string);
     callback editor-pointer-event(int, float, string);
 
@@ -369,18 +404,26 @@ export component AppWindow inherits Window {
     }
 
     public function scroll-to-cursor() {
-        let cursor_y = root.cursor-line * root.editor-line-height * 1px;
+        let line_height = root.editor-line-height * 1px;
         let visible_height = editor-scroll.height;
-        let current_scroll_y = -editor-scroll.viewport-y;
-        
-        if (cursor_y < current_scroll_y) {
+        let viewport_target = root.viewport-top-line;
+        let target_y = viewport_target * line_height;
+        let cursor_y = root.cursor-line * line_height;
+
+        if (cursor_y < target_y) {
             editor-scroll.viewport-y = -cursor_y;
-        } else if (cursor_y + root.editor-line-height * 1px > current_scroll_y + visible_height) {
-            editor-scroll.viewport-y = -(cursor_y + root.editor-line-height * 1px - visible_height);
+        } else if (cursor_y + line_height > target_y + visible_height) {
+            editor-scroll.viewport-y = -(cursor_y + line_height - visible_height);
+        } else {
+            editor-scroll.viewport-y = -target_y;
         }
     }
 
     background: root.theme-background;
+    animate background {
+        duration: root.anim-duration-normal * 1ms;
+        easing: ease-out;
+    }
 
     VerticalLayout {
         spacing: 0px;
@@ -388,6 +431,10 @@ export component AppWindow inherits Window {
         Rectangle {
             height: 38px;
             background: root.theme-background-alt;
+            animate background {
+                duration: root.anim-duration-normal * 1ms;
+                easing: ease-out;
+            }
             border-width: 0px;
 
             HorizontalLayout {
@@ -559,7 +606,7 @@ export component AppWindow inherits Window {
                                 y: tab-touch.pressed ? -3px : 0px;
                                 background: tab-touch.pressed
                                     ? root.theme-border
-                                    : (tab.is-active ? root.theme-background : root.theme-surface);
+                                    : (tab-touch.has-hover || tab.is-active ? root.theme-background : root.theme-surface);
                                 border-top-left-radius: 6px;
                                 border-top-right-radius: 6px;
                                 opacity: tab-touch.pressed ? 0.98 : 1;
@@ -713,6 +760,10 @@ export component AppWindow inherits Window {
                         width: 58px;
                         height: 100%;
                         background: root.theme-background-alt;
+                        animate background {
+                            duration: root.anim-duration-normal * 1ms;
+                            easing: ease-out;
+                        }
                     }
 
                     Rectangle {
@@ -721,6 +772,10 @@ export component AppWindow inherits Window {
                         width: parent.width - 58px;
                         height: 100%;
                         background: root.theme-background;
+                        animate background {
+                            duration: root.anim-duration-normal * 1ms;
+                            easing: ease-out;
+                        }
                     }
 
                     Text {
@@ -741,6 +796,10 @@ export component AppWindow inherits Window {
                         width: 100%;
                         height: 100%;
                         visible: root.has-document;
+                        animate viewport-y {
+                            duration: (root.enable-animations && root.enable-smooth-scroll ? (root.scroll-animation-kind == 0 ? 0 : (root.scroll-animation-kind == 1 ? root.anim-duration-short : (root.scroll-animation-kind == 2 ? root.anim-duration-normal : root.anim-duration-long))) : 0) * 1ms;
+                            easing: ease-out;
+                        }
 
                         VerticalLayout {
                             width: 100%;
@@ -785,38 +844,6 @@ export component AppWindow inherits Window {
                                     vertical-alignment: center;
                                 }
 
-                                prefix-measure := Text {
-                                    x: 58px + root.editor-left-padding;
-                                    y: 0px;
-                                    height: root.editor-line-height * 1px;
-                                    text: line.cursor-prefix;
-                                    color: transparent;
-                                    font-family: root.editor-font-family;
-                                    font-size: root.editor-font-size * 1px;
-                                    vertical-alignment: center;
-                                    wrap: no-wrap;
-                                }
-
-                                cursor-cell-measure := Text {
-                                    x: 58px + root.editor-left-padding;
-                                    y: 0px;
-                                    height: root.editor-line-height * 1px;
-                                    text: line.cursor-cell;
-                                    color: transparent;
-                                    font-family: root.editor-font-family;
-                                    font-size: root.editor-font-size * 1px;
-                                    vertical-alignment: center;
-                                    wrap: no-wrap;
-                                }
-
-                                Rectangle {
-                                    x: 58px + root.editor-left-padding + (line.cursor-prefix == "" ? 0px : prefix-measure.preferred-width) + root.cursor-x-adjust;
-                                    y: 0px;
-                                    height: root.editor-line-height * 1px;
-                                    width: line.is-cursor-line ? (line.cursor-block ? max(cursor-cell-measure.preferred-width - root.cursor-x-adjust, 2px) : 2px) : 0px;
-                                    background: line.cursor-block ? root.theme-cursor.with_alpha(0.58) : root.mode-color;
-                                }
-
                                 Text {
                                     x: 58px + root.editor-left-padding;
                                     y: 0px;
@@ -830,7 +857,73 @@ export component AppWindow inherits Window {
                                     wrap: no-wrap;
                                 }
 
+                                for ghost-col in line.trail-columns: Rectangle {
+                                    x: 58px + root.editor-left-padding + ghost-col * char-width-measure.preferred-width + root.cursor-x-adjust;
+                                    y: 0px;
+                                    width: char-width-measure.preferred-width;
+                                    height: root.editor-line-height * 1px;
+                                    background: root.theme-cursor.with_alpha(0.15);
+                                    animate opacity { duration: 140ms; easing: ease-out; }
+                                }
 
+
+                            }
+                        }
+
+                        // Character width calibration for trail ghost cursors
+                        char-width-measure := Text {
+                            x: 0px;
+                            y: 0px;
+                            width: 0px;
+                            height: 0px;
+                            text: "X";
+                            font-family: root.editor-font-family;
+                            font-size: root.editor-font-size * 1px;
+                            color: transparent;
+                            vertical-alignment: center;
+                            wrap: no-wrap;
+                        }
+
+                        // Floating cursor overlay (single element for clean animation)
+                        cursor-prefix-measure := Text {
+                            x: 0px;
+                            y: 0px;
+                            width: 0px;
+                            height: 0px;
+                            text: root.cursor-prefix;
+                            font-family: root.editor-font-family;
+                            font-size: root.editor-font-size * 1px;
+                            color: transparent;
+                            vertical-alignment: center;
+                            wrap: no-wrap;
+                        }
+
+                        cursor-cell-measure := Text {
+                            x: 0px;
+                            y: 0px;
+                            width: 0px;
+                            height: 0px;
+                            text: root.cursor-cell;
+                            font-family: root.editor-font-family;
+                            font-size: root.editor-font-size * 1px;
+                            color: transparent;
+                            vertical-alignment: center;
+                            wrap: no-wrap;
+                        }
+
+                        Rectangle {
+                            x: 58px + root.editor-left-padding + cursor-prefix-measure.preferred-width + root.cursor-x-adjust;
+                            y: root.cursor-line * root.editor-line-height * 1px;
+                            height: root.editor-line-height * 1px;
+                            width: root.has-document ? (root.cursor-block ? max(cursor-cell-measure.preferred-width - root.cursor-x-adjust, 2px) : 2px) : 0px;
+                            background: root.cursor-block ? root.theme-cursor.with_alpha(0.58) : root.mode-color;
+                            animate x {
+                                duration: (root.enable-animations && root.enable-cursor-glide ? (root.cursor-animation-kind == 0 ? 0 : (root.cursor-animation-kind == 1 ? root.anim-duration-short : root.anim-duration-normal)) : 0) * 1ms;
+                                easing: ease-out;
+                            }
+                            animate y {
+                                duration: (root.enable-animations && root.enable-cursor-glide ? (root.cursor-animation-kind == 0 ? 0 : (root.cursor-animation-kind == 1 ? root.anim-duration-short : root.anim-duration-normal)) : 0) * 1ms;
+                                easing: ease-out;
                             }
                         }
                     }
@@ -884,6 +977,10 @@ export component AppWindow inherits Window {
         Rectangle {
             height: 26px;
             background: root.theme-background-alt;
+            animate background {
+                duration: root.anim-duration-normal * 1ms;
+                easing: ease-out;
+            }
 
             HorizontalLayout {
                 spacing: 0px;
@@ -909,6 +1006,19 @@ export component AppWindow inherits Window {
                     vertical-alignment: center;
                     horizontal-stretch: 1;
                     horizontal-alignment: left;
+                }
+
+                Text {
+                    text: root.search-match-label;
+                    color: root.theme-accent-primary;
+                    font-size: 11px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    opacity: root.search-match-label == "" ? 0 : 1;
+                    animate opacity {
+                        duration: 140ms;
+                        easing: ease-out;
+                    }
                 }
 
                 Text {
@@ -1191,6 +1301,39 @@ export component AppWindow inherits Window {
                         spacing: 12px;
 
                 Text {
+                    text: root.ui-text.visual-section;
+                    color: root.theme-text-muted;
+                    font-size: 12px;
+                    font-weight: 700;
+                }
+
+                ToggleRow {
+                    title: root.ui-text.use-mica;
+                    detail: root.ui-text.use-mica-detail;
+                    checked: root.settings.enable-mica;
+                    row-background: root.theme-background;
+                    row-hover: root.theme-background-alt;
+                    row-border: root.theme-border;
+                    row-text: root.theme-text;
+                    row-text-muted: root.theme-text-muted;
+                    row-accent: root.theme-accent-primary;
+                    toggled => { root.settings-toggle-mica(); }
+                }
+
+                ToggleRow {
+                    title: root.ui-text.enable-animations;
+                    detail: root.ui-text.enable-animations-detail;
+                    checked: root.settings.enable-animations;
+                    row-background: root.theme-background;
+                    row-hover: root.theme-background-alt;
+                    row-border: root.theme-border;
+                    row-text: root.theme-text;
+                    row-text-muted: root.theme-text-muted;
+                    row-accent: root.theme-accent-primary;
+                    toggled => { root.settings-toggle-animations(); }
+                }
+
+                Text {
                     text: root.ui-text.appearance-section;
                     color: root.theme-text-muted;
                     font-size: 12px;
@@ -1290,6 +1433,45 @@ export component AppWindow inherits Window {
                     row-text-muted: root.theme-text-muted;
                     row-accent: root.theme-accent-primary;
                     toggled => { root.settings-toggle-word-wrap(); }
+                }
+
+                ToggleRow {
+                    title: root.ui-text.cursor-glide;
+                    detail: root.ui-text.cursor-glide-detail;
+                    checked: root.settings.enable-cursor-glide;
+                    row-background: root.theme-background;
+                    row-hover: root.theme-background-alt;
+                    row-border: root.theme-border;
+                    row-text: root.theme-text;
+                    row-text-muted: root.theme-text-muted;
+                    row-accent: root.theme-accent-primary;
+                    toggled => { root.settings-toggle-cursor-glide(); }
+                }
+
+                ToggleRow {
+                    title: root.ui-text.smooth-scroll;
+                    detail: root.ui-text.smooth-scroll-detail;
+                    checked: root.settings.enable-smooth-scroll;
+                    row-background: root.theme-background;
+                    row-hover: root.theme-background-alt;
+                    row-border: root.theme-border;
+                    row-text: root.theme-text;
+                    row-text-muted: root.theme-text-muted;
+                    row-accent: root.theme-accent-primary;
+                    toggled => { root.settings-toggle-smooth-scroll(); }
+                }
+
+                ToggleRow {
+                    title: root.ui-text.cursor-trail;
+                    detail: root.ui-text.cursor-trail-detail;
+                    checked: root.settings.enable-cursor-trail;
+                    row-background: root.theme-background;
+                    row-hover: root.theme-background-alt;
+                    row-border: root.theme-border;
+                    row-text: root.theme-text;
+                    row-text-muted: root.theme-text-muted;
+                    row-accent: root.theme-accent-primary;
+                    toggled => { root.settings-toggle-cursor-trail(); }
                 }
 
                 Text {

@@ -351,6 +351,10 @@ impl Pane {
         self.viewport_state.top_line = top_line;
     }
 
+    pub fn set_visible_lines(&mut self, visible_lines: usize) {
+        self.viewport_state.visible_lines = visible_lines;
+    }
+
     pub fn display_cursor_col(&self, buffer: &TextBuffer) -> usize {
         match self.vim_state.mode {
             VimMode::Normal | VimMode::Visual | VimMode::VisualLine => self.cursor_col(buffer, ),
