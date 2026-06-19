@@ -248,6 +248,7 @@ export struct SettingsData {
     enable-cursor-glide: bool,
     enable-smooth-scroll: bool,
     enable-cursor-blink: bool,
+    enable-cursor-smear: bool,
 }
 
 export struct DocumentTab {
@@ -306,6 +307,8 @@ export struct UiText {
     smooth-scroll-detail: string,
     cursor-blink: string,
     cursor-blink-detail: string,
+    cursor-smear: string,
+    cursor-smear-detail: string,
 }
 
 export component AppWindow inherits Window {
@@ -322,15 +325,34 @@ export component AppWindow inherits Window {
     in property <string> mode-text: "NORMAL";
     in property <int> cursor-line: 0;
     in property <int> cursor-column: 0;
+    in property <int> previous-cursor-line: 0;
+    in property <int> previous-cursor-column: 0;
     in property <string> cursor-prefix: "";
     in property <string> cursor-cell: " ";
     in property <string> cursor-suffix: "";
+    in property <string> previous-cursor-prefix: "";
     in property <bool> cursor-block: true;
     in property <length> editor-left-padding: 14px;
     in property <float> editor-line-height: 17;
     in property <float> editor-font-size: 14;
-    in property <length> cursor-x-adjust: -1px;
     in property <string> editor-font-family: "Consolas";
+
+    // Editor metrics contract
+    property <length> gutter-width: 58px;
+    property <length> content-padding-x: root.editor-left-padding;
+    property <length> line-height-px: root.editor-line-height * 1px;
+    property <length> cursor-target-x:
+        root.gutter-width + root.content-padding-x + cursor-prefix-measure.preferred-width;
+    property <length> cursor-target-y:
+        root.cursor-line * root.line-height-px;
+
+    // Shared animation duration expression
+    property <int> glide-duration:
+        root.enable-animations && root.enable-cursor-glide
+            ? (root.cursor-animation-kind == 0 ? 0
+                : (root.cursor-insert-mode ? root.anim-duration-insert
+                    : (root.cursor-animation-kind == 1 ? root.anim-duration-short : root.anim-duration-normal)))
+            : 0;
     in property <string> message: "";
     in property <bool> has-document: false;
     in property <bool> show-theme-panel: false;
@@ -355,6 +377,7 @@ export component AppWindow inherits Window {
     in property <bool> enable-cursor-glide: true;
     in property <bool> enable-smooth-scroll: true;
     in property <bool> enable-cursor-blink: true;
+    in property <bool> enable-cursor-smear: true;
     in property <bool> cursor-blink-visible: true;
     in property <bool> cursor-insert-mode: false;
     in property <int> anim-duration-short: 80;
@@ -363,10 +386,48 @@ export component AppWindow inherits Window {
     in property <int> anim-duration-insert: 50;
     in property <int> viewport-top-line: 0;
     in property <int> cursor-animation-kind: 0;
+    in property <int> cursor-smear-generation: 0;
     in property <int> scroll-animation-kind: 0;
     in property <int> search-match-current: 0;
     in property <int> search-match-total: 0;
     in property <string> search-match-label: "";
+
+    // Cursor smear computed state
+    property <bool> smear-is-horizontal:
+        root.previous-cursor-line == root.cursor-line
+        && root.previous-cursor-column != root.cursor-column;
+    property <bool> smear-is-vertical:
+        root.previous-cursor-column == root.cursor-column
+        && root.previous-cursor-line != root.cursor-line;
+    property <bool> smear-eligible:
+        root.enable-cursor-smear && (root.smear-is-horizontal || root.smear-is-vertical);
+    property <length> cursor-smear-x: root.cursor-target-x;
+    property <length> cursor-smear-y:
+        root.cursor-line * root.line-height-px;
+    property <length> previous-cursor-smear-x:
+        root.gutter-width + root.content-padding-x + previous-cursor-prefix-measure.preferred-width;
+    property <length> previous-cursor-smear-y:
+        root.previous-cursor-line * root.line-height-px;
+    property <length> smear-x:
+        root.smear-is-horizontal
+            ? min(root.previous-cursor-smear-x, root.cursor-smear-x)
+            : root.cursor-smear-x;
+    property <length> smear-y:
+        root.smear-is-vertical
+            ? min(root.previous-cursor-smear-y, root.cursor-smear-y)
+            : root.cursor-smear-y;
+    property <length> smear-width:
+        root.smear-is-horizontal
+            ? abs(root.cursor-smear-x - root.previous-cursor-smear-x) + root.cursor-width
+            : root.cursor-width;
+    property <length> smear-height:
+        root.smear-is-vertical
+            ? abs(root.cursor-smear-y - root.previous-cursor-smear-y) + root.line-height
+            : root.line-height;
+    property <length> cursor-width: root.cursor-block ? max(cursor-cell-measure.preferred-width, 2px) : 2px;
+    property <length> line-height: root.line-height-px;
+    in property <float> smear-opacity: 0.0;
+    in property <bool> show-cursor-smear: false;
 
     callback new-file();
     callback open-file();
@@ -399,6 +460,7 @@ export component AppWindow inherits Window {
     callback settings-toggle-cursor-glide();
     callback settings-toggle-smooth-scroll();
     callback settings-toggle-cursor-blink();
+    callback settings-toggle-cursor-smear();
     callback editor-key(string);
     callback editor-pointer-event(int, float, string);
 
@@ -880,6 +942,20 @@ export component AppWindow inherits Window {
                             wrap: no-wrap;
                         }
 
+                        // Cursor smear overlay (behind cursor)
+                        Rectangle {
+                            visible: root.show-cursor-smear && root.smear-eligible && root.has-document;
+                            x: root.smear-x;
+                            y: root.smear-y;
+                            width: root.smear-width;
+                            height: root.smear-height;
+                            background: #808080.with-alpha(root.smear-opacity);
+                            animate opacity {
+                                duration: 100ms;
+                                easing: ease-out;
+                            }
+                        }
+
                         // Floating cursor overlay (single element for clean animation)
                         cursor-prefix-measure := Text {
                             x: 0px;
@@ -887,6 +963,19 @@ export component AppWindow inherits Window {
                             width: 0px;
                             height: 0px;
                             text: root.cursor-prefix;
+                            font-family: root.editor-font-family;
+                            font-size: root.editor-font-size * 1px;
+                            color: transparent;
+                            vertical-alignment: center;
+                            wrap: no-wrap;
+                        }
+
+                        previous-cursor-prefix-measure := Text {
+                            x: 0px;
+                            y: 0px;
+                            width: 0px;
+                            height: 0px;
+                            text: root.previous-cursor-prefix;
                             font-family: root.editor-font-family;
                             font-size: root.editor-font-size * 1px;
                             color: transparent;
@@ -908,19 +997,19 @@ export component AppWindow inherits Window {
                         }
 
                         Rectangle {
-                            x: 58px + root.editor-left-padding + cursor-prefix-measure.preferred-width + root.cursor-x-adjust;
-                            y: root.cursor-line * root.editor-line-height * 1px;
-                            height: root.editor-line-height * 1px;
-                            width: root.has-document ? (root.cursor-block ? max(cursor-cell-measure.preferred-width - root.cursor-x-adjust, 2px) : 2px) : 0px;
-                            background: root.cursor-block ? root.theme-cursor.with_alpha(0.58) : root.mode-color;
-                            border-radius: 2px;
+                            x: root.cursor-target-x;
+                            y: root.cursor-target-y;
+                            height: root.line-height-px;
+                            width: root.has-document ? (root.cursor-block ? max(cursor-cell-measure.preferred-width, 2px) : 2px) : 0px;
+                            background: root.cursor-block ? #808080.with-alpha(0.82) : root.mode-color;
+                            border-radius: 0px;
                             opacity: root.has-document && (!root.enable-cursor-blink || root.cursor-blink-visible) ? 1.0 : 0.0;
                             animate x {
-                                duration: (root.enable-animations && root.enable-cursor-glide ? (root.cursor-animation-kind == 0 ? 0 : (root.cursor-insert-mode ? root.anim-duration-insert : (root.cursor-animation-kind == 1 ? root.anim-duration-short : root.anim-duration-normal))) : 0) * 1ms;
+                                duration: root.glide-duration * 1ms;
                                 easing: ease-out;
                             }
                             animate y {
-                                duration: (root.enable-animations && root.enable-cursor-glide ? (root.cursor-animation-kind == 0 ? 0 : (root.cursor-insert-mode ? root.anim-duration-insert : (root.cursor-animation-kind == 1 ? root.anim-duration-short : root.anim-duration-normal))) : 0) * 1ms;
+                                duration: root.glide-duration * 1ms;
                                 easing: ease-out;
                             }
                             animate opacity {
@@ -928,7 +1017,31 @@ export component AppWindow inherits Window {
                                 easing: ease-out;
                             }
                         }
+
+                        // Character under cursor drawn with contrasting color for readability
+                        Text {
+                            x: root.cursor-target-x;
+                            y: root.cursor-target-y;
+                            width: max(cursor-cell-measure.preferred-width, 2px);
+                            height: root.line-height-px;
+                            text: root.cursor-cell;
+                            font-family: root.editor-font-family;
+                            font-size: root.editor-font-size * 1px;
+                            color: root.theme-background;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            visible: root.has-document && root.cursor-block;
+                            animate x {
+                                duration: root.glide-duration * 1ms;
+                                easing: ease-out;
+                            }
+                            animate y {
+                                duration: root.glide-duration * 1ms;
+                                easing: ease-out;
+                            }
+                        }
                     }
+
                 }
             }
 
@@ -954,9 +1067,9 @@ export component AppWindow inherits Window {
                             let physical_y = editor-touch.mouse-y - editor-scroll.viewport-y;
                             let line_index = Math.floor(physical_y / (root.editor-line-height * 1px));
                             if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
-                                root.editor-pointer-event(line_index, (editor-touch.mouse-x - 58px - root.editor-left-padding) / 1px, "down");
+                                root.editor-pointer-event(line_index, (editor-touch.mouse-x - root.gutter-width - root.content-padding-x) / 1px, "down");
                             } else if (event.button == PointerEventButton.left && event.kind == PointerEventKind.up) {
-                                root.editor-pointer-event(line_index, (editor-touch.mouse-x - 58px - root.editor-left-padding) / 1px, "up");
+                                root.editor-pointer-event(line_index, (editor-touch.mouse-x - root.gutter-width - root.content-padding-x) / 1px, "up");
                             }
                         }
 
@@ -964,14 +1077,14 @@ export component AppWindow inherits Window {
                             if (editor-touch.pressed) {
                                 let physical_y = editor-touch.mouse-y - editor-scroll.viewport-y;
                                 let line_index = Math.floor(physical_y / (root.editor-line-height * 1px));
-                                root.editor-pointer-event(line_index, (editor-touch.mouse-x - 58px - root.editor-left-padding) / 1px, "move");
+                                root.editor-pointer-event(line_index, (editor-touch.mouse-x - root.gutter-width - root.content-padding-x) / 1px, "move");
                             }
                         }
 
                         double-clicked => {
                             let physical_y = editor-touch.mouse-y - editor-scroll.viewport-y;
                             let line_index = Math.floor(physical_y / (root.editor-line-height * 1px));
-                            root.editor-pointer-event(line_index, (editor-touch.mouse-x - 58px - root.editor-left-padding) / 1px, "double_click");
+                            root.editor-pointer-event(line_index, (editor-touch.mouse-x - root.gutter-width - root.content-padding-x) / 1px, "double_click");
                         }
                     }
         }
@@ -1474,6 +1587,19 @@ export component AppWindow inherits Window {
                     row-text-muted: root.theme-text-muted;
                     row-accent: root.theme-accent-primary;
                     toggled => { root.settings-toggle-cursor-blink(); }
+                }
+
+                ToggleRow {
+                    title: root.ui-text.cursor-smear;
+                    detail: root.ui-text.cursor-smear-detail;
+                    checked: root.settings.enable-cursor-smear;
+                    row-background: root.theme-background;
+                    row-hover: root.theme-background-alt;
+                    row-border: root.theme-border;
+                    row-text: root.theme-text;
+                    row-text-muted: root.theme-text-muted;
+                    row-accent: root.theme-accent-primary;
+                    toggled => { root.settings-toggle-cursor-smear(); }
                 }
 
                 Text {

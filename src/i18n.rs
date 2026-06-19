@@ -81,6 +81,8 @@ impl AppLanguage {
                 smooth_scroll_detail: "Animate viewport when scrolling".to_string(),
                 cursor_blink: "Cursor Blink".to_string(),
                 cursor_blink_detail: "Fade the caret in and out when idle".to_string(),
+                cursor_smear: "Cursor Smear".to_string(),
+                cursor_smear_detail: "Stretch the cursor briefly when moving in Normal mode".to_string(),
             },
             AppLanguage::Spanish => UiTextSnapshot {
                 app_title: "NeoNote".to_string(),
@@ -131,6 +133,8 @@ impl AppLanguage {
                 smooth_scroll_detail: "Animar la vista al desplazarse".to_string(),
                 cursor_blink: "Parpadeo del Cursor".to_string(),
                 cursor_blink_detail: "Desvanecer el caret al estar inactivo".to_string(),
+                cursor_smear: "Estela del Cursor".to_string(),
+                cursor_smear_detail: "Extender el cursor brevemente al moverse en modo Normal".to_string(),
             },
             AppLanguage::Japanese => UiTextSnapshot {
                 app_title: "NeoNote".to_string(),
@@ -181,6 +185,8 @@ impl AppLanguage {
                 smooth_scroll_detail: "スクロール時にビューポートをアニメーションする".to_string(),
                 cursor_blink: "カーソル点滅".to_string(),
                 cursor_blink_detail: "アイドル時にキャレットをフェードで点滅させる".to_string(),
+                cursor_smear: "カーソルスミア".to_string(),
+                cursor_smear_detail: "ノーマルモード移動時にカーソルを短く伸ばす".to_string(),
             },
         }
     }
@@ -416,4 +422,6 @@ pub struct UiTextSnapshot {
     pub smooth_scroll_detail: String,
     pub cursor_blink: String,
     pub cursor_blink_detail: String,
+    pub cursor_smear: String,
+    pub cursor_smear_detail: String,
 }

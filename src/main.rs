@@ -453,6 +453,15 @@ fn install_callbacks(
     });
 
     let weak_window = window.as_weak();
+    let controller_for_cursor_smear = Rc::clone(&controller);
+    window.on_settings_toggle_cursor_smear(move || {
+        controller_for_cursor_smear.borrow_mut().toggle_cursor_smear();
+        if let Some(window) = weak_window.upgrade() {
+            apply_snapshot(&window, &controller_for_cursor_smear.borrow().snapshot());
+        }
+    });
+
+    let weak_window = window.as_weak();
     let controller_for_editor = Rc::clone(&controller);
     let editor_activity = Rc::clone(&last_editor_activity);
     let editor_blink = Rc::clone(&blink_state);
@@ -474,8 +483,31 @@ fn install_callbacks(
         };
 
         if let Some(window) = weak_window.upgrade() {
-            apply_editor_snapshot(&window, &controller_for_editor.borrow().snapshot());
+            let snapshot = controller_for_editor.borrow().snapshot();
+            apply_editor_snapshot(&window, &snapshot);
             window.invoke_focus_editor();
+
+            if snapshot.smear_eligible && snapshot.enable_cursor_smear {
+                let gen = snapshot.cursor_smear_generation;
+                window.set_smear_opacity(0.40);
+                window.set_show_cursor_smear(true);
+                let weak_window_inner = window.as_weak();
+                slint::Timer::single_shot(std::time::Duration::from_millis(100), move || {
+                    if let Some(w) = weak_window_inner.upgrade() {
+                        if w.get_cursor_smear_generation() == gen {
+                            w.set_smear_opacity(0.0);
+                            let weak_window_inner2 = w.as_weak();
+                            slint::Timer::single_shot(std::time::Duration::from_millis(100), move || {
+                                if let Some(w2) = weak_window_inner2.upgrade() {
+                                    if w2.get_cursor_smear_generation() == gen {
+                                        w2.set_show_cursor_smear(false);
+                                    }
+                                }
+                            });
+                        }
+                    }
+                });
+            }
 
             if has_highlight {
                 let weak_window_inner = window.as_weak();
@@ -553,6 +585,7 @@ fn apply_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
         enable_cursor_glide: snapshot.settings.enable_cursor_glide,
         enable_smooth_scroll: snapshot.settings.enable_smooth_scroll,
         enable_cursor_blink: snapshot.settings.enable_cursor_blink,
+        enable_cursor_smear: snapshot.settings.enable_cursor_smear,
     });
         window.set_theme_items(
         Rc::new(VecModel::from(
@@ -620,6 +653,8 @@ fn apply_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
         smooth_scroll_detail: SharedString::from(snapshot.ui_text.smooth_scroll_detail.as_str()),
         cursor_blink: SharedString::from(snapshot.ui_text.cursor_blink.as_str()),
         cursor_blink_detail: SharedString::from(snapshot.ui_text.cursor_blink_detail.as_str()),
+        cursor_smear: SharedString::from(snapshot.ui_text.cursor_smear.as_str()),
+        cursor_smear_detail: SharedString::from(snapshot.ui_text.cursor_smear_detail.as_str()),
     });
 }
 
@@ -669,9 +704,12 @@ fn apply_editor_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
     window.set_mode_text(SharedString::from(snapshot.mode_text.as_str()));
     window.set_cursor_line(snapshot.cursor_line);
     window.set_cursor_column(snapshot.cursor_column);
+    window.set_previous_cursor_line(snapshot.previous_cursor_line);
+    window.set_previous_cursor_column(snapshot.previous_cursor_column);
     window.set_cursor_prefix(SharedString::from(snapshot.cursor_prefix.as_str()));
     window.set_cursor_cell(SharedString::from(snapshot.cursor_cell.as_str()));
     window.set_cursor_suffix(SharedString::from(snapshot.cursor_suffix.as_str()));
+    window.set_previous_cursor_prefix(SharedString::from(snapshot.previous_cursor_prefix.as_str()));
     window.set_cursor_block(snapshot.cursor_block);
     window.set_message(SharedString::from(snapshot.message.as_str()));
     window.set_has_document(snapshot.has_document);
@@ -683,6 +721,7 @@ fn apply_editor_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
     window.set_enable_cursor_glide(snapshot.enable_cursor_glide);
     window.set_enable_smooth_scroll(snapshot.enable_smooth_scroll);
     window.set_enable_cursor_blink(snapshot.enable_cursor_blink);
+    window.set_enable_cursor_smear(snapshot.enable_cursor_smear);
     window.set_cursor_insert_mode(snapshot.cursor_insert_mode);
     window.set_anim_duration_short(snapshot.animation_duration_short_ms);
     window.set_anim_duration_normal(snapshot.animation_duration_normal_ms);
@@ -690,6 +729,7 @@ fn apply_editor_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
     window.set_anim_duration_insert(snapshot.animation_duration_insert_ms);
     window.set_viewport_top_line(snapshot.viewport_top_line);
     window.set_cursor_animation_kind(snapshot.cursor_animation_kind);
+    window.set_cursor_smear_generation(snapshot.cursor_smear_generation);
     window.set_scroll_animation_kind(snapshot.scroll_animation_kind);
     window.set_search_match_current(snapshot.search_match_current);
     window.set_search_match_total(snapshot.search_match_total);

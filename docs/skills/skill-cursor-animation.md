@@ -1,8 +1,8 @@
-# Skill: Cursor Animation (blink + glide)
+# Skill: Cursor Animation (blink + glide + smear)
 
-Captures the rules and gotchas for the two cursor visual effects in NeoNote:
-blinking and glide. Both are driven from Rust-owned editor state and rendered
-by a single floating Slint overlay rectangle.
+Captures the rules and gotchas for the three cursor visual effects in NeoNote:
+blinking, glide, and smear. All are driven from Rust-owned editor state and
+rendered by Slint.
 
 ## Architecture
 
@@ -40,6 +40,35 @@ by a single floating Slint overlay rectangle.
 - Scroll animation is forced to `Immediate` in Insert mode so the viewport
   snaps-to-cursor and typed text never drifts.
 
+## Smear (1.1.0)
+
+- **Rust controller** (`src/app.rs`): owns `previous_cursor_line`,
+  `previous_cursor_column`, and `cursor_smear_generation`. The function
+  `classify_cursor_smear_eligible()` decides whether a movement triggers the
+  effect. It excludes Insert/Replace/Command/Search modes and movements beyond
+  `MAX_VERTICAL_SMEAR_LINES` (8) or `MAX_HORIZONTAL_SMEAR_COLUMNS` (24).
+- **Snapshot** (`AppSnapshot`): carries `previous_cursor_line`,
+  `previous_cursor_column`, `previous_cursor_prefix`, `cursor_smear_generation`,
+  `smear_eligible`, and `enable_cursor_smear`.
+- **Slint rendering** (`ui/app-window.slint`):
+  - `previous-cursor-prefix-measure` is an invisible Text that measures the text
+    before the previous cursor column, mirroring `cursor-prefix-measure`.
+  - `scroll-viewport-offset` tracks `editor-scroll.viewport-y` through a
+    `changed viewport-y` handler so the smear overlay stays aligned with the
+    scrolled content even though it is rendered outside the `ScrollView`.
+  - Computed `smear-x/y/width/height` stretch between current and previous
+    cursor pixel positions for horizontal or vertical movement only; diagonal
+    movement disables the effect.
+  - A second `Rectangle` overlay renders the smear with
+    `theme-cursor.with-alpha(smear-opacity)` and `border-radius: 2px`.
+- **Opacity animation** (`src/main.rs`): a one-shot `slint::Timer` sets
+  `smear-opacity = 0.40`, waits 100 ms, then sets `smear-opacity = 0.0`. The
+  Slint `animate opacity` block interpolates the fade. A generation counter
+  guards the timers so rapid repeated movements never queue stale fades.
+- Smear only fires when `enable_animations && enable_cursor_glide &&
+  enable_cursor_smear` are all true. Settings UI toggle lives in the Editor
+  section.
+
 ## Visual Selection
 
 - The selection rectangle uses `border-radius: 4px` for rounded corners.
@@ -63,6 +92,4 @@ by a single floating Slint overlay rectangle.
   to a `_blink_timer` variable (like the IPC timer) so it is not dropped early.
 - `slint::Timer::start` with `TimerMode::Repeated` fires on the UI thread; keep
   the closure cheap (read a config bool, compute elapsed, set one property).
-- The cursor trail feature was removed entirely (buggy, leaked across documents,
-  rendered beyond line text). Do not reintroduce it without per-document state
-  and proper line-length validation.
+

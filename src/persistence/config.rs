@@ -33,6 +33,8 @@ pub struct AppConfig {
     pub enable_smooth_scroll: bool,
     #[serde(default = "default_true")]
     pub enable_cursor_blink: bool,
+    #[serde(default = "default_true")]
+    pub enable_cursor_smear: bool,
     pub default_open_folder: Option<String>,
     pub keybindings: serde_json::Map<String, serde_json::Value>,
 }
@@ -67,6 +69,7 @@ impl Default for AppConfig {
             enable_cursor_glide: true,
             enable_smooth_scroll: true,
             enable_cursor_blink: true,
+            enable_cursor_smear: true,
             default_open_folder: None,
             keybindings: serde_json::Map::new(),
         }

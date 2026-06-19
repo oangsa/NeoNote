@@ -26,6 +26,35 @@ pub enum ScrollAnimationKind {
     LargeJump,
 }
 
+pub const MAX_HORIZONTAL_SMEAR_COLUMNS: usize = 24;
+pub const MAX_VERTICAL_SMEAR_LINES: usize = 8;
+
+/// Determine whether a cursor movement should trigger the cursor smear effect.
+/// This is independent of cursor glide classification and uses its own distance limits.
+pub fn classify_cursor_smear_eligible(
+    previous_line: usize,
+    previous_column: usize,
+    current_line: usize,
+    current_column: usize,
+    mode: VimMode,
+) -> bool {
+    if matches!(
+        mode,
+        VimMode::Insert | VimMode::Replace | VimMode::Command | VimMode::Search(_)
+    ) {
+        return false;
+    }
+
+    if current_line == previous_line && current_column == previous_column {
+        return false;
+    }
+
+    let line_delta = current_line.abs_diff(previous_line);
+    let column_delta = current_column.abs_diff(previous_column);
+
+    line_delta <= MAX_VERTICAL_SMEAR_LINES && column_delta <= MAX_HORIZONTAL_SMEAR_COLUMNS
+}
+
 pub struct AppController {
     paths: AppDataPaths,
     pub config: AppConfig,
@@ -45,6 +74,9 @@ pub struct AppController {
     cursor_animation_kind: CursorAnimationKind,
     scroll_animation_kind: ScrollAnimationKind,
     window_height_px: f32,
+    previous_cursor_line: usize,
+    previous_cursor_column: usize,
+    cursor_smear_generation: i32,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -59,9 +91,12 @@ pub struct AppSnapshot {
     pub mode_color: String,
     pub cursor_line: i32,
     pub cursor_column: i32,
+    pub previous_cursor_line: i32,
+    pub previous_cursor_column: i32,
     pub cursor_prefix: String,
     pub cursor_cell: String,
     pub cursor_suffix: String,
+    pub previous_cursor_prefix: String,
     pub cursor_block: bool,
     pub message: String,
     pub has_document: bool,
@@ -78,6 +113,7 @@ pub struct AppSnapshot {
     pub enable_cursor_glide: bool,
     pub enable_smooth_scroll: bool,
     pub enable_cursor_blink: bool,
+    pub enable_cursor_smear: bool,
     pub cursor_insert_mode: bool,
     pub animation_duration_short_ms: i32,
     pub animation_duration_normal_ms: i32,
@@ -85,6 +121,8 @@ pub struct AppSnapshot {
     pub animation_duration_insert_ms: i32,
     pub viewport_top_line: i32,
     pub cursor_animation_kind: i32,
+    pub cursor_smear_generation: i32,
+    pub smear_eligible: bool,
     pub scroll_animation_kind: i32,
     pub search_match_current: i32,
     pub search_match_total: i32,
@@ -132,6 +170,7 @@ pub struct SettingsSnapshot {
     pub enable_cursor_glide: bool,
     pub enable_smooth_scroll: bool,
     pub enable_cursor_blink: bool,
+    pub enable_cursor_smear: bool,
 }
 
 impl Default for SettingsSnapshot {
@@ -165,6 +204,7 @@ impl SettingsSnapshot {
             enable_cursor_glide: config.enable_cursor_glide,
             enable_smooth_scroll: config.enable_smooth_scroll,
             enable_cursor_blink: config.enable_cursor_blink,
+            enable_cursor_smear: config.enable_cursor_smear,
         }
     }
 }
@@ -261,6 +301,9 @@ impl AppController {
             cursor_animation_kind: CursorAnimationKind::Immediate,
             scroll_animation_kind: ScrollAnimationKind::Immediate,
             window_height_px: 800.0,
+            previous_cursor_line: 0,
+            previous_cursor_column: 0,
+            cursor_smear_generation: 0,
         }
     }
 
@@ -482,6 +525,11 @@ impl AppController {
         self.save_config_silent();
     }
 
+    pub fn toggle_cursor_smear(&mut self) {
+        self.config.enable_cursor_smear = !self.config.enable_cursor_smear;
+        self.save_config_silent();
+    }
+
     pub fn flush_deferred_action(&mut self) -> bool {
         if !self.active_pane().is_open(self.active_buffer()) {
             return false;
@@ -590,6 +638,23 @@ impl AppController {
             self.cursor_animation_kind = CursorAnimationKind::SmallMove;
         } else {
             self.cursor_animation_kind = CursorAnimationKind::Immediate;
+        }
+
+        if before_line != after_line || before_col != after_col {
+            self.previous_cursor_line = before_line;
+            self.previous_cursor_column = before_col;
+        }
+
+        if self.config.enable_cursor_smear
+            && classify_cursor_smear_eligible(
+                before_line,
+                before_col,
+                after_line,
+                after_col,
+                self.active_pane().mode(self.active_buffer()),
+            )
+        {
+            self.cursor_smear_generation = self.cursor_smear_generation.wrapping_add(1);
         }
 
         if is_insert {
@@ -892,9 +957,17 @@ impl AppController {
             mode_color: self.mode_color(&mode_text),
             cursor_line: note.cursor_line(buffer) as i32,
             cursor_column: note.display_cursor_col(buffer) as i32,
+            previous_cursor_line: self.previous_cursor_line as i32,
+            previous_cursor_column: self.previous_cursor_column as i32,
             cursor_prefix: cursor.prefix,
             cursor_cell: cursor.cell,
             cursor_suffix: cursor.suffix,
+            previous_cursor_prefix: previous_cursor_prefix(
+                note,
+                buffer,
+                self.previous_cursor_line,
+                self.previous_cursor_column,
+            ),
             cursor_block: note.mode(buffer) != VimMode::Insert,
             mode_text,
             message: self.last_message.clone(),
@@ -914,6 +987,7 @@ impl AppController {
             enable_cursor_glide: self.config.enable_cursor_glide,
             enable_smooth_scroll: self.config.enable_smooth_scroll,
             enable_cursor_blink: self.config.enable_cursor_blink,
+            enable_cursor_smear: self.config.enable_cursor_smear,
             cursor_insert_mode: note.mode(buffer) == VimMode::Insert || note.mode(buffer) == VimMode::Replace,
             animation_duration_short_ms: if self.config.enable_animations { 80 } else { 0 },
             animation_duration_normal_ms: if self.config.enable_animations { 120 } else { 0 },
@@ -921,6 +995,14 @@ impl AppController {
             animation_duration_insert_ms: if self.config.enable_animations { 50 } else { 0 },
             viewport_top_line: note.viewport_top_line(buffer) as i32,
             cursor_animation_kind: self.cursor_animation_kind as i32,
+            cursor_smear_generation: self.cursor_smear_generation,
+            smear_eligible: classify_cursor_smear_eligible(
+                self.previous_cursor_line,
+                self.previous_cursor_column,
+                note.cursor_line(buffer),
+                note.display_cursor_col(buffer),
+                note.mode(buffer),
+            ),
             scroll_animation_kind: self.scroll_animation_kind as i32,
             search_match_current: note.search_match_current(buffer) as i32,
             search_match_total: note.search_match_total(buffer) as i32,
@@ -1451,7 +1533,7 @@ fn is_clipboard_paste_key(key: &str) -> bool {
 }
 
 fn pointer_column_from_x(x_pixels: f32, font_size: f32) -> usize {
-    let char_width = (font_size * 0.62).max(1.0);
+    let char_width = (font_size * 0.6).max(1.0);
     (x_pixels.max(0.0) / char_width).round() as usize
 }
 
@@ -1493,6 +1575,17 @@ fn cursor_snapshot(note: &Pane, buffer: &TextBuffer) -> CursorSnapshot {
         cell,
         suffix,
     }
+}
+
+fn previous_cursor_prefix(note: &Pane, buffer: &TextBuffer, previous_line: usize, previous_column: usize) -> String {
+    note
+        .content(buffer)
+        .split('\n')
+        .nth(previous_line)
+        .unwrap_or_default()
+        .chars()
+        .take(previous_column)
+        .collect::<String>()
 }
 
 fn editor_lines(note: &Pane, buffer: &TextBuffer) -> Vec<EditorLineSnapshot> {
@@ -1616,6 +1709,62 @@ mod tests {
         assert_eq!(tabs[0].title, "second.txt");
         assert_eq!(tabs[1].title, "first.txt");
         assert_eq!(controller.active_note().content(controller.active_buffer()), "two");
+    }
+
+    #[test]
+    fn same_line_small_move_is_smear_eligible() {
+        assert!(classify_cursor_smear_eligible(5, 3, 5, 7, VimMode::Normal));
+    }
+
+    #[test]
+    fn same_column_small_move_is_smear_eligible() {
+        assert!(classify_cursor_smear_eligible(5, 3, 8, 3, VimMode::Normal));
+    }
+
+    #[test]
+    fn large_horizontal_is_not_smear_eligible() {
+        assert!(!classify_cursor_smear_eligible(5, 0, 5, 50, VimMode::Normal));
+    }
+
+    #[test]
+    fn large_vertical_is_not_smear_eligible() {
+        assert!(!classify_cursor_smear_eligible(0, 3, 20, 3, VimMode::Normal));
+    }
+
+    #[test]
+    fn no_movement_is_not_smear_eligible() {
+        assert!(!classify_cursor_smear_eligible(5, 3, 5, 3, VimMode::Normal));
+    }
+
+    #[test]
+    fn insert_mode_is_not_smear_eligible() {
+        assert!(!classify_cursor_smear_eligible(5, 3, 5, 7, VimMode::Insert));
+    }
+
+    #[test]
+    fn replace_mode_is_not_smear_eligible() {
+        assert!(!classify_cursor_smear_eligible(5, 3, 5, 7, VimMode::Replace));
+    }
+
+    #[test]
+    fn command_mode_is_not_smear_eligible() {
+        assert!(!classify_cursor_smear_eligible(5, 3, 5, 7, VimMode::Command));
+    }
+
+    #[test]
+    fn search_mode_is_not_smear_eligible() {
+        assert!(!classify_cursor_smear_eligible(
+            5,
+            3,
+            5,
+            7,
+            VimMode::Search(crate::notes::SearchDirection::Forward)
+        ));
+    }
+
+    #[test]
+    fn visual_mode_is_smear_eligible() {
+        assert!(classify_cursor_smear_eligible(5, 3, 5, 7, VimMode::Visual));
     }
 
     #[test]
