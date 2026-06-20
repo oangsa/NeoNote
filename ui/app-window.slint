@@ -66,9 +66,9 @@ component SearchField inherits Rectangle {
         spacing: 8px;
 
         Text {
-            text: "⌕";
+            text: "Search";
             color: root.field-text-muted;
-            font-size: 13px;
+            font-size: 11px;
             vertical-alignment: center;
         }
 
@@ -706,12 +706,24 @@ export component AppWindow inherits Window {
                         border-color: root.theme-border.with_alpha(0.82);
                         background: root.theme-background-alt.with_alpha(0.72);
 
-                        Text {
-                            text: "▥";
-                            color: root.theme-accent-primary;
-                            font-size: 15px;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
+                        Rectangle {
+                            x: 6px;
+                            y: 6px;
+                            width: 4px;
+                            height: 13px;
+                            border-radius: 1px;
+                            background: root.theme-accent-primary.with_alpha(0.72);
+                        }
+
+                        Rectangle {
+                            x: 12px;
+                            y: 6px;
+                            width: 7px;
+                            height: 13px;
+                            border-radius: 1px;
+                            border-width: 1px;
+                            border-color: root.theme-accent-primary.with_alpha(0.72);
+                            background: transparent;
                         }
                     }
                 }
@@ -760,9 +772,9 @@ export component AppWindow inherits Window {
                             }
 
                             Text {
-                                text: "⌄";
+                                text: "v";
                                 color: root.theme-text-muted;
-                                font-size: 16px;
+                                font-size: 13px;
                                 vertical-alignment: center;
                             }
                         }
@@ -920,9 +932,9 @@ export component AppWindow inherits Window {
                                     spacing: 10px;
                                     
                                     Text {
-                                        text: "▱";
+                                        text: "";
                                         color: root.theme-text-muted;
-                                        font-size: 16px;
+                                        font-size: 1px;
                                         width: 20px;
                                         horizontal-alignment: center;
                                         vertical-alignment: center;
@@ -930,7 +942,7 @@ export component AppWindow inherits Window {
 
                                     Text {
                                         horizontal-stretch: 1;
-                                        text: tab.title + (tab.is-modified ? " ●" : "");
+                                        text: tab.title + (tab.is-modified ? " *" : "");
                                         color: tab.is-active ? root.theme-text : root.theme-text-muted;
                                         font-size: 14px;
                                         font-weight: tab.is-active ? 700 : 500;
@@ -961,7 +973,7 @@ export component AppWindow inherits Window {
                                             }
 
                                             Text {
-                                                text: "✕";
+                                                text: "x";
                                                 font-size: 13px;
                                                 color: close-touch.has-hover ? root.theme-error : root.theme-text-muted;
                                                 horizontal-alignment: center;
@@ -1028,9 +1040,9 @@ export component AppWindow inherits Window {
                     alignment: center;
 
                     CommandButton {
-                        width: 40px;
+                        width: 76px;
                         height: 40px;
-                        text: "⚙";
+                        text: "Settings";
                         background-color: root.theme-background.with_alpha(0.72);
                         hover-color: root.theme-background-alt.with_alpha(0.92);
                         command-border-color: root.theme-border.with_alpha(0.52);
@@ -1657,7 +1669,7 @@ export component AppWindow inherits Window {
                                 }
 
                                 Text {
-                                    text: "⋯";
+                                    text: "...";
                                     color: root.theme-text-muted;
                                     font-size: 18px;
                                     width: 24px;
@@ -1768,7 +1780,7 @@ export component AppWindow inherits Window {
 
                     CommandButton {
                         width: 34px;
-                        text: "×";
+                        text: "x";
                         background-color: root.theme-background;
                         hover-color: root.theme-background-alt;
                         command-border-color: transparent;
@@ -1795,7 +1807,7 @@ export component AppWindow inherits Window {
                             spacing: 4px;
 
                             SettingsNavItem {
-                                icon: "⚙";
+                                icon: "UI";
                                 text: root.ui-text.visual-section;
                                 active: root.settings-section == 0;
                                 background-color: root.theme-background-alt;
@@ -1807,7 +1819,7 @@ export component AppWindow inherits Window {
                             }
 
                             SettingsNavItem {
-                                icon: "✎";
+                                icon: "Ed";
                                 text: root.ui-text.editor-section;
                                 active: root.settings-section == 1;
                                 background-color: root.theme-background-alt;
@@ -1819,7 +1831,7 @@ export component AppWindow inherits Window {
                             }
 
                             SettingsNavItem {
-                                icon: "◇";
+                                icon: "Th";
                                 text: root.ui-text.appearance-section;
                                 active: root.settings-section == 2;
                                 background-color: root.theme-background-alt;
@@ -1831,7 +1843,7 @@ export component AppWindow inherits Window {
                             }
 
                             SettingsNavItem {
-                                icon: "⌘";
+                                icon: "V";
                                 text: root.ui-text.vim-section;
                                 active: root.settings-section == 3;
                                 background-color: root.theme-background-alt;
@@ -1843,7 +1855,7 @@ export component AppWindow inherits Window {
                             }
 
                             SettingsNavItem {
-                                icon: "↗";
+                                icon: "St";
                                 text: root.ui-text.startup-section;
                                 active: root.settings-section == 4;
                                 background-color: root.theme-background-alt;
@@ -1855,7 +1867,7 @@ export component AppWindow inherits Window {
                             }
 
                             SettingsNavItem {
-                                icon: "ⓘ";
+                                icon: "In";
                                 text: root.ui-text.window-section;
                                 active: root.settings-section == 5;
                                 background-color: root.theme-background-alt;
@@ -1964,7 +1976,7 @@ export component AppWindow inherits Window {
                                         alignment: center;
 
                                         Text {
-                                            text: "›";
+                                            text: ">";
                                             color: root.theme-text-muted;
                                             font-size: 16px;
                                             vertical-alignment: center;
@@ -2316,7 +2328,7 @@ export component AppWindow inherits Window {
                         horizontal-stretch: 1;
                         title: "Horizontal Smear";
                         subtitle: "Fast horizontal movement";
-                        code: "1   const items = getItems();\n2   process(items); ▌\n3   return items;";
+                        code: "1   const items = getItems();\n2   process(items); |\n3   return items;";
                         editor-font: root.editor-font-family;
                         card-background: root.theme-background;
                         card-border: root.theme-border;
@@ -2340,7 +2352,7 @@ export component AppWindow inherits Window {
                         horizontal-stretch: 1;
                         title: "No Smear";
                         subtitle: "Large jumps & insert mode";
-                        code: "1   function save() {\n2     validate();\n3\n4     // insert mode\n5     const data = ▌";
+                        code: "1   function save() {\n2     validate();\n3\n4     // insert mode\n5     const data = |";
                         editor-font: root.editor-font-family;
                         card-background: root.theme-background;
                         card-border: root.theme-border;
@@ -2362,7 +2374,7 @@ export component AppWindow inherits Window {
                         spacing: 8px;
 
                         Text {
-                            text: "ⓘ";
+                            text: "i";
                             color: root.theme-text-muted;
                             font-size: 14px;
                             vertical-alignment: center;
