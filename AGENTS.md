@@ -41,10 +41,6 @@ docs/skills/                 ← domain-specific skill files
 
 `src/ui/` contains legacy egui widgets — ignore it. All active UI work is in Slint.
 
-## Implementation Plan
-
-Read `docs/neonote-implementation-plan.md` before starting any task. Do not contradict it. If the architecture changes, update the plan in the same task.
-
 ## Slint ↔ Rust Data Flow
 
 All UI state flows through the snapshot model:
