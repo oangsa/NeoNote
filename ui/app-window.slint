@@ -522,15 +522,51 @@ export component AppWindow inherits Window {
     in property <string> cursor-suffix: "";
     in property <string> previous-cursor-prefix: "";
     in property <bool> cursor-block: true;
-    in property <length> editor-left-padding: 12px;
-    in property <float> editor-line-height: 17;
-    in property <float> editor-font-size: 14;
-    in property <string> editor-font-family: "Consolas";
+
+    // Layout tokens
+    property <length> app-header-height: 66px;
+    property <length> tab-strip-height: 56px;
+    property <length> status-bar-height: 54px;
+    property <length> app-header-padding-left: 30px;
+    property <length> app-header-padding-right: 22px;
+    property <length> app-icon-size: 26px;
+    property <length> files-button-width: 116px;
+    property <length> files-button-height: 42px;
+    property <length> tab-width: 220px;
+    property <length> tab-height: 56px;
+    property <length> tab-icon-size: 18px;
+    property <length> tab-strip-padding-left: 18px;
+    property <length> tab-strip-padding-right: 20px;
+    property <length> target-gutter-width: 82px;
+    property <length> target-editor-padding-x: 26px;
+    property <length> target-editor-padding-y: 12px;
+    property <length> status-padding-left: 22px;
+    property <length> status-padding-right: 24px;
+    property <length> status-mode-pill-height: 32px;
+    property <length> status-mode-pill-min-width: 122px;
+
+    property <brush> chrome-background: #f6f7f8;
+    property <brush> chrome-surface: #ffffff;
+    property <brush> chrome-surface-hover: #f1f2f4;
+    property <brush> chrome-selected: #ffffff;
+    property <brush> chrome-border: #d9dce1;
+    property <brush> chrome-border-soft: #e7e9ed;
+    property <brush> chrome-text: #181a20;
+    property <brush> chrome-muted: #5f6671;
+    property <brush> chrome-muted-soft: #8a919d;
+    property <brush> chrome-editor-line: #f4f6f8;
+    property <brush> chrome-mode-fill: #e9ebef;
+    property <brush> chrome-cursor: #8b929d;
 
     // Editor metrics contract
-    property <length> gutter-width: 56px;
+    in property <length> editor-left-padding: root.target-editor-padding-x;
+    in property <float> editor-line-height: 30;
+    in property <float> editor-font-size: 21;
+    in property <string> editor-font-family: "Consolas";
+
+    property <length> gutter-width: root.target-gutter-width;
     property <length> content-padding-x: root.editor-left-padding;
-    property <length> content-padding-y: 0px;
+    property <length> content-padding-y: root.target-editor-padding-y;
     property <length> editor-content-x: root.gutter-width + root.content-padding-x;
     property <length> editor-content-width: root.has-document
         ? max(editor-scroll.width - root.gutter-width - (root.content-padding-x * 2), 0px)
@@ -692,8 +728,8 @@ export component AppWindow inherits Window {
         let line_height = root.line-height-px;
         let visible_height = editor-scroll.height;
         let viewport_target = root.viewport-top-line;
-        let target_y = viewport_target * line_height;
-        let cursor_y = root.cursor-line * line_height;
+        let target_y = root.content-padding-y + viewport_target * line_height;
+        let cursor_y = root.content-padding-y + root.cursor-line * line_height;
 
         if (cursor_y < target_y) {
             editor-scroll.viewport-y = -cursor_y;
@@ -704,9 +740,7 @@ export component AppWindow inherits Window {
         }
     }
 
-    background: root.mica-enabled
-        ? root.theme-background.with_alpha(0.45)
-        : root.theme-background;
+    background: root.chrome-background;
     animate background {
         duration: root.anim-duration-normal * 1ms;
         easing: ease-out;
@@ -716,24 +750,24 @@ export component AppWindow inherits Window {
         spacing: 0px;
 
         Rectangle {
-            height: 64px;
-            background: root.theme-background.with_alpha(0.92);
+            height: root.app-header-height;
+            background: root.chrome-background;
             animate background {
                 duration: root.anim-duration-normal * 1ms;
                 easing: ease-out;
             }
 
             HorizontalLayout {
-                padding-left: 30px;
-                padding-right: 30px;
+                padding-left: root.app-header-padding-left;
+                padding-right: root.app-header-padding-right;
                 spacing: 18px;
 
                 VerticalLayout {
                     alignment: center;
 
                     Image {
-                        width: 45px;
-                        height: 45px;
+                        width: root.app-icon-size;
+                        height: root.app-icon-size;
                         source: @image-url("../assets/icons/neonote.png");
                         image-fit: contain;
                     }
@@ -741,7 +775,7 @@ export component AppWindow inherits Window {
 
                 Text {
                     text: root.ui-text.app-title;
-                    color: root.theme-text;
+                    color: root.chrome-text;
                     font-size: 20px;
                     font-weight: 700;
                     vertical-alignment: center;
@@ -752,12 +786,12 @@ export component AppWindow inherits Window {
                     alignment: center;
 
                     files-btn := Rectangle {
-                        width: 116px;
-                        height: 40px;
+                        width: root.files-button-width;
+                        height: root.files-button-height;
                         border-radius: 8px;
                         border-width: 1px;
-                        border-color: files-touch.has-hover ? root.theme-border : root.theme-border.with_alpha(0.62);
-                        background: files-touch.has-hover ? root.theme-background-alt.with_alpha(0.92) : root.theme-background.with_alpha(0.76);
+                        border-color: files-touch.has-hover ? root.chrome-muted-soft : root.chrome-border;
+                        background: files-touch.has-hover ? root.chrome-surface-hover : root.chrome-surface;
                         animate background {
                             duration: 120ms;
                             easing: ease-out;
@@ -774,8 +808,8 @@ export component AppWindow inherits Window {
 
                             Text {
                                 text: root.ui-text.files-menu;
-                                color: root.theme-text;
-                                font-size: 15px;
+                                color: root.chrome-text;
+                                font-size: 16px;
                                 font-weight: 600;
                                 vertical-alignment: center;
                                 horizontal-stretch: 1;
@@ -784,7 +818,7 @@ export component AppWindow inherits Window {
 
                             Text {
                                 text: "v";
-                                color: root.theme-text-muted;
+                                color: root.chrome-muted;
                                 font-size: 13px;
                                 vertical-alignment: center;
                             }
@@ -798,17 +832,17 @@ export component AppWindow inherits Window {
 
                         files-popup := PopupWindow {
                             x: 0px;
-                            y: 44px;
+                            y: root.files-button-height + 4px;
                             width: 180px;
 
                             Rectangle {
-                                background: root.fluent-acrylic-base;
-                                border-color: root.fluent-stroke-control;
+                                background: root.chrome-surface;
+                                border-color: root.chrome-border;
                                 border-width: 1px;
-                                border-radius: 8px;
-                                drop-shadow-color: root.fluent-shadow-flyout;
-                                drop-shadow-blur: 20px;
-                                drop-shadow-offset-y: 8px;
+                                border-radius: 6px;
+                                drop-shadow-color: #000000.with_alpha(0.12);
+                                drop-shadow-blur: 8px;
+                                drop-shadow-offset-y: 2px;
 
                                 VerticalLayout {
                                     padding: 4px;
@@ -818,44 +852,44 @@ export component AppWindow inherits Window {
                                         text: root.ui-text.new-file;
                                         text-alignment: left;
                                         text-padding-left: 12px;
-                                        background-color: root.theme-background;
-                                        hover-color: root.theme-background-alt;
+                                        background-color: root.chrome-surface;
+                                        hover-color: root.chrome-surface-hover;
                                         command-border-color: transparent;
-                                        text-color: root.theme-text;
+                                        text-color: root.chrome-text;
                                         clicked => { root.new-file(); }
                                     }
                                     CommandButton {
                                         text: root.ui-text.open-file;
                                         text-alignment: left;
                                         text-padding-left: 12px;
-                                        background-color: root.theme-background;
-                                        hover-color: root.theme-background-alt;
+                                        background-color: root.chrome-surface;
+                                        hover-color: root.chrome-surface-hover;
                                         command-border-color: transparent;
-                                        text-color: root.theme-text;
+                                        text-color: root.chrome-text;
                                         clicked => { root.open-file(); }
                                     }
                                     Rectangle {
                                         height: 1px;
-                                        background: root.theme-border.with_alpha(0.45);
+                                        background: root.chrome-border-soft;
                                     }
                                     CommandButton {
                                         text: root.ui-text.save-file;
                                         text-alignment: left;
                                         text-padding-left: 12px;
-                                        background-color: root.theme-background;
-                                        hover-color: root.theme-background-alt;
+                                        background-color: root.chrome-surface;
+                                        hover-color: root.chrome-surface-hover;
                                         command-border-color: transparent;
-                                        text-color: root.theme-text;
+                                        text-color: root.chrome-text;
                                         clicked => { root.save-file(); }
                                     }
                                     CommandButton {
                                         text: root.ui-text.save-as-file;
                                         text-alignment: left;
                                         text-padding-left: 12px;
-                                        background-color: root.theme-background;
-                                        hover-color: root.theme-background-alt;
+                                        background-color: root.chrome-surface;
+                                        hover-color: root.chrome-surface-hover;
                                         command-border-color: transparent;
-                                        text-color: root.theme-text;
+                                        text-color: root.chrome-text;
                                         clicked => { root.save-as-file(); }
                                     }
                                 }
@@ -872,14 +906,12 @@ export component AppWindow inherits Window {
 
         Rectangle {
             height: 1px;
-            background: root.theme-border.with_alpha(0.35);
+            background: root.chrome-border;
         }
 
         Rectangle {
-            height: 42px;
-            background: root.mica-enabled
-                ? root.theme-background.with_alpha(0.55)
-                : root.theme-background.with_alpha(0.92);
+            height: root.tab-strip-height;
+            background: root.chrome-background;
 
             // Bottom border
             Rectangle {
@@ -887,28 +919,28 @@ export component AppWindow inherits Window {
                 y: parent.height - 1px;
                 width: 100%;
                 height: 1px;
-                background: root.fluent-stroke-surface;
+                background: root.chrome-border;
             }
 
             HorizontalLayout {
-                padding-left: 16px;
-                padding-right: 12px;
+                padding-left: root.tab-strip-padding-left;
+                padding-right: root.tab-strip-padding-right;
                 spacing: 10px;
 
                 ScrollView {
                     horizontal-stretch: 1;
-                    height: 42px;
+                    height: root.tab-strip-height;
 
                     HorizontalLayout {
                         spacing: 4px;
 
                         for tab in root.document-tabs: Rectangle {
-                            width: 200px;
-                            height: 42px;
+                            width: root.tab-width;
+                            height: root.tab-strip-height;
                             background: transparent;
 
                             tab-touch := TouchArea {
-                                width: parent.width - 32px;
+                                width: parent.width - 34px;
                                 height: parent.height;
                                 clicked => {
                                     root.switch-to-document(tab.index);
@@ -928,21 +960,21 @@ export component AppWindow inherits Window {
 
                             tab-card := Rectangle {
                                 width: parent.width;
-                                height: 34px;
-                                y: 4px;
+                                height: root.tab-height;
+                                y: (root.tab-strip-height - root.tab-height) / 2;
                                 x: tab-touch.pressed ? min(max(tab-touch.mouse-x - self.width / 2, -12px), 12px) : 0px;
-                                border-radius: 6px;
+                                border-radius: 7px;
                                 border-width: 1px;
                                 background: tab-touch.pressed
-                                    ? root.fluent-fill-control-secondary
+                                    ? root.chrome-surface-hover
                                     : (tab.is-active
-                                        ? root.fluent-fill-control-hover
+                                        ? root.chrome-selected
                                         : (tab-touch.has-hover
-                                            ? root.fluent-fill-control
+                                            ? root.chrome-surface-hover
                                             : transparent));
                                 border-color: tab.is-active
-                                    ? root.fluent-stroke-control.with_alpha(0.12)
-                                    : root.fluent-stroke-control.with_alpha(0.06);
+                                    ? root.chrome-border
+                                    : root.chrome-border-soft.with_alpha(tab-touch.has-hover ? 1 : 0);
                                 animate x {
                                     duration: 83ms;
                                     easing: ease-out;
@@ -957,16 +989,25 @@ export component AppWindow inherits Window {
                                 }
 
                                 HorizontalLayout {
-                                    padding-left: 12px;
-                                    padding-right: 8px;
-                                    spacing: 8px;
+                                    padding-left: 14px;
+                                    padding-right: 10px;
+                                    spacing: 10px;
+
+                                    Text {
+                                        text: "";
+                                        color: tab.is-active ? root.chrome-text : root.chrome-muted;
+                                        font-size: 12px;
+                                        width: root.tab-icon-size;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
 
                                     Text {
                                         horizontal-stretch: 1;
                                         text: tab.title + (tab.is-modified ? " *" : "");
-                                        color: tab.is-active ? root.theme-text : root.theme-text-muted;
-                                        font-size: 12px;
-                                        font-weight: tab.is-active ? 600 : 400;
+                                        color: tab.is-active ? root.chrome-text : root.chrome-muted;
+                                        font-size: 15px;
+                                        font-weight: tab.is-active ? 700 : 500;
                                         vertical-alignment: center;
                                         overflow: elide;
                                         animate color {
@@ -979,10 +1020,10 @@ export component AppWindow inherits Window {
                                         alignment: center;
 
                                         close-btn := Rectangle {
-                                            width: 16px;
-                                            height: 16px;
+                                            width: 22px;
+                                            height: 22px;
                                             border-radius: 4px;
-                                            background: close-touch.has-hover ? root.theme-error.with_alpha(0.15) : transparent;
+                                            background: close-touch.has-hover ? #eef0f3 : transparent;
                                             opacity: 1;
                                             animate background {
                                                 duration: 83ms;
@@ -991,8 +1032,8 @@ export component AppWindow inherits Window {
 
                                             Text {
                                                 text: "x";
-                                                font-size: 11px;
-                                                color: close-touch.has-hover ? root.theme-error : root.theme-text-muted.with_alpha(0.55);
+                                                font-size: 13px;
+                                                color: close-touch.has-hover ? root.chrome-text : root.chrome-muted-soft;
                                                 horizontal-alignment: center;
                                                 vertical-alignment: center;
                                                 animate color {
@@ -1013,21 +1054,21 @@ export component AppWindow inherits Window {
                         }
 
                         Rectangle {
-                        width: 48px;
-                        height: 42px;
+                        width: 54px;
+                        height: root.tab-strip-height;
                             background: transparent;
 
                             VerticalLayout {
                                 alignment: center;
 
                                 CommandButton {
-                                    width: 32px;
-                                    height: 30px;
+                                    width: 38px;
+                                    height: 38px;
                                     text: "+";
                                     background-color: transparent;
-                                    hover-color: root.fluent-fill-control-hover;
+                                    hover-color: root.chrome-surface-hover;
                                     command-border-color: transparent;
-                                    text-color: root.theme-text-muted;
+                                    text-color: root.chrome-muted;
                                     clicked => { root.new-file(); }
                                 }
                             }
@@ -1039,23 +1080,27 @@ export component AppWindow inherits Window {
                     alignment: center;
 
                     gear-btn := Rectangle {
-                        width: 30px;
-                        height: 30px;
-                        border-radius: 6px;
+                        width: 76px;
+                        height: 42px;
+                        border-radius: 8px;
+                        border-width: 1px;
+                        border-color: gear-touch.has-hover
+                            ? root.chrome-muted-soft
+                            : root.chrome-border;
                         background: gear-touch.has-hover
-                            ? root.fluent-fill-control-hover
-                            : transparent;
+                            ? root.chrome-surface-hover
+                            : root.chrome-surface;
                         animate background {
                             duration: 83ms;
                             easing: ease-out;
                         }
 
                         Text {
-                            text: "...";
-                            font-size: 14px;
+                            text: "Settings";
+                            font-size: 12px;
                             color: gear-touch.has-hover
-                                ? root.theme-text
-                                : root.theme-text-muted;
+                                ? root.chrome-text
+                                : root.chrome-muted;
                             horizontal-alignment: center;
                             vertical-alignment: center;
                             animate color {
@@ -1078,7 +1123,7 @@ export component AppWindow inherits Window {
         }
 
         Rectangle {
-            background: root.theme-background;
+            background: root.chrome-surface;
             horizontal-stretch: 1;
             vertical-stretch: 1;
 
@@ -1133,9 +1178,7 @@ export component AppWindow inherits Window {
                         y: 0px;
                         width: root.gutter-width;
                         height: 100%;
-                        background: root.mica-enabled
-                            ? root.fluent-fill-control.with_alpha(0.04)
-                            : root.theme-background-alt.with_alpha(0.38);
+                        background: #f8f9fb;
                         animate background {
                             duration: root.anim-duration-normal * 1ms;
                             easing: ease-out;
@@ -1143,13 +1186,19 @@ export component AppWindow inherits Window {
                     }
 
                     Rectangle {
+                        x: root.gutter-width - 1px;
+                        y: 0px;
+                        width: 1px;
+                        height: 100%;
+                        background: root.chrome-border;
+                    }
+
+                    Rectangle {
                         x: root.gutter-width;
                         y: 0px;
                         width: parent.width - root.gutter-width;
                         height: 100%;
-                        background: root.mica-enabled
-                            ? root.theme-background.with_alpha(0.35)
-                            : root.theme-background;
+                        background: root.chrome-surface;
                         animate background {
                             duration: root.anim-duration-normal * 1ms;
                             easing: ease-out;
@@ -1162,7 +1211,7 @@ export component AppWindow inherits Window {
                         width: parent.width - root.gutter-width - (root.content-padding-x * 2);
                         height: parent.height;
                         text: root.ui-text.launcher-hint;
-                        color: root.theme-text-muted.with_alpha(0.6);
+                        color: root.chrome-muted-soft;
                         font-family: root.editor-font-family;
                         font-size: root.editor-font-size * 1px;
                         visible: !root.has-document;
@@ -1183,32 +1232,38 @@ export component AppWindow inherits Window {
                         for shape in root.selection-highlight-shapes: Path {
                             property <length> cell-width: char-width-measure.preferred-width;
                             x: root.editor-content-x + shape.left-column * cell-width;
-                            y: shape.top-line * root.line-height-px;
+                            y: root.content-padding-y + shape.top-line * root.line-height-px;
                             width: max(shape.width-cells * cell-width, cell-width);
                             height: max(shape.height-lines * root.line-height-px, root.line-height-px);
                             viewbox-width: max(shape.width-cells, 1);
                             viewbox-height: max(shape.height-lines, 1);
                             fit: fill;
                             commands: shape.path-data;
-                            fill: root.theme-accent-primary.with_alpha(0.18);
+                            fill: #5d86c8.with_alpha(0.18);
                         }
 
                         VerticalLayout {
                             width: 100%;
                             spacing: 0px;
 
+                            Rectangle {
+                                height: root.content-padding-y;
+                                width: 100%;
+                                background: transparent;
+                            }
+
                             for line in root.editor-lines: Rectangle {
                                 height: root.line-height-px;
                                 width: 100%;
-                                background: line.is-search-match ? root.theme-warning.with_alpha(0.14) : (line.is-cursor-line ? root.fluent-fill-control.with_alpha(0.06) : transparent);
+                                background: line.is-search-match ? #ffe7a8.with_alpha(0.55) : (line.is-cursor-line ? root.chrome-editor-line : transparent);
 
                                 Text {
                                     x: 0px;
                                     y: 0px;
-                                    width: root.gutter-width - 10px;
+                                    width: root.gutter-width - 20px;
                                     height: root.line-height-px;
                                     text: line.number;
-                                    color: line.is-cursor-line ? root.theme-text : root.theme-text-muted.with_alpha(0.88);
+                                    color: line.is-cursor-line ? root.chrome-text : root.chrome-muted;
                                     font-family: root.editor-font-family;
                                     font-size: root.editor-font-size * 1px;
                                     horizontal-alignment: right;
@@ -1225,7 +1280,7 @@ export component AppWindow inherits Window {
                                     width: root.editor-content-width;
                                     height: root.line-height-px;
                                     text: line.text;
-                                    color: root.theme-text;
+                                    color: root.chrome-text;
                                     font-family: root.editor-font-family;
                                     font-size: root.editor-font-size * 1px;
                                     vertical-alignment: center;
@@ -1256,7 +1311,7 @@ export component AppWindow inherits Window {
                             y: root.smear-y;
                             width: root.smear-width;
                             height: root.smear-height;
-                            background: root.theme-cursor.with-alpha(root.smear-opacity);
+                            background: root.chrome-cursor.with-alpha(root.smear-opacity);
                             animate opacity {
                                 duration: 100ms;
                                 easing: ease-out;
@@ -1308,7 +1363,7 @@ export component AppWindow inherits Window {
                             y: root.cursor-target-y;
                             height: root.cursor-height;
                             width: root.has-document ? root.cursor-width : 0px;
-                            background: root.cursor-block ? root.theme-cursor.with-alpha(0.45) : root.mode-color;
+                            background: root.cursor-block ? root.chrome-cursor.with-alpha(0.45) : root.chrome-text;
                             border-radius: 0px;
                             opacity: root.has-document && (!root.enable-cursor-blink || root.cursor-blink-visible) ? 1.0 : 0.0;
                             animate x {
@@ -1344,27 +1399,27 @@ export component AppWindow inherits Window {
                         }
 
                         pointer-event(event) => {
-                            let physical_y = editor-touch.mouse-y - editor-scroll.viewport-y;
+                            let physical_y = editor-touch.mouse-y - editor-scroll.viewport-y - root.content-padding-y;
                             let line_index = Math.floor(physical_y / root.line-height-px);
                             if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
-                                root.editor-pointer-event(line_index, (editor-touch.mouse-x - root.gutter-width - root.content-padding-x) / 1px, "down");
+                                root.editor-pointer-event(max(line_index, 0), (editor-touch.mouse-x - root.gutter-width - root.content-padding-x) / 1px, "down");
                             } else if (event.button == PointerEventButton.left && event.kind == PointerEventKind.up) {
-                                root.editor-pointer-event(line_index, (editor-touch.mouse-x - root.gutter-width - root.content-padding-x) / 1px, "up");
+                                root.editor-pointer-event(max(line_index, 0), (editor-touch.mouse-x - root.gutter-width - root.content-padding-x) / 1px, "up");
                             }
                         }
 
                         moved => {
                             if (editor-touch.pressed) {
-                                let physical_y = editor-touch.mouse-y - editor-scroll.viewport-y;
+                                let physical_y = editor-touch.mouse-y - editor-scroll.viewport-y - root.content-padding-y;
                                 let line_index = Math.floor(physical_y / root.line-height-px);
-                                root.editor-pointer-event(line_index, (editor-touch.mouse-x - root.gutter-width - root.content-padding-x) / 1px, "move");
+                                root.editor-pointer-event(max(line_index, 0), (editor-touch.mouse-x - root.gutter-width - root.content-padding-x) / 1px, "move");
                             }
                         }
 
                         double-clicked => {
-                            let physical_y = editor-touch.mouse-y - editor-scroll.viewport-y;
+                            let physical_y = editor-touch.mouse-y - editor-scroll.viewport-y - root.content-padding-y;
                             let line_index = Math.floor(physical_y / root.line-height-px);
-                            root.editor-pointer-event(line_index, (editor-touch.mouse-x - root.gutter-width - root.content-padding-x) / 1px, "double_click");
+                            root.editor-pointer-event(max(line_index, 0), (editor-touch.mouse-x - root.gutter-width - root.content-padding-x) / 1px, "double_click");
                         }
                     }
         }
@@ -1372,33 +1427,31 @@ export component AppWindow inherits Window {
         // Status bar top border
         Rectangle {
             height: 1px;
-            background: root.theme-border.with_alpha(0.35);
+            background: root.chrome-border;
         }
 
         Rectangle {
-            height: 42px;
-            background: root.mica-enabled
-                ? root.theme-background.with_alpha(0.60)
-                : root.theme-background.with_alpha(0.96);
+            height: root.status-bar-height;
+            background: root.chrome-background;
             animate background {
                 duration: root.anim-duration-normal * 1ms;
                 easing: ease-out;
             }
 
             HorizontalLayout {
-                padding-left: 14px;
-                padding-right: 14px;
-                padding-top: 8px;
-                padding-bottom: 8px;
-                spacing: 10px;
+                padding-left: root.status-padding-left;
+                padding-right: root.status-padding-right;
+                padding-top: 10px;
+                padding-bottom: 10px;
+                spacing: 14px;
 
                 Rectangle {
-                    min-width: 72px;
-                    height: 26px;
-                    border-radius: 13px;
+                    min-width: root.status-mode-pill-min-width;
+                    height: root.status-mode-pill-height;
+                    border-radius: root.status-mode-pill-height / 2;
                     border-width: 1px;
-                    border-color: root.fluent-stroke-control;
-                    background: root.fluent-fill-control;
+                    border-color: root.chrome-border-soft;
+                    background: root.chrome-mode-fill;
                     animate background {
                         duration: root.anim-duration-normal * 1ms;
                         easing: ease-out;
@@ -1414,8 +1467,8 @@ export component AppWindow inherits Window {
 
                         Text {
                             text: root.mode-text;
-                            color: root.theme-text;
-                            font-size: 11px;
+                            color: root.chrome-text;
+                            font-size: 14px;
                             font-weight: 700;
                             letter-spacing: 0.5px;
                             horizontal-alignment: center;
@@ -1426,8 +1479,8 @@ export component AppWindow inherits Window {
 
                 Text {
                     text: root.status-text;
-                    color: root.theme-text-muted;
-                    font-size: 13px;
+                    color: root.chrome-muted;
+                    font-size: 15px;
                     font-weight: 500;
                     vertical-alignment: center;
                     horizontal-stretch: 1;
@@ -1436,7 +1489,7 @@ export component AppWindow inherits Window {
 
                 Text {
                     text: root.search-match-label;
-                    color: root.theme-accent-primary;
+                    color: #335f9f;
                     font-size: 12px;
                     font-weight: 600;
                     vertical-alignment: center;
@@ -1449,44 +1502,44 @@ export component AppWindow inherits Window {
 
                 Text {
                     text: root.status-ln-col;
-                    color: root.theme-text-muted;
-                    font-size: 12px;
+                    color: root.chrome-muted;
+                    font-size: 14px;
                     vertical-alignment: center;
                 }
                 Text {
                     text: root.status-ln-col == "" ? "" : "|";
-                    color: root.fluent-stroke-control.with_alpha(0.5);
-                    font-size: 10px;
+                    color: root.chrome-border;
+                    font-size: 13px;
                     vertical-alignment: center;
                 }
                 Text {
                     text: root.status-lines;
-                    color: root.theme-text-muted;
-                    font-size: 12px;
+                    color: root.chrome-muted;
+                    font-size: 14px;
                     vertical-alignment: center;
                 }
                 Text {
                     text: root.status-lines == "" ? "" : "|";
-                    color: root.fluent-stroke-control.with_alpha(0.5);
-                    font-size: 10px;
+                    color: root.chrome-border;
+                    font-size: 13px;
                     vertical-alignment: center;
                 }
                 Text {
                     text: root.status-words;
-                    color: root.theme-text-muted;
-                    font-size: 12px;
+                    color: root.chrome-muted;
+                    font-size: 14px;
                     vertical-alignment: center;
                 }
                 Text {
                     text: root.status-words == "" ? "" : "|";
-                    color: root.fluent-stroke-control.with_alpha(0.5);
-                    font-size: 10px;
+                    color: root.chrome-border;
+                    font-size: 13px;
                     vertical-alignment: center;
                 }
                 Text {
                     text: root.status-encoding;
-                    color: root.theme-text-muted;
-                    font-size: 12px;
+                    color: root.chrome-muted;
+                    font-size: 14px;
                     vertical-alignment: center;
                 }
             }
