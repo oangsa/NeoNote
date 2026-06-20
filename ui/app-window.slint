@@ -1171,6 +1171,8 @@ export component AppWindow inherits Window {
                                     }
 
                                     add-tab-touch := TouchArea {
+                                        width: parent.width;
+                                        height: parent.height;
                                         clicked => {
                                             root.new-file();
                                         }
@@ -1210,6 +1212,10 @@ export component AppWindow inherits Window {
                             duration: 83ms;
                             easing: ease-out;
                         }
+                        animate border-color {
+                            duration: 83ms;
+                            easing: ease-out;
+                        }
 
                         Rectangle {
                             x: (parent.width - 14px) / 2;
@@ -1225,6 +1231,10 @@ export component AppWindow inherits Window {
                                 height: 3px;
                                 border-radius: 1px;
                                 background: gear-touch.has-hover ? root.chrome-text : root.chrome-muted;
+                                animate background {
+                                    duration: 83ms;
+                                    easing: ease-out;
+                                }
                             }
 
                             Rectangle {
@@ -1234,6 +1244,10 @@ export component AppWindow inherits Window {
                                 height: 3px;
                                 border-radius: 1px;
                                 background: gear-touch.has-hover ? root.chrome-text : root.chrome-muted;
+                                animate background {
+                                    duration: 83ms;
+                                    easing: ease-out;
+                                }
                             }
 
                             Rectangle {
@@ -1243,6 +1257,10 @@ export component AppWindow inherits Window {
                                 height: 2px;
                                 border-radius: 1px;
                                 background: gear-touch.has-hover ? root.chrome-text : root.chrome-muted;
+                                animate background {
+                                    duration: 83ms;
+                                    easing: ease-out;
+                                }
                             }
 
                             Rectangle {
@@ -1252,6 +1270,10 @@ export component AppWindow inherits Window {
                                 height: 2px;
                                 border-radius: 1px;
                                 background: gear-touch.has-hover ? root.chrome-text : root.chrome-muted;
+                                animate background {
+                                    duration: 83ms;
+                                    easing: ease-out;
+                                }
                             }
 
                             Rectangle {
@@ -1263,6 +1285,10 @@ export component AppWindow inherits Window {
                                 border-width: 1px;
                                 border-color: gear-touch.has-hover ? root.chrome-text : root.chrome-muted;
                                 background: transparent;
+                                animate border-color {
+                                    duration: 83ms;
+                                    easing: ease-out;
+                                }
                             }
 
                             Rectangle {
@@ -1274,6 +1300,10 @@ export component AppWindow inherits Window {
                                 border-width: 1px;
                                 border-color: gear-touch.has-hover ? root.chrome-text : root.chrome-muted;
                                 background: transparent;
+                                animate border-color {
+                                    duration: 83ms;
+                                    easing: ease-out;
+                                }
                             }
                         }
 
