@@ -701,7 +701,7 @@ export component AppWindow inherits Window {
                     Rectangle {
                         width: 24px;
                         height: 24px;
-                        border-radius: 5px;
+                        border-radius: 6px;
                         border-width: 1px;
                         border-color: root.theme-border.with_alpha(0.7);
                         background: root.theme-surface;
@@ -774,7 +774,7 @@ export component AppWindow inherits Window {
 
                         files-popup := PopupWindow {
                             x: 0px;
-                            y: 34px;
+                            y: 48px;
                             width: 180px;
 
                             Rectangle {
@@ -1382,10 +1382,14 @@ export component AppWindow inherits Window {
                     width: 112px;
                     height: 32px;
                     border-radius: 16px;
-                    background: root.mode-color.with_alpha(0.14);
+                    background: root.theme-border.with_alpha(0.28);
                     border-width: 1px;
-                    border-color: root.mode-color.with_alpha(0.18);
+                    border-color: root.theme-border.with_alpha(0.18);
                     animate background {
+                        duration: root.anim-duration-normal * 1ms;
+                        easing: ease-out;
+                    }
+                    animate border-color {
                         duration: root.anim-duration-normal * 1ms;
                         easing: ease-out;
                     }
