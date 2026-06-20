@@ -966,8 +966,8 @@ export component AppWindow inherits Window {
                                 x: tab-touch.pressed ? min(max(tab-touch.mouse-x - self.width / 2, -12px), 12px) : 0px;
                                 border-top-left-radius: 7px;
                                 border-top-right-radius: 7px;
-                                border-bottom-left-radius: tab.is-active ? root.tab-join-curve : 7px;
-                                border-bottom-right-radius: tab.is-active ? root.tab-join-curve : 7px;
+                                border-bottom-left-radius: tab.is-active ? 0px : 7px;
+                                border-bottom-right-radius: tab.is-active ? 0px : 7px;
                                 border-width: 1px;
                                 background: tab-touch.pressed
                                     ? root.chrome-surface-hover
@@ -994,11 +994,35 @@ export component AppWindow inherits Window {
 
                                 Rectangle {
                                     visible: tab.is-active;
-                                    x: root.tab-join-curve;
+                                    x: 1px;
                                     y: parent.height - 2px;
-                                    width: parent.width - (root.tab-join-curve * 2);
+                                    width: parent.width - 2px;
                                     height: 3px;
                                     background: root.chrome-selected;
+                                }
+
+                                Path {
+                                    visible: tab.is-active;
+                                    x: -root.tab-join-curve;
+                                    y: parent.height - root.tab-join-curve - 1px;
+                                    width: root.tab-join-curve + 1px;
+                                    height: root.tab-join-curve + 1px;
+                                    viewbox-width: 5;
+                                    viewbox-height: 5;
+                                    commands: "M 5 0 Q 5 5 0 5 L 5 5 Z";
+                                    fill: root.chrome-selected;
+                                }
+
+                                Path {
+                                    visible: tab.is-active;
+                                    x: parent.width - 1px;
+                                    y: parent.height - root.tab-join-curve - 1px;
+                                    width: root.tab-join-curve + 1px;
+                                    height: root.tab-join-curve + 1px;
+                                    viewbox-width: 5;
+                                    viewbox-height: 5;
+                                    commands: "M 0 0 Q 0 5 5 5 L 0 5 Z";
+                                    fill: root.chrome-selected;
                                 }
 
                                 HorizontalLayout {
