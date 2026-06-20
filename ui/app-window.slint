@@ -1707,6 +1707,7 @@ export component AppWindow inherits Window {
                             Text {
                                 text: root.ui-text.visual-section;
                                 visible: root.settings-section == 0;
+                                height: root.settings-section == 0 ? 18px : 0px;
                                 color: root.theme-text;
                                 font-size: 14px;
                                 font-weight: 700;
@@ -1715,6 +1716,7 @@ export component AppWindow inherits Window {
 
                             ToggleRow {
                                 visible: root.settings-section == 0;
+                                height: root.settings-section == 0 ? 52px : 0px;
                                 title: root.ui-text.use-mica;
                                 detail: root.ui-text.use-mica-detail;
                                 checked: root.settings.enable-mica;
@@ -1729,6 +1731,7 @@ export component AppWindow inherits Window {
 
                             ToggleRow {
                                 visible: root.settings-section == 0;
+                                height: root.settings-section == 0 ? 52px : 0px;
                                 title: root.ui-text.enable-animations;
                                 detail: root.ui-text.enable-animations-detail;
                                 checked: root.settings.enable-animations;
@@ -1744,6 +1747,7 @@ export component AppWindow inherits Window {
                             Text {
                                 text: root.ui-text.appearance-section;
                                 visible: root.settings-section == 2;
+                                height: root.settings-section == 2 ? 18px : 0px;
                                 color: root.theme-text;
                                 font-size: 15px;
                                 font-weight: 700;
@@ -1751,7 +1755,7 @@ export component AppWindow inherits Window {
 
                             Rectangle {
                                 visible: root.settings-section == 2;
-                                height: 48px;
+                                height: root.settings-section == 2 ? 48px : 0px;
                                 border-radius: 6px;
                                 background: touch-theme.has-hover ? root.theme-background-alt : root.theme-background;
                                 border-width: 1px;
@@ -1801,6 +1805,7 @@ export component AppWindow inherits Window {
                             Text {
                                 text: root.ui-text.editor-section;
                                 visible: root.settings-section == 1;
+                                height: root.settings-section == 1 ? 18px : 0px;
                                 color: root.theme-text;
                                 font-size: 14px;
                                 font-weight: 700;
@@ -1809,6 +1814,7 @@ export component AppWindow inherits Window {
 
                             NumericSettingRow {
                                 visible: root.settings-section == 1;
+                                height: root.settings-section == 1 ? 48px : 0px;
                                 title: root.ui-text.language;
                                 value: root.settings.language-label;
                                 row-background: root.theme-background;
@@ -1822,6 +1828,7 @@ export component AppWindow inherits Window {
 
                             NumericSettingRow {
                                 visible: root.settings-section == 1;
+                                height: root.settings-section == 1 ? 48px : 0px;
                                 title: root.ui-text.font-size;
                                 value: root.settings.font-size-label;
                                 row-background: root.theme-background;
@@ -1835,6 +1842,7 @@ export component AppWindow inherits Window {
 
                             NumericSettingRow {
                                 visible: root.settings-section == 1;
+                                height: root.settings-section == 1 ? 48px : 0px;
                                 title: root.ui-text.line-height;
                                 value: root.settings.line-height-label;
                                 row-background: root.theme-background;
@@ -1848,6 +1856,7 @@ export component AppWindow inherits Window {
 
                             NumericSettingRow {
                                 visible: root.settings-section == 1;
+                                height: root.settings-section == 1 ? 48px : 0px;
                                 title: root.ui-text.tab-size;
                                 value: root.settings.tab-size-label;
                                 row-background: root.theme-background;
@@ -1861,6 +1870,7 @@ export component AppWindow inherits Window {
 
                             ToggleRow {
                                 visible: root.settings-section == 1;
+                                height: root.settings-section == 1 ? 52px : 0px;
                                 title: root.ui-text.word-wrap;
                                 detail: root.ui-text.word-wrap-detail;
                                 checked: root.settings.word-wrap;
@@ -1875,6 +1885,7 @@ export component AppWindow inherits Window {
 
                             ToggleRow {
                                 visible: root.settings-section == 1;
+                                height: root.settings-section == 1 ? 52px : 0px;
                                 title: root.ui-text.cursor-glide;
                                 detail: root.ui-text.cursor-glide-detail;
                                 checked: root.settings.enable-cursor-glide;
@@ -1889,6 +1900,7 @@ export component AppWindow inherits Window {
 
                             ToggleRow {
                                 visible: root.settings-section == 1;
+                                height: root.settings-section == 1 ? 52px : 0px;
                                 title: root.ui-text.smooth-scroll;
                                 detail: root.ui-text.smooth-scroll-detail;
                                 checked: root.settings.enable-smooth-scroll;
@@ -1903,6 +1915,7 @@ export component AppWindow inherits Window {
 
                             ToggleRow {
                                 visible: root.settings-section == 1;
+                                height: root.settings-section == 1 ? 52px : 0px;
                                 title: root.ui-text.cursor-blink;
                                 detail: root.ui-text.cursor-blink-detail;
                                 checked: root.settings.enable-cursor-blink;
@@ -1918,6 +1931,7 @@ export component AppWindow inherits Window {
                             Text {
                                 text: root.ui-text.vim-section;
                                 visible: root.settings-section == 3;
+                                height: root.settings-section == 3 ? 18px : 0px;
                                 color: root.theme-text;
                                 font-size: 14px;
                                 font-weight: 700;
@@ -1926,6 +1940,7 @@ export component AppWindow inherits Window {
 
                             ToggleRow {
                                 visible: root.settings-section == 3;
+                                height: root.settings-section == 3 ? 52px : 0px;
                                 title: root.ui-text.sync-clipboard;
                                 detail: root.ui-text.sync-clipboard-detail;
                                 checked: root.settings.sync-clipboard;
@@ -1941,6 +1956,7 @@ export component AppWindow inherits Window {
                             Text {
                                 text: root.ui-text.startup-section;
                                 visible: root.settings-section == 4;
+                                height: root.settings-section == 4 ? 18px : 0px;
                                 color: root.theme-text;
                                 font-size: 14px;
                                 font-weight: 700;
@@ -1949,6 +1965,7 @@ export component AppWindow inherits Window {
 
                             ToggleRow {
                                 visible: root.settings-section == 4;
+                                height: root.settings-section == 4 ? 52px : 0px;
                                 title: root.ui-text.restore-last-session;
                                 detail: root.ui-text.restore-last-session-detail;
                                 checked: root.settings.restore-last-session;
@@ -1963,6 +1980,7 @@ export component AppWindow inherits Window {
 
                             ToggleRow {
                                 visible: root.settings-section == 4;
+                                height: root.settings-section == 4 ? 52px : 0px;
                                 title: root.ui-text.show-launcher-on-startup;
                                 detail: root.ui-text.show-launcher-on-startup-detail;
                                 checked: root.settings.show-launcher-on-startup;
@@ -1978,6 +1996,7 @@ export component AppWindow inherits Window {
                             Text {
                                 text: root.ui-text.window-section;
                                 visible: root.settings-section == 5;
+                                height: root.settings-section == 5 ? 18px : 0px;
                                 color: root.theme-text;
                                 font-size: 14px;
                                 font-weight: 700;
@@ -1986,6 +2005,7 @@ export component AppWindow inherits Window {
 
                             ToggleRow {
                                 visible: root.settings-section == 5;
+                                height: root.settings-section == 5 ? 52px : 0px;
                                 title: root.ui-text.remember-window-geometry;
                                 detail: root.ui-text.remember-window-geometry-detail;
                                 checked: root.settings.remember-window-geometry;
@@ -2000,6 +2020,7 @@ export component AppWindow inherits Window {
 
                             ToggleRow {
                                 visible: root.settings-section == 5;
+                                height: root.settings-section == 5 ? 52px : 0px;
                                 title: root.ui-text.blur-behind;
                                 detail: root.ui-text.blur-behind-detail;
                                 checked: root.settings.blur-behind;
@@ -2014,6 +2035,7 @@ export component AppWindow inherits Window {
 
                             NumericSettingRow {
                                 visible: root.settings-section == 5;
+                                height: root.settings-section == 5 ? 48px : 0px;
                                 title: root.ui-text.window-opacity;
                                 value: root.settings.window-opacity-label;
                                 row-background: root.theme-background;
