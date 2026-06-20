@@ -907,6 +907,25 @@ export component AppWindow inherits Window {
                             height: 42px;
                             background: transparent;
 
+                            tab-touch := TouchArea {
+                                width: parent.width - 32px;
+                                height: parent.height;
+                                clicked => {
+                                    root.switch-to-document(tab.index);
+                                }
+                                moved => {
+                                    if (!tab-touch.pressed) {
+                                        return;
+                                    }
+
+                                    if (tab-touch.mouse-x < -24px) {
+                                        root.reorder-document(tab.index, tab.index - 1);
+                                    } else if (tab-touch.mouse-x > self.width + 24px) {
+                                        root.reorder-document(tab.index, tab.index + 1);
+                                    }
+                                }
+                            }
+
                             tab-card := Rectangle {
                                 width: parent.width;
                                 height: 34px;
@@ -988,24 +1007,6 @@ export component AppWindow inherits Window {
                                                 }
                                             }
                                         }
-                                    }
-                                }
-                            }
-
-                            tab-touch := TouchArea {
-                                width: parent.width - 24px;
-                                clicked => {
-                                    root.switch-to-document(tab.index);
-                                }
-                                moved => {
-                                    if (!tab-touch.pressed) {
-                                        return;
-                                    }
-
-                                    if (tab-touch.mouse-x < -24px) {
-                                        root.reorder-document(tab.index, tab.index - 1);
-                                    } else if (tab-touch.mouse-x > self.width + 24px) {
-                                        root.reorder-document(tab.index, tab.index + 1);
                                     }
                                 }
                             }
