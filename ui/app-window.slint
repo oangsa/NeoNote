@@ -1062,24 +1062,37 @@ export component AppWindow inherits Window {
                             }
                         }
 
-                        Rectangle {
-                        width: 36px;
-                        height: root.tab-strip-height;
-                            background: transparent;
+                    }
+                }
 
-                            VerticalLayout {
-                                alignment: center;
+                VerticalLayout {
+                    alignment: center;
 
-                                CommandButton {
-                                    width: 28px;
-                                    height: 28px;
-                                    text: "+";
-                                    background-color: transparent;
-                                    hover-color: root.chrome-surface-hover;
-                                    command-border-color: transparent;
-                                    text-color: root.chrome-muted;
-                                    clicked => { root.new-file(); }
-                                }
+                    add-tab-btn := Rectangle {
+                        width: 28px;
+                        height: 28px;
+                        border-radius: 4px;
+                        background: add-tab-touch.has-hover ? root.chrome-surface-hover : transparent;
+                        animate background {
+                            duration: 83ms;
+                            easing: ease-out;
+                        }
+
+                        Text {
+                            text: "+";
+                            color: add-tab-touch.has-hover ? root.chrome-text : root.chrome-muted;
+                            font-size: 16px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            animate color {
+                                duration: 83ms;
+                                easing: ease-out;
+                            }
+                        }
+
+                        add-tab-touch := TouchArea {
+                            clicked => {
+                                root.new-file();
                             }
                         }
                     }
