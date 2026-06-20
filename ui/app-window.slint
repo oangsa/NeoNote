@@ -487,8 +487,8 @@ export struct UiText {
 
 export component AppWindow inherits Window {
     title: root.ui-text.app-title;
-    preferred-width: 1280px;
-    preferred-height: 800px;
+    preferred-width: 1240px;
+    preferred-height: 840px;
 
     in property <string> file-title: "Untitled";
     in property <string> file-path: "";
@@ -508,13 +508,13 @@ export component AppWindow inherits Window {
     in property <string> cursor-suffix: "";
     in property <string> previous-cursor-prefix: "";
     in property <bool> cursor-block: true;
-    in property <length> editor-left-padding: 14px;
+    in property <length> editor-left-padding: 22px;
     in property <float> editor-line-height: 17;
     in property <float> editor-font-size: 14;
     in property <string> editor-font-family: "Consolas";
 
     // Editor metrics contract
-    property <length> gutter-width: 58px;
+    property <length> gutter-width: 78px;
     property <length> content-padding-x: root.editor-left-padding;
     property <length> content-padding-y: 0px;
     property <length> editor-content-x: root.gutter-width + root.content-padding-x;
@@ -683,25 +683,25 @@ export component AppWindow inherits Window {
         spacing: 0px;
 
         Rectangle {
-            height: 42px;
-            background: root.theme-background-alt;
+            height: 64px;
+            background: root.theme-background-alt.with_alpha(0.86);
             animate background {
                 duration: root.anim-duration-normal * 1ms;
                 easing: ease-out;
             }
 
             HorizontalLayout {
-                padding-left: 16px;
-                padding-right: 8px;
-                spacing: 12px;
+                padding-left: 28px;
+                padding-right: 16px;
+                spacing: 20px;
 
                 VerticalLayout {
                     alignment: center;
 
                     Rectangle {
-                        width: 20px;
-                        height: 20px;
-                        border-radius: 4px;
+                        width: 24px;
+                        height: 24px;
+                        border-radius: 5px;
                         border-width: 1px;
                         border-color: root.theme-border.with_alpha(0.7);
                         background: root.theme-surface;
@@ -709,7 +709,7 @@ export component AppWindow inherits Window {
                         Text {
                             text: "▥";
                             color: root.theme-accent-primary;
-                            font-size: 12px;
+                            font-size: 14px;
                             horizontal-alignment: center;
                             vertical-alignment: center;
                         }
@@ -719,7 +719,7 @@ export component AppWindow inherits Window {
                 Text {
                     text: root.ui-text.app-title;
                     color: root.theme-text;
-                    font-size: 14px;
+                    font-size: 20px;
                     font-weight: 700;
                     vertical-alignment: center;
                     letter-spacing: 0px;
@@ -729,12 +729,12 @@ export component AppWindow inherits Window {
                     alignment: center;
 
                     files-btn := Rectangle {
-                        width: 72px;
-                        height: 28px;
-                        border-radius: 6px;
+                        width: 112px;
+                        height: 42px;
+                        border-radius: 8px;
                         border-width: 1px;
-                        border-color: files-touch.has-hover ? root.theme-border : root.theme-border.with_alpha(0.55);
-                        background: files-touch.has-hover ? root.theme-surface : root.theme-background;
+                        border-color: files-touch.has-hover ? root.theme-border : root.theme-border.with_alpha(0.72);
+                        background: files-touch.has-hover ? root.theme-surface : root.theme-background.with_alpha(0.62);
                         animate background {
                             duration: 120ms;
                             easing: ease-out;
@@ -745,14 +745,14 @@ export component AppWindow inherits Window {
                         }
 
                         HorizontalLayout {
-                            padding-left: 12px;
-                            padding-right: 8px;
-                            spacing: 6px;
+                            padding-left: 18px;
+                            padding-right: 14px;
+                            spacing: 10px;
 
                             Text {
                                 text: root.ui-text.files-menu;
                                 color: root.theme-text;
-                                font-size: 12px;
+                                font-size: 16px;
                                 font-weight: 600;
                                 vertical-alignment: center;
                                 horizontal-stretch: 1;
@@ -761,7 +761,7 @@ export component AppWindow inherits Window {
                             Text {
                                 text: "⌄";
                                 color: root.theme-text-muted;
-                                font-size: 12px;
+                                font-size: 16px;
                                 vertical-alignment: center;
                             }
                         }
@@ -845,8 +845,8 @@ export component AppWindow inherits Window {
                 }
 
                 for control in ["−", "□", "×"]: Rectangle {
-                    width: 44px;
-                    height: 42px;
+                    width: 56px;
+                    height: 64px;
                     background: control-touch.has-hover ? root.theme-border.with_alpha(0.28) : transparent;
                     animate background {
                         duration: 120ms;
@@ -856,7 +856,7 @@ export component AppWindow inherits Window {
                     Text {
                         text: control;
                         color: root.theme-text;
-                        font-size: 14px;
+                        font-size: 18px;
                         horizontal-alignment: center;
                         vertical-alignment: center;
                     }
@@ -872,38 +872,38 @@ export component AppWindow inherits Window {
         }
 
         Rectangle {
-            height: 34px;
-            background: root.theme-background-alt;
+            height: 56px;
+            background: root.theme-background-alt.with_alpha(0.72);
 
             HorizontalLayout {
-                padding-left: 12px;
-                padding-right: 10px;
-                spacing: 8px;
+                padding-left: 18px;
+                padding-right: 18px;
+                spacing: 12px;
 
                 ScrollView {
                     horizontal-stretch: 1;
-                    height: 34px;
+                    height: 56px;
                     
                     HorizontalLayout {
-                        spacing: 1px;
+                        spacing: 4px;
                         
                         for tab in root.document-tabs: Rectangle {
-                            width: 150px;
-                            height: 34px;
+                            width: 226px;
+                            height: 56px;
                             background: transparent;
                             
                             tab-card := Rectangle {
                                 width: parent.width;
-                                height: parent.height - 4px;
-                                y: 4px;
+                                height: 44px;
+                                y: 12px;
                                 x: tab-touch.pressed ? min(max(tab-touch.mouse-x - self.width / 2, -18px), 18px) : 0px;
                                 background: tab-touch.pressed
                                     ? root.theme-border
-                                    : (tab.is-active ? root.theme-background : (tab-touch.has-hover ? root.theme-background : transparent));
-                                border-top-left-radius: 6px;
-                                border-top-right-radius: 6px;
-                                border-width: tab.is-active ? 1px : 0px;
-                                border-color: root.theme-border.with_alpha(0.55);
+                                    : (tab.is-active ? root.theme-background : (tab-touch.has-hover ? root.theme-surface.with_alpha(0.48) : transparent));
+                                border-top-left-radius: 8px;
+                                border-top-right-radius: 8px;
+                                border-width: tab.is-active || tab-touch.has-hover ? 1px : 0px;
+                                border-color: root.theme-border.with_alpha(tab.is-active ? 0.68 : 0.34);
                                 opacity: tab-touch.pressed ? 0.98 : 1;
                                 animate x {
                                     duration: 120ms;
@@ -920,12 +920,11 @@ export component AppWindow inherits Window {
 
                                 // Active tab accent line
                                 Rectangle {
-                                    x: 6px;
-                                    y: parent.height - 2px;
-                                    width: parent.width - 12px;
-                                    height: 2px;
-                                    border-radius: 2px;
-                                    background: tab.is-active ? root.theme-accent-primary : transparent;
+                                    x: 0px;
+                                    y: parent.height - 1px;
+                                    width: parent.width;
+                                    height: 1px;
+                                    background: tab.is-active ? root.theme-background : transparent;
                                     animate background {
                                         duration: 140ms;
                                         easing: ease-out;
@@ -933,15 +932,15 @@ export component AppWindow inherits Window {
                                 }
 
                                 HorizontalLayout {
-                                    padding-left: 10px;
-                                    padding-right: 6px;
-                                    spacing: 4px;
+                                    padding-left: 18px;
+                                    padding-right: 12px;
+                                    spacing: 10px;
                                     
                                     Text {
-                                        text: "▣";
+                                        text: "▱";
                                         color: root.theme-text-muted;
-                                        font-size: 10px;
-                                        width: 14px;
+                                        font-size: 18px;
+                                        width: 20px;
                                         horizontal-alignment: center;
                                         vertical-alignment: center;
                                     }
@@ -950,8 +949,8 @@ export component AppWindow inherits Window {
                                         horizontal-stretch: 1;
                                         text: tab.title + (tab.is-modified ? " ●" : "");
                                         color: tab.is-active ? root.theme-text : root.theme-text-muted;
-                                        font-size: 12px;
-                                        font-weight: tab.is-active ? 600 : 400;
+                                        font-size: 14px;
+                                        font-weight: tab.is-active ? 700 : 500;
                                         vertical-alignment: center;
                                         overflow: elide;
                                         animate color {
@@ -964,8 +963,8 @@ export component AppWindow inherits Window {
                                         alignment: center;
                                         
                                         close-btn := Rectangle {
-                                            width: 16px;
-                                            height: 16px;
+                                            width: 24px;
+                                            height: 24px;
                                             border-radius: 4px;
                                             background: close-touch.has-hover ? root.theme-error.with_alpha(0.2) : transparent;
                                             opacity: tab.is-active || tab-touch.has-hover ? 1 : 0;
@@ -980,7 +979,7 @@ export component AppWindow inherits Window {
 
                                             Text {
                                                 text: "×";
-                                                font-size: 13px;
+                                                font-size: 18px;
                                                 color: close-touch.has-hover ? root.theme-error : root.theme-text-muted;
                                                 horizontal-alignment: center;
                                                 vertical-alignment: center;
@@ -1022,21 +1021,23 @@ export component AppWindow inherits Window {
                 }
 
                 CommandButton {
-                    width: 30px;
+                    width: 44px;
+                    height: 40px;
                     text: "+";
                     background-color: root.theme-background-alt;
-                    hover-color: root.theme-background;
+                    hover-color: root.theme-surface;
                     command-border-color: transparent;
                     text-color: root.theme-text-muted;
                     clicked => { root.new-file(); }
                 }
 
                 CommandButton {
-                    width: 30px;
+                    width: 42px;
+                    height: 40px;
                     text: "⚙";
-                    background-color: root.theme-background;
+                    background-color: root.theme-background.with_alpha(0.65);
                     hover-color: root.theme-surface;
-                    command-border-color: root.theme-border.with_alpha(0.55);
+                    command-border-color: root.theme-border.with_alpha(0.62);
                     text-color: root.theme-text-muted;
                     clicked => {
                         root.settings-section = 0;
@@ -1106,9 +1107,9 @@ export component AppWindow inherits Window {
 
                     editor-viewport := Rectangle {
                     x: 0px;
-                    y: 16px;
+                    y: 12px;
                     width: 100%;
-                    height: parent.height - 32px;
+                    height: parent.height - 24px;
 
                     Rectangle {
                         x: 0px;
@@ -1192,7 +1193,7 @@ export component AppWindow inherits Window {
                                 Text {
                                     x: 0px;
                                     y: 0px;
-                                    width: 48px;
+                                    width: root.gutter-width - 20px;
                                     height: root.line-height-px;
                                     text: line.number;
                                     color: line.is-cursor-line ? root.theme-text : root.theme-text-muted;
@@ -1363,19 +1364,27 @@ export component AppWindow inherits Window {
         }
 
         Rectangle {
-            height: 26px;
-            background: root.theme-background-alt;
+            height: 52px;
+            background: root.theme-background-alt.with_alpha(0.82);
             animate background {
                 duration: root.anim-duration-normal * 1ms;
                 easing: ease-out;
             }
 
             HorizontalLayout {
-                spacing: 0px;
+                padding-left: 18px;
+                padding-right: 20px;
+                padding-top: 10px;
+                padding-bottom: 10px;
+                spacing: 22px;
 
                 Rectangle {
-                    width: 100px;
-                    background: root.mode-color;
+                    width: 112px;
+                    height: 32px;
+                    border-radius: 16px;
+                    background: root.mode-color.with_alpha(0.14);
+                    border-width: 1px;
+                    border-color: root.mode-color.with_alpha(0.18);
                     animate background {
                         duration: root.anim-duration-normal * 1ms;
                         easing: ease-out;
@@ -1383,19 +1392,20 @@ export component AppWindow inherits Window {
 
                     Text {
                         text: root.mode-text;
-                        color: root.theme-background;
-                        font-size: 11px;
+                        color: root.theme-text;
+                        font-size: 13px;
                         font-weight: 700;
                         horizontal-alignment: center;
                         vertical-alignment: center;
-                        letter-spacing: 0.6px;
+                        letter-spacing: 0px;
                     }
                 }
 
                 Text {
                     text: root.status-text;
                     color: root.theme-text-muted;
-                    font-size: 12px;
+                    font-size: 13px;
+                    font-weight: 600;
                     vertical-alignment: center;
                     horizontal-stretch: 1;
                     horizontal-alignment: left;
@@ -1404,7 +1414,7 @@ export component AppWindow inherits Window {
                 Text {
                     text: root.search-match-label;
                     color: root.theme-accent-primary;
-                    font-size: 11px;
+                    font-size: 12px;
                     font-weight: 600;
                     vertical-alignment: center;
                     opacity: root.search-match-label == "" ? 0 : 1;
@@ -1417,7 +1427,8 @@ export component AppWindow inherits Window {
                 Text {
                     text: root.status-right;
                     color: root.theme-text-muted;
-                    font-size: 12px;
+                    font-size: 13px;
+                    font-weight: 500;
                     vertical-alignment: center;
                 }
             }
