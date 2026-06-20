@@ -525,15 +525,15 @@ export component AppWindow inherits Window {
 
     // Layout tokens
     property <length> app-header-height: 46px;
-    property <length> tab-strip-height: 34px;
-    property <length> status-bar-height: 30px;
+    property <length> tab-strip-height: 38px;
+    property <length> status-bar-height: 34px;
     property <length> app-header-padding-left: 20px;
     property <length> app-header-padding-right: 14px;
     property <length> app-icon-size: 18px;
     property <length> files-button-width: 76px;
     property <length> files-button-height: 30px;
     property <length> tab-width: 150px;
-    property <length> tab-height: 30px;
+    property <length> tab-height: 34px;
     property <length> tab-join-curve: 4px;
     property <length> tab-icon-size: 18px;
     property <length> tab-strip-padding-left: 12px;
@@ -543,7 +543,7 @@ export component AppWindow inherits Window {
     property <length> target-editor-padding-y: 2px;
     property <length> status-padding-left: 14px;
     property <length> status-padding-right: 14px;
-    property <length> status-mode-pill-height: 24px;
+    property <length> status-mode-pill-height: 26px;
     property <length> status-mode-pill-min-width: 76px;
 
     property <brush> chrome-background: root.theme-background-alt;
@@ -1045,7 +1045,7 @@ export component AppWindow inherits Window {
                                     Text {
                                         text: "";
                                         color: tab.is-active ? root.chrome-text : root.chrome-muted;
-                                        font-size: 12px;
+                                        font-size: 13px;
                                         width: 0px;
                                         horizontal-alignment: center;
                                         vertical-alignment: center;
@@ -1055,7 +1055,7 @@ export component AppWindow inherits Window {
                                         horizontal-stretch: 1;
                                         text: tab.title + (tab.is-modified ? " *" : "");
                                         color: tab.is-active ? root.chrome-text : root.chrome-muted;
-                                        font-size: 12px;
+                                        font-size: 13px;
                                         font-weight: tab.is-active ? 700 : 500;
                                         vertical-alignment: center;
                                         overflow: elide;
@@ -1081,7 +1081,7 @@ export component AppWindow inherits Window {
 
                                             Text {
                                                 text: "x";
-                                                font-size: 12px;
+                                                font-size: 13px;
                                                 color: close-touch.has-hover ? root.chrome-text : root.chrome-muted-soft;
                                                 horizontal-alignment: center;
                                                 vertical-alignment: center;
@@ -1567,7 +1567,7 @@ export component AppWindow inherits Window {
                         Text {
                             text: root.mode-text;
                             color: root.chrome-text;
-                            font-size: 12px;
+                            font-size: 13px;
                             font-weight: 700;
                             letter-spacing: 0.5px;
                             horizontal-alignment: center;
@@ -1579,7 +1579,7 @@ export component AppWindow inherits Window {
                 Text {
                     text: root.status-text;
                     color: root.chrome-muted;
-                    font-size: 12px;
+                    font-size: 13px;
                     font-weight: 500;
                     vertical-alignment: center;
                     horizontal-stretch: 1;
@@ -1589,7 +1589,7 @@ export component AppWindow inherits Window {
                 Text {
                     text: root.search-match-label;
                     color: root.theme-accent-primary;
-                    font-size: 12px;
+                    font-size: 13px;
                     font-weight: 600;
                     vertical-alignment: center;
                     opacity: root.search-match-label == "" ? 0 : 1;
@@ -1602,7 +1602,7 @@ export component AppWindow inherits Window {
                 Text {
                     text: root.status-ln-col;
                     color: root.chrome-muted;
-                    font-size: 12px;
+                    font-size: 13px;
                     vertical-alignment: center;
                 }
                 Text {
@@ -1614,7 +1614,7 @@ export component AppWindow inherits Window {
                 Text {
                     text: root.status-lines;
                     color: root.chrome-muted;
-                    font-size: 12px;
+                    font-size: 13px;
                     vertical-alignment: center;
                 }
                 Text {
@@ -1626,7 +1626,7 @@ export component AppWindow inherits Window {
                 Text {
                     text: root.status-words;
                     color: root.chrome-muted;
-                    font-size: 12px;
+                    font-size: 13px;
                     vertical-alignment: center;
                 }
                 Text {
@@ -1638,7 +1638,7 @@ export component AppWindow inherits Window {
                 Text {
                     text: root.status-encoding;
                     color: root.chrome-muted;
-                    font-size: 12px;
+                    font-size: 13px;
                     vertical-alignment: center;
                 }
             }
