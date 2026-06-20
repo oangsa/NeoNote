@@ -534,6 +534,7 @@ export component AppWindow inherits Window {
     property <length> files-button-height: 30px;
     property <length> tab-width: 150px;
     property <length> tab-height: 30px;
+    property <length> tab-join-curve: 4px;
     property <length> tab-icon-size: 18px;
     property <length> tab-strip-padding-left: 12px;
     property <length> tab-strip-padding-right: 12px;
@@ -965,8 +966,8 @@ export component AppWindow inherits Window {
                                 x: tab-touch.pressed ? min(max(tab-touch.mouse-x - self.width / 2, -12px), 12px) : 0px;
                                 border-top-left-radius: 7px;
                                 border-top-right-radius: 7px;
-                                border-bottom-left-radius: tab.is-active ? 0px : 7px;
-                                border-bottom-right-radius: tab.is-active ? 0px : 7px;
+                                border-bottom-left-radius: tab.is-active ? root.tab-join-curve : 7px;
+                                border-bottom-right-radius: tab.is-active ? root.tab-join-curve : 7px;
                                 border-width: 1px;
                                 background: tab-touch.pressed
                                     ? root.chrome-surface-hover
@@ -993,9 +994,9 @@ export component AppWindow inherits Window {
 
                                 Rectangle {
                                     visible: tab.is-active;
-                                    x: 1px;
+                                    x: root.tab-join-curve;
                                     y: parent.height - 2px;
-                                    width: parent.width - 2px;
+                                    width: parent.width - (root.tab-join-curve * 2);
                                     height: 3px;
                                     background: root.chrome-selected;
                                 }
