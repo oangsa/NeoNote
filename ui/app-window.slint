@@ -960,8 +960,8 @@ export component AppWindow inherits Window {
 
                             tab-card := Rectangle {
                                 width: parent.width;
-                                height: root.tab-height;
-                                y: (root.tab-strip-height - root.tab-height) / 2;
+                                height: tab.is-active ? root.tab-strip-height : root.tab-height;
+                                y: tab.is-active ? 0px : (root.tab-strip-height - root.tab-height) / 2;
                                 x: tab-touch.pressed ? min(max(tab-touch.mouse-x - self.width / 2, -12px), 12px) : 0px;
                                 border-radius: 7px;
                                 border-width: 1px;
@@ -986,6 +986,15 @@ export component AppWindow inherits Window {
                                 animate border-color {
                                     duration: 83ms;
                                     easing: ease-out;
+                                }
+
+                                Rectangle {
+                                    visible: tab.is-active;
+                                    x: 1px;
+                                    y: parent.height - 2px;
+                                    width: parent.width - 2px;
+                                    height: 3px;
+                                    background: root.chrome-selected;
                                 }
 
                                 HorizontalLayout {
