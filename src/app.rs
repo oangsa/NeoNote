@@ -589,6 +589,13 @@ impl AppController {
         self.save_config_silent();
     }
 
+    pub fn reset_settings_defaults(&mut self) {
+        self.config = AppConfig::default();
+        self.config.normalize_disabled_features();
+        self.themes = ThemeStore::load(&self.paths, self.config.active_theme.as_deref());
+        self.save_config_silent();
+    }
+
     pub fn flush_deferred_action(&mut self) -> bool {
         if !self.active_pane().is_open(self.active_buffer()) {
             return false;
@@ -1594,7 +1601,7 @@ fn pointer_column_from_x(x_pixels: f32, font_size: f32) -> usize {
 
 fn migrate_old_default_theme(paths: &AppDataPaths, config: &mut AppConfig) {
     if config.active_theme.as_deref() == Some("catppuccin-mocha") {
-        config.active_theme = Some("neovim-dark".to_string());
+        config.active_theme = Some("catppuccin-latte".to_string());
         let _ = config.save(paths);
     }
 }

@@ -50,7 +50,7 @@ pub enum StartupMode {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            active_theme: Some("neovim-dark".to_string()),
+            active_theme: Some("catppuccin-latte".to_string()),
             language: AppLanguage::English,
             font_family: "JetBrains Mono".to_string(),
             font_size: 14.0,
@@ -106,7 +106,7 @@ mod tests {
     #[test]
     fn default_config_matches_plan() {
         let config = AppConfig::default();
-        assert_eq!(config.active_theme.as_deref(), Some("neovim-dark"));
+        assert_eq!(config.active_theme.as_deref(), Some("catppuccin-latte"));
         assert_eq!(config.language, AppLanguage::English);
         assert_eq!(config.window_opacity, 100);
         assert!(config.show_launcher_on_startup);

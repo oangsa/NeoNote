@@ -453,6 +453,24 @@ fn install_callbacks(
     });
 
     let weak_window = window.as_weak();
+    let controller_for_cursor_smear = Rc::clone(&controller);
+    window.on_settings_toggle_cursor_smear(move || {
+        controller_for_cursor_smear.borrow_mut().toggle_cursor_smear();
+        if let Some(window) = weak_window.upgrade() {
+            apply_snapshot(&window, &controller_for_cursor_smear.borrow().snapshot());
+        }
+    });
+
+    let weak_window = window.as_weak();
+    let controller_for_reset = Rc::clone(&controller);
+    window.on_settings_reset_defaults(move || {
+        controller_for_reset.borrow_mut().reset_settings_defaults();
+        if let Some(window) = weak_window.upgrade() {
+            apply_snapshot(&window, &controller_for_reset.borrow().snapshot());
+        }
+    });
+
+    let weak_window = window.as_weak();
     let controller_for_editor = Rc::clone(&controller);
     let editor_activity = Rc::clone(&last_editor_activity);
     let editor_blink = Rc::clone(&blink_state);

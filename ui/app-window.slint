@@ -6,6 +6,7 @@ component CommandButton inherits Rectangle {
     in property <brush> hover-color;
     in property <brush> command-border-color;
     in property <brush> text-color;
+    in property <bool> is-primary: false;
     in property <TextHorizontalAlignment> text-alignment: center;
     in property <length> text-padding-left: 0px;
     callback clicked();
@@ -43,6 +44,84 @@ component CommandButton inherits Rectangle {
     touch := TouchArea {
         clicked => {
             root.clicked();
+        }
+    }
+}
+
+component SearchField inherits Rectangle {
+    in property <string> placeholder;
+    in property <brush> field-background;
+    in property <brush> field-border;
+    in property <brush> field-text-muted;
+
+    height: 32px;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: root.field-border.with_alpha(0.65);
+    background: root.field-background;
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 8px;
+
+        Text {
+            text: "⌕";
+            color: root.field-text-muted;
+            font-size: 13px;
+            vertical-alignment: center;
+        }
+
+        Text {
+            text: root.placeholder;
+            color: root.field-text-muted;
+            font-size: 12px;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+    }
+}
+
+component CursorSmearDemoCard inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    in property <string> code;
+    in property <string> editor-font;
+    in property <brush> card-background;
+    in property <brush> card-border;
+    in property <brush> card-text;
+    in property <brush> card-muted;
+
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: root.card-border.with_alpha(0.45);
+    background: root.card-background;
+    clip: true;
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 5px;
+
+        Text {
+            text: root.title;
+            color: root.card-text;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        Text {
+            text: root.subtitle;
+            color: root.card-muted;
+            font-size: 10px;
+        }
+
+        Text {
+            text: root.code;
+            color: root.card-text;
+            font-family: root.editor-font;
+            font-size: 10px;
+            vertical-stretch: 1;
         }
     }
 }
@@ -207,6 +286,7 @@ component ToggleRow inherits Rectangle {
 }
 
 component SettingsNavItem inherits Rectangle {
+    in property <string> icon;
     in property <string> text;
     in property <bool> active: false;
     in property <brush> background-color;
@@ -229,14 +309,16 @@ component SettingsNavItem inherits Rectangle {
         padding-right: 10px;
         spacing: 8px;
 
-        VerticalLayout {
-            alignment: center;
-
-            Rectangle {
-                width: 3px;
-                height: 16px;
-                border-radius: 2px;
-                background: root.active ? root.text-color : transparent;
+        Text {
+            text: root.icon;
+            color: root.active ? root.text-color : root.muted-color;
+            font-size: 14px;
+            width: 18px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            animate color {
+                duration: 140ms;
+                easing: ease-out;
             }
         }
 
@@ -566,6 +648,8 @@ export component AppWindow inherits Window {
     callback settings-toggle-cursor-glide();
     callback settings-toggle-smooth-scroll();
     callback settings-toggle-cursor-blink();
+    callback settings-toggle-cursor-smear();
+    callback settings-reset-defaults();
     callback editor-key(string);
     callback editor-pointer-event(int, float, string);
 
@@ -599,7 +683,7 @@ export component AppWindow inherits Window {
         spacing: 0px;
 
         Rectangle {
-            height: 38px;
+            height: 42px;
             background: root.theme-background-alt;
             animate background {
                 duration: root.anim-duration-normal * 1ms;
@@ -607,21 +691,27 @@ export component AppWindow inherits Window {
             }
 
             HorizontalLayout {
-                padding-left: 14px;
-                padding-right: 12px;
-                spacing: 10px;
+                padding-left: 16px;
+                padding-right: 8px;
+                spacing: 12px;
 
                 VerticalLayout {
                     alignment: center;
 
                     Rectangle {
-                        width: 3px;
-                        height: 18px;
-                        border-radius: 2px;
-                        background: root.mode-color;
-                        animate background {
-                            duration: root.anim-duration-normal * 1ms;
-                            easing: ease-out;
+                        width: 20px;
+                        height: 20px;
+                        border-radius: 4px;
+                        border-width: 1px;
+                        border-color: root.theme-border.with_alpha(0.7);
+                        background: root.theme-surface;
+
+                        Text {
+                            text: "▥";
+                            color: root.theme-accent-primary;
+                            font-size: 12px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
                         }
                     }
                 }
@@ -629,32 +719,22 @@ export component AppWindow inherits Window {
                 Text {
                     text: root.ui-text.app-title;
                     color: root.theme-text;
-                    font-size: 15px;
+                    font-size: 14px;
                     font-weight: 700;
                     vertical-alignment: center;
-                    letter-spacing: 0.2px;
+                    letter-spacing: 0px;
                 }
 
                 VerticalLayout {
                     alignment: center;
 
-                    Rectangle {
-                        width: 1px;
-                        height: 16px;
-                        background: root.theme-border.with_alpha(0.4);
-                    }
-                }
-
-                VerticalLayout {
-                    alignment: center;
-                    
                     files-btn := Rectangle {
-                        width: 68px;
+                        width: 72px;
                         height: 28px;
                         border-radius: 6px;
                         border-width: 1px;
-                        border-color: files-touch.has-hover ? root.theme-border : root.theme-border.with_alpha(0.5);
-                        background: files-touch.has-hover ? root.theme-border.with_alpha(0.65) : root.theme-surface;
+                        border-color: files-touch.has-hover ? root.theme-border : root.theme-border.with_alpha(0.55);
+                        background: files-touch.has-hover ? root.theme-surface : root.theme-background;
                         animate background {
                             duration: 120ms;
                             easing: ease-out;
@@ -664,13 +744,26 @@ export component AppWindow inherits Window {
                             easing: ease-out;
                         }
 
-                        Text {
-                            text: root.ui-text.files-menu;
-                            color: root.theme-text;
-                            font-size: 12px;
-                            font-weight: 600;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            padding-right: 8px;
+                            spacing: 6px;
+
+                            Text {
+                                text: root.ui-text.files-menu;
+                                color: root.theme-text;
+                                font-size: 12px;
+                                font-weight: 600;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                            }
+
+                            Text {
+                                text: "⌄";
+                                color: root.theme-text-muted;
+                                font-size: 12px;
+                                vertical-alignment: center;
+                            }
                         }
 
                         files-touch := TouchArea {
@@ -685,11 +778,11 @@ export component AppWindow inherits Window {
                             width: 180px;
 
                             Rectangle {
-                                background: root.theme-surface;
+                                background: root.theme-background;
                                 border-color: root.theme-border;
                                 border-width: 1px;
                                 border-radius: 6px;
-                                drop-shadow-color: #000000.with_alpha(0.3);
+                                drop-shadow-color: #000000.with_alpha(0.22);
                                 drop-shadow-blur: 12px;
                                 drop-shadow-offset-y: 4px;
 
@@ -701,8 +794,8 @@ export component AppWindow inherits Window {
                                         text: root.ui-text.new-file;
                                         text-alignment: left;
                                         text-padding-left: 12px;
-                                        background-color: root.theme-surface;
-                                        hover-color: root.theme-border.with_alpha(0.5);
+                                        background-color: root.theme-background;
+                                        hover-color: root.theme-background-alt;
                                         command-border-color: transparent;
                                         text-color: root.theme-text;
                                         clicked => { root.new-file(); }
@@ -711,22 +804,22 @@ export component AppWindow inherits Window {
                                         text: root.ui-text.open-file;
                                         text-alignment: left;
                                         text-padding-left: 12px;
-                                        background-color: root.theme-surface;
-                                        hover-color: root.theme-border.with_alpha(0.5);
+                                        background-color: root.theme-background;
+                                        hover-color: root.theme-background-alt;
                                         command-border-color: transparent;
                                         text-color: root.theme-text;
                                         clicked => { root.open-file(); }
                                     }
                                     Rectangle {
                                         height: 1px;
-                                        background: root.theme-border.with_alpha(0.4);
+                                        background: root.theme-border.with_alpha(0.45);
                                     }
                                     CommandButton {
                                         text: root.ui-text.save-file;
                                         text-alignment: left;
                                         text-padding-left: 12px;
-                                        background-color: root.theme-surface;
-                                        hover-color: root.theme-border.with_alpha(0.5);
+                                        background-color: root.theme-background;
+                                        hover-color: root.theme-background-alt;
                                         command-border-color: transparent;
                                         text-color: root.theme-text;
                                         clicked => { root.save-file(); }
@@ -735,91 +828,85 @@ export component AppWindow inherits Window {
                                         text: root.ui-text.save-as-file;
                                         text-alignment: left;
                                         text-padding-left: 12px;
-                                        background-color: root.theme-surface;
-                                        hover-color: root.theme-border.with_alpha(0.5);
+                                        background-color: root.theme-background;
+                                        hover-color: root.theme-background-alt;
                                         command-border-color: transparent;
                                         text-color: root.theme-text;
                                         clicked => { root.save-as-file(); }
                                     }
                                 }
                             }
-                }
-            }
-        }
-
-        // Tab strip bottom border
-        Rectangle {
-            height: 1px;
-            background: root.theme-border.with_alpha(0.4);
-        }
-
-        Rectangle {
-                    horizontal-stretch: 1;
-                }
-
-                VerticalLayout {
-                    alignment: center;
-                    
-                    CommandButton {
-                        min-width: 30px;
-                        text: "⚙";
-                        background-color: root.theme-surface;
-                        hover-color: root.theme-border.with_alpha(0.65);
-                        command-border-color: root.theme-border.with_alpha(0.5);
-                        text-color: root.theme-text-muted;
-                        clicked => {
-                            root.settings-section = 0;
-                            root.open-settings-panel();
                         }
                     }
                 }
+
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+
+                for control in ["−", "□", "×"]: Rectangle {
+                    width: 44px;
+                    height: 42px;
+                    background: control-touch.has-hover ? root.theme-border.with_alpha(0.28) : transparent;
+                    animate background {
+                        duration: 120ms;
+                        easing: ease-out;
+                    }
+
+                    Text {
+                        text: control;
+                        color: root.theme-text;
+                        font-size: 14px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+
+                    control-touch := TouchArea {}
+                }
             }
         }
 
-        // Title bar bottom border
         Rectangle {
             height: 1px;
             background: root.theme-border.with_alpha(0.35);
         }
 
         Rectangle {
-            height: 30px;
-            background: root.theme-surface;
+            height: 34px;
+            background: root.theme-background-alt;
 
             HorizontalLayout {
                 padding-left: 12px;
-                padding-right: 12px;
-                spacing: 10px;
+                padding-right: 10px;
+                spacing: 8px;
 
                 ScrollView {
                     horizontal-stretch: 1;
-                    height: 30px;
+                    height: 34px;
                     
                     HorizontalLayout {
                         spacing: 1px;
                         
                         for tab in root.document-tabs: Rectangle {
-                            width: 140px;
-                            height: 30px;
+                            width: 150px;
+                            height: 34px;
                             background: transparent;
                             
                             tab-card := Rectangle {
                                 width: parent.width;
-                                height: parent.height;
+                                height: parent.height - 4px;
+                                y: 4px;
                                 x: tab-touch.pressed ? min(max(tab-touch.mouse-x - self.width / 2, -18px), 18px) : 0px;
-                                y: tab-touch.pressed ? -2px : 0px;
                                 background: tab-touch.pressed
                                     ? root.theme-border
-                                    : (tab.is-active ? root.theme-surface.with_alpha(0.85) : (tab-touch.has-hover ? root.theme-background.with_alpha(0.7) : root.theme-surface));
+                                    : (tab.is-active ? root.theme-background : (tab-touch.has-hover ? root.theme-background : transparent));
                                 border-top-left-radius: 6px;
                                 border-top-right-radius: 6px;
+                                border-width: tab.is-active ? 1px : 0px;
+                                border-color: root.theme-border.with_alpha(0.55);
                                 opacity: tab-touch.pressed ? 0.98 : 1;
                                 animate x {
                                     duration: 120ms;
-                                    easing: ease-out;
-                                }
-                                animate y {
-                                    duration: 140ms;
                                     easing: ease-out;
                                 }
                                 animate background {
@@ -850,6 +937,15 @@ export component AppWindow inherits Window {
                                     padding-right: 6px;
                                     spacing: 4px;
                                     
+                                    Text {
+                                        text: "▣";
+                                        color: root.theme-text-muted;
+                                        font-size: 10px;
+                                        width: 14px;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+
                                     Text {
                                         horizontal-stretch: 1;
                                         text: tab.title + (tab.is-modified ? " ●" : "");
@@ -922,6 +1018,29 @@ export component AppWindow inherits Window {
                                 }
                             }
                         }
+                    }
+                }
+
+                CommandButton {
+                    width: 30px;
+                    text: "+";
+                    background-color: root.theme-background-alt;
+                    hover-color: root.theme-background;
+                    command-border-color: transparent;
+                    text-color: root.theme-text-muted;
+                    clicked => { root.new-file(); }
+                }
+
+                CommandButton {
+                    width: 30px;
+                    text: "⚙";
+                    background-color: root.theme-background;
+                    hover-color: root.theme-surface;
+                    command-border-color: root.theme-border.with_alpha(0.55);
+                    text-color: root.theme-text-muted;
+                    clicked => {
+                        root.settings-section = 0;
+                        root.open-settings-panel();
                     }
                 }
 
@@ -1328,16 +1447,16 @@ export component AppWindow inherits Window {
         }
 
         theme-panel-card := Rectangle {
-            width: min(parent.width - 48px, 720px);
-            height: min(parent.height - 80px, 540px);
+            width: min(parent.width - 48px, 700px);
+            height: min(parent.height - 80px, 348px);
             x: (parent.width - self.width) / 2;
-            y: root.show-theme-panel ? 56px : 68px;
+            y: root.show-theme-panel ? max((parent.height - self.height) / 2, 24px) : max((parent.height - self.height) / 2 + 12px, 36px);
             opacity: root.show-theme-panel ? 1 : 0;
             border-width: 1px;
-            border-color: root.theme-border;
+            border-color: root.theme-border.with_alpha(0.65);
             border-radius: 8px;
-            background: root.theme-surface;
-            drop-shadow-color: #000000.with_alpha(0.25);
+            background: root.theme-background;
+            drop-shadow-color: #000000.with_alpha(0.18);
             drop-shadow-blur: 16px;
             drop-shadow-offset-y: 6px;
             clip: true;
@@ -1351,51 +1470,87 @@ export component AppWindow inherits Window {
             }
 
             VerticalLayout {
-                padding: 16px;
-                spacing: 12px;
+                padding: 0px;
+                spacing: 0px;
 
                 HorizontalLayout {
-                    height: 32px;
-                    spacing: 8px;
+                    height: 50px;
+                    padding-left: 18px;
+                    padding-right: 16px;
+                    spacing: 12px;
 
                     Text {
                         text: root.ui-text.themes-title;
                         color: root.theme-text;
-                        font-size: 18px;
+                        font-size: 17px;
                         font-weight: 700;
                         vertical-alignment: center;
+                    }
+
+                    SearchField {
+                        width: 220px;
+                        placeholder: "Search themes...";
+                        field-background: root.theme-background;
+                        field-border: root.theme-border;
+                        field-text-muted: root.theme-text-muted;
+                    }
+
+                    Rectangle {
                         horizontal-stretch: 1;
                     }
 
                     CommandButton {
-                        width: 72px;
-                        text: root.ui-text.theme-cancel;
+                        width: 66px;
+                        text: "Import";
                         background-color: root.theme-background-alt;
-                        hover-color: root.theme-border;
-                        command-border-color: root.theme-border;
+                        hover-color: root.theme-surface;
+                        command-border-color: root.theme-border.with_alpha(0.65);
                         text-color: root.theme-text-muted;
-                        clicked => { root.theme-panel-close(); }
+                        clicked => { }
+                    }
+
+                    CommandButton {
+                        width: 66px;
+                        text: "Export";
+                        background-color: root.theme-background-alt;
+                        hover-color: root.theme-surface;
+                        command-border-color: root.theme-border.with_alpha(0.65);
+                        text-color: root.theme-text-muted;
+                        clicked => { }
+                    }
+
+                    CommandButton {
+                        width: 92px;
+                        text: "+ New Theme";
+                        background-color: root.theme-accent-primary;
+                        hover-color: root.theme-accent-secondary;
+                        command-border-color: root.theme-accent-primary;
+                        text-color: root.theme-background;
+                        clicked => { }
                     }
                 }
 
                 Rectangle {
                     height: 1px;
-                    background: root.theme-border.with_alpha(0.55);
+                    background: root.theme-border.with_alpha(0.45);
                 }
 
                 ScrollView {
                     vertical-stretch: 1;
 
                     VerticalLayout {
-                        padding-right: 10px;
-                        spacing: 6px;
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        padding-top: 8px;
+                        padding-bottom: 8px;
+                        spacing: 0px;
 
                         for item in root.theme-items: Rectangle {
-                            height: 60px;
-                            border-radius: 8px;
+                            height: 40px;
+                            border-radius: 6px;
                             border-width: 1px;
-                            border-color: item.is-preview ? root.theme-accent-primary : (item.is-active ? root.theme-success.with_alpha(0.45) : root.theme-border.with_alpha(0.35));
-                            background: item.is-preview ? root.theme-background-alt : (item.is-active ? root.theme-background-alt.with_alpha(0.72) : root.theme-background);
+                            border-color: item.is-preview ? root.theme-accent-primary.with_alpha(0.75) : (item.is-active ? root.theme-border.with_alpha(0.7) : root.theme-border.with_alpha(0.30));
+                            background: item.is-preview || item.is-active ? root.theme-background-alt : root.theme-background;
                             animate background {
                                 duration: 140ms;
                                 easing: ease-out;
@@ -1414,18 +1569,18 @@ export component AppWindow inherits Window {
                             }
 
                             HorizontalLayout {
-                                padding-left: 12px;
+                                padding-left: 10px;
                                 padding-right: 10px;
-                                spacing: 12px;
+                                spacing: 10px;
 
                                 VerticalLayout {
                                     alignment: center;
 
                                     Rectangle {
-                                        width: 4px;
-                                        height: 36px;
+                                        width: 5px;
+                                        height: 24px;
                                         border-radius: 2px;
-                                        background: item.is-preview ? root.theme-accent-primary : (item.is-active ? root.theme-success : root.theme-border.with_alpha(0.6));
+                                        background: item.variant == "light" ? root.theme-warning.with_alpha(0.45) : root.theme-text.with_alpha(0.85);
                                         animate background {
                                             duration: 140ms;
                                             easing: ease-out;
@@ -1433,98 +1588,113 @@ export component AppWindow inherits Window {
                                     }
                                 }
 
-                                VerticalLayout {
-                                    spacing: 3px;
-                                    horizontal-stretch: 1;
-                                    alignment: center;
+                                Text {
+                                    text: item.name;
+                                    color: root.theme-text;
+                                    font-size: 13px;
+                                    font-weight: 700;
+                                    width: 145px;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                }
+
+                                Rectangle {
+                                    height: 20px;
+                                    min-width: 42px;
+                                    border-radius: 4px;
+                                    background: root.theme-background-alt;
+                                    border-width: 1px;
+                                    border-color: root.theme-border.with_alpha(0.35);
 
                                     Text {
-                                        text: item.name;
-                                        color: root.theme-text;
-                                        font-size: 13px;
-                                        font-weight: item.is-active ? 700 : 600;
+                                        text: item.variant == "light" ? "Light" : "Dark";
+                                        color: root.theme-text-muted;
+                                        font-size: 10px;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+
+                                Rectangle {
+                                    height: 20px;
+                                    width: 96px;
+                                    border-radius: 4px;
+                                    background: root.theme-background-alt.with_alpha(0.75);
+
+                                    Text {
+                                        text: item.author;
+                                        color: root.theme-text-muted;
+                                        font-size: 10px;
+                                        horizontal-alignment: center;
                                         vertical-alignment: center;
                                         overflow: elide;
                                     }
-
-                                    HorizontalLayout {
-                                        spacing: 8px;
-
-                                        Rectangle {
-                                            height: 18px;
-                                            min-width: 40px;
-                                            border-radius: 4px;
-                                            background: root.theme-background-alt;
-                                            border-width: 1px;
-                                            border-color: root.theme-border.with_alpha(0.35);
-
-                                            Text {
-                                                text: item.variant;
-                                                color: root.theme-text-muted;
-                                                font-size: 10px;
-                                                horizontal-alignment: center;
-                                                vertical-alignment: center;
-                                            }
-                                        }
-
-                                        Text {
-                                            text: item.author;
-                                            color: root.theme-text-muted;
-                                            font-size: 11px;
-                                            vertical-alignment: center;
-                                            overflow: elide;
-                                        }
-                                    }
                                 }
 
-                                VerticalLayout {
-                                    alignment: center;
-
-                                    Text {
-                                        text: item.is-preview ? root.ui-text.theme-preview : (item.is-active ? root.ui-text.theme-active : "");
-                                        color: item.is-active ? root.theme-success : root.theme-accent-primary;
-                                        font-size: 11px;
-                                        font-weight: 600;
-                                        width: 56px;
-                                        horizontal-alignment: right;
-                                        vertical-alignment: center;
-                                    }
+                                Rectangle {
+                                    horizontal-stretch: 1;
                                 }
 
-                                VerticalLayout {
-                                    alignment: center;
+                                CommandButton {
+                                    width: 66px;
+                                    text: root.ui-text.theme-preview;
+                                    background-color: root.theme-background;
+                                    hover-color: root.theme-surface;
+                                    command-border-color: root.theme-border.with_alpha(0.55);
+                                    text-color: root.theme-text-muted;
+                                    clicked => { root.theme-preview(item.index); }
+                                }
 
-                                    Rectangle {
-                                        width: 140px;
-                                        height: 28px;
+                                CommandButton {
+                                    width: 64px;
+                                    text: item.is-active ? root.ui-text.theme-active : root.ui-text.theme-apply;
+                                    background-color: item.is-active ? root.theme-surface : root.theme-background-alt;
+                                    hover-color: item.is-active ? root.theme-surface : root.theme-surface;
+                                    command-border-color: root.theme-border.with_alpha(0.65);
+                                    text-color: item.is-active ? root.theme-text-muted : root.theme-text;
+                                    clicked => { root.theme-apply(item.index); }
+                                }
 
-                                        HorizontalLayout {
-                                            spacing: 6px;
-
-                                            CommandButton {
-                                                width: 64px;
-                                                text: root.ui-text.theme-preview;
-                                                background-color: root.theme-background-alt;
-                                                hover-color: root.theme-border;
-                                                command-border-color: root.theme-border.with_alpha(0.7);
-                                                text-color: root.theme-text-muted;
-                                                clicked => { root.theme-preview(item.index); }
-                                            }
-
-                                            CommandButton {
-                                                width: 64px;
-                                                text: root.ui-text.theme-apply;
-                                                background-color: item.is-active ? root.theme-background-alt : root.theme-accent-primary;
-                                                hover-color: item.is-active ? root.theme-border : root.theme-accent-secondary;
-                                                command-border-color: item.is-active ? root.theme-border.with_alpha(0.7) : root.theme-accent-primary;
-                                                text-color: item.is-active ? root.theme-text-muted : root.theme-background;
-                                                clicked => { root.theme-apply(item.index); }
-                                            }
-                                        }
-                                    }
+                                Text {
+                                    text: "⋯";
+                                    color: root.theme-text-muted;
+                                    font-size: 18px;
+                                    width: 24px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
                                 }
                             }
                         }
+                    }
+                }
+
+                Rectangle {
+                    height: 1px;
+                    background: root.theme-border.with_alpha(0.35);
+                }
+
+                HorizontalLayout {
+                    height: 48px;
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    spacing: 8px;
+
+                    Text {
+                        text: "7 themes";
+                        color: root.theme-text-muted;
+                        font-size: 12px;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+
+                    CommandButton {
+                        width: 70px;
+                        text: root.ui-text.settings-close;
+                        background-color: root.theme-background;
+                        hover-color: root.theme-background-alt;
+                        command-border-color: root.theme-border.with_alpha(0.65);
+                        text-color: root.theme-text;
+                        clicked => { root.theme-panel-close(); }
                     }
                 }
             }
@@ -1554,16 +1724,16 @@ export component AppWindow inherits Window {
         }
 
         settings-panel-card := Rectangle {
-            width: min(parent.width - 48px, 780px);
-            height: min(parent.height - 80px, 590px);
+            width: min(parent.width - 48px, 560px);
+            height: min(parent.height - 80px, 486px);
             x: (parent.width - self.width) / 2;
             y: root.show-settings-panel ? 56px : 68px;
             opacity: root.show-settings-panel ? 1 : 0;
             border-width: 1px;
-            border-color: root.theme-border;
+            border-color: root.theme-border.with_alpha(0.65);
             border-radius: 8px;
-            background: root.theme-surface;
-            drop-shadow-color: #000000.with_alpha(0.25);
+            background: root.theme-background;
+            drop-shadow-color: #000000.with_alpha(0.18);
             drop-shadow-blur: 16px;
             drop-shadow-offset-y: 6px;
             clip: true;
@@ -1582,7 +1752,7 @@ export component AppWindow inherits Window {
 
                 HorizontalLayout {
                     padding-left: 20px;
-                    padding-right: 14px;
+                    padding-right: 8px;
                     height: 52px;
                     spacing: 8px;
 
@@ -1596,12 +1766,12 @@ export component AppWindow inherits Window {
                     }
 
                     CommandButton {
-                        width: 72px;
-                        text: root.ui-text.settings-close;
-                        background-color: root.theme-background-alt;
-                        hover-color: root.theme-border;
-                        command-border-color: root.theme-border;
-                        text-color: root.theme-text-muted;
+                        width: 34px;
+                        text: "×";
+                        background-color: root.theme-background;
+                        hover-color: root.theme-background-alt;
+                        command-border-color: transparent;
+                        text-color: root.theme-text;
                         clicked => { root.settings-panel-close(); }
                     }
                 }
@@ -1616,7 +1786,7 @@ export component AppWindow inherits Window {
                     spacing: 0px;
 
                     Rectangle {
-                        width: 175px;
+                        width: 170px;
                         background: root.theme-background-alt.with_alpha(0.55);
 
                         VerticalLayout {
@@ -1624,6 +1794,7 @@ export component AppWindow inherits Window {
                             spacing: 4px;
 
                             SettingsNavItem {
+                                icon: "⚙";
                                 text: root.ui-text.visual-section;
                                 active: root.settings-section == 0;
                                 background-color: root.theme-background-alt;
@@ -1635,6 +1806,7 @@ export component AppWindow inherits Window {
                             }
 
                             SettingsNavItem {
+                                icon: "✎";
                                 text: root.ui-text.editor-section;
                                 active: root.settings-section == 1;
                                 background-color: root.theme-background-alt;
@@ -1646,6 +1818,7 @@ export component AppWindow inherits Window {
                             }
 
                             SettingsNavItem {
+                                icon: "◇";
                                 text: root.ui-text.appearance-section;
                                 active: root.settings-section == 2;
                                 background-color: root.theme-background-alt;
@@ -1657,6 +1830,7 @@ export component AppWindow inherits Window {
                             }
 
                             SettingsNavItem {
+                                icon: "⌘";
                                 text: root.ui-text.vim-section;
                                 active: root.settings-section == 3;
                                 background-color: root.theme-background-alt;
@@ -1668,6 +1842,7 @@ export component AppWindow inherits Window {
                             }
 
                             SettingsNavItem {
+                                icon: "↗";
                                 text: root.ui-text.startup-section;
                                 active: root.settings-section == 4;
                                 background-color: root.theme-background-alt;
@@ -1679,6 +1854,7 @@ export component AppWindow inherits Window {
                             }
 
                             SettingsNavItem {
+                                icon: "ⓘ";
                                 text: root.ui-text.window-section;
                                 active: root.settings-section == 5;
                                 background-color: root.theme-background-alt;
@@ -1884,8 +2060,8 @@ export component AppWindow inherits Window {
                             }
 
                             ToggleRow {
-                                visible: root.settings-section == 1;
-                                height: root.settings-section == 1 ? 52px : 0px;
+                                visible: root.settings-section == 0;
+                                height: root.settings-section == 0 ? 52px : 0px;
                                 title: root.ui-text.cursor-glide;
                                 detail: root.ui-text.cursor-glide-detail;
                                 checked: root.settings.enable-cursor-glide;
@@ -1899,8 +2075,8 @@ export component AppWindow inherits Window {
                             }
 
                             ToggleRow {
-                                visible: root.settings-section == 1;
-                                height: root.settings-section == 1 ? 52px : 0px;
+                                visible: root.settings-section == 0;
+                                height: root.settings-section == 0 ? 52px : 0px;
                                 title: root.ui-text.smooth-scroll;
                                 detail: root.ui-text.smooth-scroll-detail;
                                 checked: root.settings.enable-smooth-scroll;
@@ -1926,6 +2102,21 @@ export component AppWindow inherits Window {
                                 row-text-muted: root.theme-text-muted;
                                 row-accent: root.theme-accent-primary;
                                 toggled => { root.settings-toggle-cursor-blink(); }
+                            }
+
+                            ToggleRow {
+                                visible: root.settings-section == 0;
+                                height: root.settings-section == 0 ? 52px : 0px;
+                                title: root.ui-text.cursor-smear;
+                                detail: root.ui-text.cursor-smear-detail;
+                                checked: root.settings.enable-cursor-smear;
+                                row-background: root.theme-background;
+                                row-hover: root.theme-background-alt;
+                                row-border: root.theme-border;
+                                row-text: root.theme-text;
+                                row-text-muted: root.theme-text-muted;
+                                row-accent: root.theme-accent-primary;
+                                toggled => { root.settings-toggle-cursor-smear(); }
                             }
 
                             Text {
@@ -2046,6 +2237,141 @@ export component AppWindow inherits Window {
                                 decrement => { root.settings-adjust-window-opacity(-5); }
                                 increment => { root.settings-adjust-window-opacity(5); }
                             }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    height: 1px;
+                    background: root.theme-border.with_alpha(0.45);
+                }
+
+                HorizontalLayout {
+                    height: 56px;
+                    padding-left: 20px;
+                    padding-right: 20px;
+                    spacing: 8px;
+
+                    CommandButton {
+                        width: 126px;
+                        text: "Reset to Defaults";
+                        background-color: root.theme-background;
+                        hover-color: root.theme-background-alt;
+                        command-border-color: root.theme-border.with_alpha(0.65);
+                        text-color: root.theme-text;
+                        clicked => { root.settings-reset-defaults(); }
+                    }
+
+                    Rectangle {
+                        horizontal-stretch: 1;
+                    }
+
+                    CommandButton {
+                        width: 74px;
+                        text: root.ui-text.theme-cancel;
+                        background-color: root.theme-background;
+                        hover-color: root.theme-background-alt;
+                        command-border-color: root.theme-border.with_alpha(0.65);
+                        text-color: root.theme-text;
+                        clicked => { root.settings-panel-close(); }
+                    }
+
+                    CommandButton {
+                        width: 74px;
+                        text: "Save";
+                        background-color: root.theme-accent-primary;
+                        hover-color: root.theme-accent-secondary;
+                        command-border-color: root.theme-accent-primary;
+                        text-color: root.theme-background;
+                        clicked => { root.settings-panel-close(); }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            x: max((parent.width - self.width) / 2, 24px);
+            y: settings-panel-card.y + settings-panel-card.height + 54px;
+            width: min(parent.width - 48px, 600px);
+            height: 206px;
+            visible: root.show-settings-panel && parent.height > 760px;
+            background: transparent;
+
+            VerticalLayout {
+                spacing: 12px;
+
+                Text {
+                    text: "Cursor Smear Behavior";
+                    color: root.theme-text;
+                    font-size: 14px;
+                    font-weight: 700;
+                }
+
+                HorizontalLayout {
+                    height: 126px;
+                    spacing: 8px;
+
+                    CursorSmearDemoCard {
+                        horizontal-stretch: 1;
+                        title: "Horizontal Smear";
+                        subtitle: "Fast horizontal movement";
+                        code: "1   const items = getItems();\n2   process(items); ▌\n3   return items;";
+                        editor-font: root.editor-font-family;
+                        card-background: root.theme-background;
+                        card-border: root.theme-border;
+                        card-text: root.theme-text;
+                        card-muted: root.theme-text-muted;
+                    }
+
+                    CursorSmearDemoCard {
+                        horizontal-stretch: 1;
+                        title: "Vertical Smear";
+                        subtitle: "Fast vertical movement";
+                        code: "1   if (user.isActive) {\n2     loadDashboard();\n3     loadNotifications();\n4     loadSettings();\n5   }";
+                        editor-font: root.editor-font-family;
+                        card-background: root.theme-background;
+                        card-border: root.theme-border;
+                        card-text: root.theme-text;
+                        card-muted: root.theme-text-muted;
+                    }
+
+                    CursorSmearDemoCard {
+                        horizontal-stretch: 1;
+                        title: "No Smear";
+                        subtitle: "Large jumps & insert mode";
+                        code: "1   function save() {\n2     validate();\n3\n4     // insert mode\n5     const data = ▌";
+                        editor-font: root.editor-font-family;
+                        card-background: root.theme-background;
+                        card-border: root.theme-border;
+                        card-text: root.theme-text;
+                        card-muted: root.theme-text-muted;
+                    }
+                }
+
+                Rectangle {
+                    height: 30px;
+                    border-radius: 6px;
+                    border-width: 1px;
+                    border-color: root.theme-border.with_alpha(0.45);
+                    background: root.theme-background-alt.with_alpha(0.55);
+
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 8px;
+
+                        Text {
+                            text: "ⓘ";
+                            color: root.theme-text-muted;
+                            font-size: 14px;
+                            vertical-alignment: center;
+                        }
+
+                        Text {
+                            text: "Cursor smear is disabled for large jumps and while in insert mode.";
+                            color: root.theme-text-muted;
+                            font-size: 11px;
+                            vertical-alignment: center;
                         }
                     }
                 }

@@ -70,7 +70,7 @@ impl AppLanguage {
                 blur_behind: "Blur behind".to_string(),
                 blur_behind_detail: "Use the Windows blur effect when supported".to_string(),
                 window_opacity: "Window opacity".to_string(),
-                visual_section: "Visual".to_string(),
+                visual_section: "General".to_string(),
                 use_mica: "Use Mica".to_string(),
                 use_mica_detail: "Apply Windows 11 Mica backdrop when available".to_string(),
                 enable_animations: "Enable Animations".to_string(),
@@ -122,7 +122,7 @@ impl AppLanguage {
                 blur_behind: "Desenfoque detrás".to_string(),
                 blur_behind_detail: "Usar el efecto de desenfoque de Windows cuando esté disponible".to_string(),
                 window_opacity: "Opacidad de la ventana".to_string(),
-                visual_section: "Visual".to_string(),
+                visual_section: "General".to_string(),
                 use_mica: "Usar Mica".to_string(),
                 use_mica_detail: "Aplicar el fondo Mica de Windows 11 cuando esté disponible".to_string(),
                 enable_animations: "Activar Animaciones".to_string(),
@@ -174,7 +174,7 @@ impl AppLanguage {
                 blur_behind: "背景のぼかし".to_string(),
                 blur_behind_detail: "対応時は Windows のぼかし効果を使う".to_string(),
                 window_opacity: "ウィンドウの不透明度".to_string(),
-                visual_section: "表示".to_string(),
+                visual_section: "一般".to_string(),
                 use_mica: "Mica を使用".to_string(),
                 use_mica_detail: "利用可能な場合、Windows 11 Mica 背景を適用する".to_string(),
                 enable_animations: "アニメーションを有効にする".to_string(),
@@ -225,14 +225,14 @@ impl AppLanguage {
 
     pub fn status_right(
         self,
-        document_index: usize,
-        document_count: usize,
+        _document_index: usize,
+        _document_count: usize,
         line: usize,
         column: usize,
         search: Option<&str>,
         line_count: usize,
         word_count: usize,
-        char_count: usize,
+        _char_count: usize,
     ) -> String {
         let search_suffix = search
             .map(|pattern| format!("  |  /{pattern}"))
@@ -240,13 +240,13 @@ impl AppLanguage {
 
         match self {
             AppLanguage::English => format!(
-                "Doc {document_index}/{document_count}  |  Ln {line}, Col {column}{search_suffix}  |  {line_count} lines, {word_count} words, {char_count} chars  "
+                "Ln {line}, Col {column}{search_suffix}  |  {line_count} lines  |  {word_count} words  |  UTF-8  "
             ),
             AppLanguage::Spanish => format!(
-                "Doc {document_index}/{document_count}  |  Lín {line}, Col {column}{search_suffix}  |  {line_count} líneas, {word_count} palabras, {char_count} caracteres  "
+                "Lín {line}, Col {column}{search_suffix}  |  {line_count} líneas  |  {word_count} palabras  |  UTF-8  "
             ),
             AppLanguage::Japanese => format!(
-                "文書 {document_index}/{document_count}  |  行 {line}, 列 {column}{search_suffix}  |  {line_count} 行, {word_count} 語, {char_count} 文字  "
+                "行 {line}, 列 {column}{search_suffix}  |  {line_count} 行  |  {word_count} 語  |  UTF-8  "
             ),
         }
     }
