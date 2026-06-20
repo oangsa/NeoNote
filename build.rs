@@ -14,6 +14,7 @@ fn main() {
         resource.set("ProductName", "NeoNote");
         resource.set("FileDescription", "NeoNote");
         resource.set("OriginalFilename", "NeoNote.exe");
+        resource.set_icon("assets/icons/neonote.ico");
         resource.set_manifest(
             &format!(
                 r#"
