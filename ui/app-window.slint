@@ -928,9 +928,11 @@ export component AppWindow inherits Window {
                 padding-right: root.tab-strip-padding-right;
                 spacing: 8px;
 
-                ScrollView {
+                tab-scroll := ScrollView {
                     horizontal-stretch: 1;
                     height: root.tab-strip-height;
+                    horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
+                    vertical-scrollbar-policy: ScrollBarPolicy.always-off;
 
                     HorizontalLayout {
                         spacing: 4px;
@@ -956,6 +958,16 @@ export component AppWindow inherits Window {
                                     } else if (tab-touch.mouse-x > self.width + 24px) {
                                         root.reorder-document(tab.index, tab.index + 1);
                                     }
+                                }
+                                scroll-event(event) => {
+                                    if (event.delta-y != 0) {
+                                        tab-scroll.viewport-x = max(
+                                            -max(0px, tab-scroll.viewport-width - tab-scroll.visible-width),
+                                            min(0px, tab-scroll.viewport-x + event.delta-y)
+                                        );
+                                        return accept;
+                                    }
+                                    return reject;
                                 }
                             }
 
@@ -1083,6 +1095,16 @@ export component AppWindow inherits Window {
                                                 clicked => {
                                                     root.close-document(tab.index);
                                                 }
+                                                scroll-event(event) => {
+                                                    if (event.delta-y != 0) {
+                                                        tab-scroll.viewport-x = max(
+                                                            -max(0px, tab-scroll.viewport-width - tab-scroll.visible-width),
+                                                            min(0px, tab-scroll.viewport-x + event.delta-y)
+                                                        );
+                                                        return accept;
+                                                    }
+                                                    return reject;
+                                                }
                                             }
                                         }
                                     }
@@ -1121,6 +1143,16 @@ export component AppWindow inherits Window {
                         add-tab-touch := TouchArea {
                             clicked => {
                                 root.new-file();
+                            }
+                            scroll-event(event) => {
+                                if (event.delta-y != 0) {
+                                    tab-scroll.viewport-x = max(
+                                        -max(0px, tab-scroll.viewport-width - tab-scroll.visible-width),
+                                        min(0px, tab-scroll.viewport-x + event.delta-y)
+                                    );
+                                    return accept;
+                                }
+                                return reject;
                             }
                         }
                     }
