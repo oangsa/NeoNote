@@ -12,7 +12,7 @@ component CommandButton inherits Rectangle {
 
     height: 30px;
     min-width: 64px;
-    border-radius: 4px;
+    border-radius: 6px;
     border-width: 1px;
     border-color: root.command-border-color;
     background: touch.has-hover ? root.hover-color : root.background-color;
@@ -58,8 +58,10 @@ component NumericSettingRow inherits Rectangle {
     callback decrement();
     callback increment();
 
-    height: 46px;
-    border-radius: 4px;
+    height: 50px;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: root.row-border.with_alpha(0.45);
     background: root.row-background;
 
     HorizontalLayout {
@@ -132,8 +134,10 @@ component ToggleRow inherits Rectangle {
     in property <brush> row-accent;
     callback toggled();
 
-    height: 48px;
-    border-radius: 4px;
+    height: 54px;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: root.row-border.with_alpha(0.45);
     background: touch.has-hover ? root.row-hover : root.row-background;
     animate background {
         duration: 160ms;
@@ -200,6 +204,56 @@ component ToggleRow inherits Rectangle {
             root.toggled();
         }
     }
+}
+
+component SettingsNavItem inherits Rectangle {
+    in property <string> text;
+    in property <bool> active: false;
+    in property <brush> background-color;
+    in property <brush> hover-color;
+    in property <brush> active-color;
+    in property <brush> text-color;
+    in property <brush> muted-color;
+
+    height: 34px;
+    border-radius: 6px;
+    background: root.active ? root.active-color : (touch.has-hover ? root.hover-color : transparent);
+    animate background {
+        duration: 140ms;
+        easing: ease-out;
+    }
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 8px;
+
+        VerticalLayout {
+            alignment: center;
+
+            Rectangle {
+                width: 3px;
+                height: 16px;
+                border-radius: 2px;
+                background: root.active ? root.text-color : transparent;
+            }
+        }
+
+        Text {
+            text: root.text;
+            color: root.active ? root.text-color : root.muted-color;
+            font-size: 13px;
+            font-weight: root.active ? 700 : 500;
+            vertical-alignment: center;
+            overflow: elide;
+            animate color {
+                duration: 140ms;
+                easing: ease-out;
+            }
+        }
+    }
+
+    touch := TouchArea {}
 }
 
 export enum SelectionKind {
@@ -1246,8 +1300,8 @@ export component AppWindow inherits Window {
         }
 
         theme-panel-card := Rectangle {
-            width: min(parent.width - 48px, 560px);
-            height: min(parent.height - 80px, 520px);
+            width: min(parent.width - 48px, 720px);
+            height: min(parent.height - 80px, 540px);
             x: (parent.width - self.width) / 2;
             y: root.show-theme-panel ? 56px : 68px;
             opacity: root.show-theme-panel ? 1 : 0;
@@ -1268,11 +1322,10 @@ export component AppWindow inherits Window {
             }
 
             VerticalLayout {
-                padding: 16px;
-                spacing: 12px;
+                padding: 14px;
+                spacing: 10px;
 
                 HorizontalLayout {
-                    padding-right: 16px;
                     height: 32px;
                     spacing: 8px;
 
@@ -1286,6 +1339,7 @@ export component AppWindow inherits Window {
                     }
 
                     CommandButton {
+                        width: 72px;
                         text: root.ui-text.theme-cancel;
                         background-color: root.theme-background-alt;
                         hover-color: root.theme-border;
@@ -1295,146 +1349,154 @@ export component AppWindow inherits Window {
                     }
                 }
 
-                HorizontalLayout {
-                    padding-right: 16px;
-                    Rectangle {
-                        height: 1px;
-                        background: root.theme-border;
-                    }
+                Rectangle {
+                    height: 1px;
+                    background: root.theme-border.with_alpha(0.65);
                 }
 
                 ScrollView {
-                    VerticalLayout {
-                    padding-right: 16px;
-                    spacing: 6px;
-                    horizontal-stretch: 1;
                     vertical-stretch: 1;
 
-                    for item in root.theme-items: Rectangle {
-                        height: 56px;
-                        border-radius: 6px;
-                        border-width: item.is-preview ? 1px : (item.is-active ? 1px : 0px);
-                        border-color: item.is-preview ? root.theme-accent-primary : (item.is-active ? root.theme-success.with_alpha(0.4) : transparent);
-                        background: item.is-preview ? root.theme-background-alt : (item.is-active ? root.theme-background-alt.with_alpha(0.72) : root.theme-background);
-                        animate background {
-                            duration: 140ms;
-                            easing: ease-out;
-                        }
-                        animate border-color {
-                            duration: 140ms;
-                            easing: ease-out;
-                        }
+                    VerticalLayout {
+                        padding-right: 10px;
+                        spacing: 8px;
 
-                        theme-item-touch := TouchArea {
-                            width: 100%;
-                            height: 100%;
-                            clicked => {
-                                root.theme-preview(item.index);
+                        for item in root.theme-items: Rectangle {
+                            height: 64px;
+                            border-radius: 8px;
+                            border-width: 1px;
+                            border-color: item.is-preview ? root.theme-accent-primary : (item.is-active ? root.theme-success.with_alpha(0.45) : root.theme-border.with_alpha(0.45));
+                            background: item.is-preview ? root.theme-background-alt : (item.is-active ? root.theme-background-alt.with_alpha(0.72) : root.theme-background);
+                            animate background {
+                                duration: 140ms;
+                                easing: ease-out;
                             }
-                        }
+                            animate border-color {
+                                duration: 140ms;
+                                easing: ease-out;
+                            }
 
-                        HorizontalLayout {
-                            padding-left: 12px;
-                            padding-right: 10px;
-                            spacing: 10px;
-
-                            VerticalLayout {
-                                alignment: center;
-
-                                Rectangle {
-                                    width: 4px;
-                                    height: 34px;
-                                    border-radius: 2px;
-                                    background: item.is-preview ? root.theme-accent-primary : (item.is-active ? root.theme-success : root.theme-border);
-                                    animate background {
-                                        duration: 140ms;
-                                        easing: ease-out;
-                                    }
+                            theme-item-touch := TouchArea {
+                                width: 100%;
+                                height: 100%;
+                                clicked => {
+                                    root.theme-preview(item.index);
                                 }
                             }
 
-                            VerticalLayout {
-                                spacing: 2px;
-                                horizontal-stretch: 1;
-                                alignment: center;
+                            HorizontalLayout {
+                                padding-left: 12px;
+                                padding-right: 10px;
+                                spacing: 12px;
 
-                                Text {
-                                    text: item.name;
-                                    color: root.theme-text;
-                                    font-size: 14px;
-                                    font-weight: item.is-active ? 700 : 500;
-                                    vertical-alignment: center;
-                                    overflow: elide;
-                                }
-
-                                HorizontalLayout {
-                                    spacing: 6px;
-                                    Text {
-                                        text: item.variant;
-                                        color: root.theme-text-muted;
-                                        font-size: 11px;
-                                        vertical-alignment: center;
-                                    }
+                                VerticalLayout {
+                                    alignment: center;
 
                                     Rectangle {
-                                        width: 1px;
-                                        height: 10px;
-                                        background: root.theme-border;
+                                        width: 5px;
+                                        height: 40px;
+                                        border-radius: 3px;
+                                        background: item.is-preview ? root.theme-accent-primary : (item.is-active ? root.theme-success : root.theme-border);
+                                        animate background {
+                                            duration: 140ms;
+                                            easing: ease-out;
+                                        }
                                     }
+                                }
+
+                                VerticalLayout {
+                                    spacing: 4px;
+                                    horizontal-stretch: 1;
+                                    alignment: center;
 
                                     Text {
-                                        text: item.author;
-                                        color: root.theme-text-muted;
-                                        font-size: 11px;
+                                        text: item.name;
+                                        color: root.theme-text;
+                                        font-size: 14px;
+                                        font-weight: item.is-active ? 700 : 600;
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 8px;
+
+                                        Rectangle {
+                                            height: 20px;
+                                            min-width: 44px;
+                                            border-radius: 4px;
+                                            background: root.theme-background-alt;
+                                            border-width: 1px;
+                                            border-color: root.theme-border.with_alpha(0.45);
+
+                                            Text {
+                                                text: item.variant;
+                                                color: root.theme-text-muted;
+                                                font-size: 11px;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
+                                        }
+
+                                        Text {
+                                            text: item.author;
+                                            color: root.theme-text-muted;
+                                            font-size: 11px;
+                                            vertical-alignment: center;
+                                            overflow: elide;
+                                        }
+                                    }
+                                }
+
+                                VerticalLayout {
+                                    alignment: center;
+
+                                    Text {
+                                        text: item.is-preview ? root.ui-text.theme-preview : (item.is-active ? root.ui-text.theme-active : "");
+                                        color: item.is-active ? root.theme-success : root.theme-accent-primary;
+                                        font-size: 12px;
+                                        font-weight: 600;
+                                        width: 64px;
+                                        horizontal-alignment: right;
                                         vertical-alignment: center;
                                     }
                                 }
-                            }
 
-                            VerticalLayout {
-                                alignment: center;
+                                VerticalLayout {
+                                    alignment: center;
 
-                                Rectangle {
-                                    width: 202px;
-                                    height: 30px;
+                                    Rectangle {
+                                        width: 150px;
+                                        height: 30px;
 
-                                    HorizontalLayout {
-                                        spacing: 10px;
+                                        HorizontalLayout {
+                                            spacing: 8px;
 
-                                        Text {
-                                            text: item.is-preview ? root.ui-text.theme-preview : (item.is-active ? root.ui-text.theme-active : "");
-                                            color: item.is-active ? root.theme-success : root.theme-accent-primary;
-                                            font-size: 12px;
-                                            width: 54px;
-                                            horizontal-alignment: right;
-                                            vertical-alignment: center;
-                                        }
+                                            CommandButton {
+                                                width: 68px;
+                                                text: root.ui-text.theme-preview;
+                                                background-color: root.theme-background-alt;
+                                                hover-color: root.theme-border;
+                                                command-border-color: root.theme-border.with_alpha(0.8);
+                                                text-color: root.theme-text-muted;
+                                                clicked => { root.theme-preview(item.index); }
+                                            }
 
-                                        CommandButton {
-                                            width: 64px;
-                                            text: root.ui-text.theme-preview;
-                                            background-color: root.theme-background-alt;
-                                            hover-color: root.theme-border;
-                                            command-border-color: root.theme-border;
-                                            text-color: root.theme-text-muted;
-                                            clicked => { root.theme-preview(item.index); }
-                                        }
-
-                                        CommandButton {
-                                            width: 64px;
-                                            text: root.ui-text.theme-apply;
-                                            background-color: item.is-active ? root.theme-background-alt : root.theme-accent-primary;
-                                            hover-color: root.theme-border;
-                                            command-border-color: item.is-active ? root.theme-border : root.theme-accent-primary;
-                                            text-color: item.is-active ? root.theme-text-muted : root.theme-background;
-                                            clicked => { root.theme-apply(item.index); }
+                                            CommandButton {
+                                                width: 68px;
+                                                text: root.ui-text.theme-apply;
+                                                background-color: item.is-active ? root.theme-background-alt : root.theme-accent-primary;
+                                                hover-color: item.is-active ? root.theme-border : root.theme-accent-secondary;
+                                                command-border-color: item.is-active ? root.theme-border.with_alpha(0.8) : root.theme-accent-primary;
+                                                text-color: item.is-active ? root.theme-text-muted : root.theme-background;
+                                                clicked => { root.theme-apply(item.index); }
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
                     }
-                }
                 }
             }
         }
@@ -1463,8 +1525,8 @@ export component AppWindow inherits Window {
         }
 
         settings-panel-card := Rectangle {
-            width: min(parent.width - 48px, 600px);
-            height: min(parent.height - 80px, 560px);
+            width: min(parent.width - 48px, 780px);
+            height: min(parent.height - 80px, 590px);
             x: (parent.width - self.width) / 2;
             y: root.show-settings-panel ? 56px : 68px;
             opacity: root.show-settings-panel ? 1 : 0;
@@ -1485,12 +1547,13 @@ export component AppWindow inherits Window {
             }
 
             VerticalLayout {
-                padding: 16px;
-                spacing: 12px;
+                padding: 0px;
+                spacing: 0px;
 
                 HorizontalLayout {
-                    padding-right: 16px;
-                    height: 32px;
+                    padding-left: 18px;
+                    padding-right: 12px;
+                    height: 54px;
                     spacing: 8px;
 
                     Text {
@@ -1503,6 +1566,7 @@ export component AppWindow inherits Window {
                     }
 
                     CommandButton {
+                        width: 72px;
                         text: root.ui-text.settings-close;
                         background-color: root.theme-background-alt;
                         hover-color: root.theme-border;
@@ -1512,317 +1576,388 @@ export component AppWindow inherits Window {
                     }
                 }
 
-                HorizontalLayout {
-                    padding-right: 16px;
-                    Rectangle {
-                        height: 1px;
-                        background: root.theme-border;
-                    }
-                }
-
-                ScrollView {
-                    VerticalLayout {
-                        padding-right: 16px;
-                        spacing: 12px;
-
-                Text {
-                    text: root.ui-text.visual-section;
-                    color: root.theme-accent-primary;
-                    font-size: 11px;
-                    font-weight: 700;
-                    letter-spacing: 0.8px;
-                }
-
-                ToggleRow {
-                    title: root.ui-text.use-mica;
-                    detail: root.ui-text.use-mica-detail;
-                    checked: root.settings.enable-mica;
-                    row-background: root.theme-background;
-                    row-hover: root.theme-background-alt;
-                    row-border: root.theme-border;
-                    row-text: root.theme-text;
-                    row-text-muted: root.theme-text-muted;
-                    row-accent: root.theme-accent-primary;
-                    toggled => { root.settings-toggle-mica(); }
-                }
-
-                ToggleRow {
-                    title: root.ui-text.enable-animations;
-                    detail: root.ui-text.enable-animations-detail;
-                    checked: root.settings.enable-animations;
-                    row-background: root.theme-background;
-                    row-hover: root.theme-background-alt;
-                    row-border: root.theme-border;
-                    row-text: root.theme-text;
-                    row-text-muted: root.theme-text-muted;
-                    row-accent: root.theme-accent-primary;
-                    toggled => { root.settings-toggle-animations(); }
-                }
-
-                Text {
-                    text: root.ui-text.appearance-section;
-                    color: root.theme-accent-primary;
-                    font-size: 11px;
-                    font-weight: 700;
-                    letter-spacing: 0.8px;
-                }
-
                 Rectangle {
-                    height: 46px;
-                    border-radius: 4px;
-                    background: touch-theme.has-hover ? root.theme-background-alt : root.theme-background;
-                    border-width: 1px;
-                    border-color: touch-theme.has-hover ? root.theme-border : transparent;
-                    animate background {
-                        duration: 140ms;
-                        easing: ease-out;
-                    }
-                    animate border-color {
-                        duration: 140ms;
-                        easing: ease-out;
-                    }
+                    height: 1px;
+                    background: root.theme-border.with_alpha(0.65);
+                }
 
-                    HorizontalLayout {
-                        padding-left: 12px;
-                        padding-right: 12px;
-                        spacing: 10px;
+                HorizontalLayout {
+                    vertical-stretch: 1;
+                    spacing: 0px;
 
-                        Text {
-                            text: root.ui-text.appearance-themes;
-                            color: root.theme-text;
-                            font-size: 13px;
-                            font-weight: 600;
-                            vertical-alignment: center;
-                            horizontal-stretch: 1;
-                        }
+                    Rectangle {
+                        width: 175px;
+                        background: root.theme-background-alt.with_alpha(0.55);
 
                         VerticalLayout {
-                            alignment: center;
-                            Text {
-                                text: ">";
-                                color: root.theme-text-muted;
-                                font-size: 13px;
-                                vertical-alignment: center;
+                            padding: 12px;
+                            spacing: 6px;
+
+                            SettingsNavItem {
+                                text: root.ui-text.visual-section;
+                                active: true;
+                                background-color: root.theme-background-alt;
+                                hover-color: root.theme-border.with_alpha(0.35);
+                                active-color: root.theme-border.with_alpha(0.55);
+                                text-color: root.theme-text;
+                                muted-color: root.theme-text-muted;
+                            }
+
+                            SettingsNavItem {
+                                text: root.ui-text.editor-section;
+                                active: false;
+                                background-color: root.theme-background-alt;
+                                hover-color: root.theme-border.with_alpha(0.35);
+                                active-color: root.theme-border.with_alpha(0.55);
+                                text-color: root.theme-text;
+                                muted-color: root.theme-text-muted;
+                            }
+
+                            SettingsNavItem {
+                                text: root.ui-text.appearance-section;
+                                active: false;
+                                background-color: root.theme-background-alt;
+                                hover-color: root.theme-border.with_alpha(0.35);
+                                active-color: root.theme-border.with_alpha(0.55);
+                                text-color: root.theme-text;
+                                muted-color: root.theme-text-muted;
+                            }
+
+                            SettingsNavItem {
+                                text: root.ui-text.vim-section;
+                                active: false;
+                                background-color: root.theme-background-alt;
+                                hover-color: root.theme-border.with_alpha(0.35);
+                                active-color: root.theme-border.with_alpha(0.55);
+                                text-color: root.theme-text;
+                                muted-color: root.theme-text-muted;
+                            }
+
+                            SettingsNavItem {
+                                text: root.ui-text.startup-section;
+                                active: false;
+                                background-color: root.theme-background-alt;
+                                hover-color: root.theme-border.with_alpha(0.35);
+                                active-color: root.theme-border.with_alpha(0.55);
+                                text-color: root.theme-text;
+                                muted-color: root.theme-text-muted;
+                            }
+
+                            SettingsNavItem {
+                                text: root.ui-text.window-section;
+                                active: false;
+                                background-color: root.theme-background-alt;
+                                hover-color: root.theme-border.with_alpha(0.35);
+                                active-color: root.theme-border.with_alpha(0.55);
+                                text-color: root.theme-text;
+                                muted-color: root.theme-text-muted;
                             }
                         }
                     }
 
-                    touch-theme := TouchArea {
-                        clicked => {
-                            root.open-theme-panel();
+                    Rectangle {
+                        width: 1px;
+                        background: root.theme-border.with_alpha(0.55);
+                    }
+
+                    ScrollView {
+                        horizontal-stretch: 1;
+                        vertical-stretch: 1;
+
+                        VerticalLayout {
+                            padding: 20px;
+                            spacing: 12px;
+
+                            Text {
+                                text: root.ui-text.visual-section;
+                                color: root.theme-text;
+                                font-size: 15px;
+                                font-weight: 700;
+                            }
+
+                            ToggleRow {
+                                title: root.ui-text.use-mica;
+                                detail: root.ui-text.use-mica-detail;
+                                checked: root.settings.enable-mica;
+                                row-background: root.theme-background;
+                                row-hover: root.theme-background-alt;
+                                row-border: root.theme-border;
+                                row-text: root.theme-text;
+                                row-text-muted: root.theme-text-muted;
+                                row-accent: root.theme-accent-primary;
+                                toggled => { root.settings-toggle-mica(); }
+                            }
+
+                            ToggleRow {
+                                title: root.ui-text.enable-animations;
+                                detail: root.ui-text.enable-animations-detail;
+                                checked: root.settings.enable-animations;
+                                row-background: root.theme-background;
+                                row-hover: root.theme-background-alt;
+                                row-border: root.theme-border;
+                                row-text: root.theme-text;
+                                row-text-muted: root.theme-text-muted;
+                                row-accent: root.theme-accent-primary;
+                                toggled => { root.settings-toggle-animations(); }
+                            }
+
+                            Text {
+                                text: root.ui-text.appearance-section;
+                                color: root.theme-text;
+                                font-size: 15px;
+                                font-weight: 700;
+                            }
+
+                            Rectangle {
+                                height: 50px;
+                                border-radius: 6px;
+                                background: touch-theme.has-hover ? root.theme-background-alt : root.theme-background;
+                                border-width: 1px;
+                                border-color: touch-theme.has-hover ? root.theme-border : root.theme-border.with_alpha(0.45);
+                                animate background {
+                                    duration: 140ms;
+                                    easing: ease-out;
+                                }
+                                animate border-color {
+                                    duration: 140ms;
+                                    easing: ease-out;
+                                }
+
+                                HorizontalLayout {
+                                    padding-left: 12px;
+                                    padding-right: 12px;
+                                    spacing: 10px;
+
+                                    Text {
+                                        text: root.ui-text.appearance-themes;
+                                        color: root.theme-text;
+                                        font-size: 13px;
+                                        font-weight: 600;
+                                        vertical-alignment: center;
+                                        horizontal-stretch: 1;
+                                    }
+
+                                    Text {
+                                        text: ">";
+                                        color: root.theme-text-muted;
+                                        font-size: 13px;
+                                        vertical-alignment: center;
+                                    }
+                                }
+
+                                touch-theme := TouchArea {
+                                    clicked => {
+                                        root.open-theme-panel();
+                                    }
+                                }
+                            }
+
+                            Text {
+                                text: root.ui-text.editor-section;
+                                color: root.theme-text;
+                                font-size: 15px;
+                                font-weight: 700;
+                            }
+
+                            NumericSettingRow {
+                                title: root.ui-text.language;
+                                value: root.settings.language-label;
+                                row-background: root.theme-background;
+                                row-hover: root.theme-border;
+                                row-border: root.theme-border;
+                                row-text: root.theme-text;
+                                row-text-muted: root.theme-text-muted;
+                                decrement => { root.settings-cycle-language(-1); }
+                                increment => { root.settings-cycle-language(1); }
+                            }
+
+                            NumericSettingRow {
+                                title: root.ui-text.font-size;
+                                value: root.settings.font-size-label;
+                                row-background: root.theme-background;
+                                row-hover: root.theme-border;
+                                row-border: root.theme-border;
+                                row-text: root.theme-text;
+                                row-text-muted: root.theme-text-muted;
+                                decrement => { root.settings-adjust-font-size(-1); }
+                                increment => { root.settings-adjust-font-size(1); }
+                            }
+
+                            NumericSettingRow {
+                                title: root.ui-text.line-height;
+                                value: root.settings.line-height-label;
+                                row-background: root.theme-background;
+                                row-hover: root.theme-border;
+                                row-border: root.theme-border;
+                                row-text: root.theme-text;
+                                row-text-muted: root.theme-text-muted;
+                                decrement => { root.settings-adjust-line-height(-1); }
+                                increment => { root.settings-adjust-line-height(1); }
+                            }
+
+                            NumericSettingRow {
+                                title: root.ui-text.tab-size;
+                                value: root.settings.tab-size-label;
+                                row-background: root.theme-background;
+                                row-hover: root.theme-border;
+                                row-border: root.theme-border;
+                                row-text: root.theme-text;
+                                row-text-muted: root.theme-text-muted;
+                                decrement => { root.settings-adjust-tab-size(-1); }
+                                increment => { root.settings-adjust-tab-size(1); }
+                            }
+
+                            ToggleRow {
+                                title: root.ui-text.word-wrap;
+                                detail: root.ui-text.word-wrap-detail;
+                                checked: root.settings.word-wrap;
+                                row-background: root.theme-background;
+                                row-hover: root.theme-background-alt;
+                                row-border: root.theme-border;
+                                row-text: root.theme-text;
+                                row-text-muted: root.theme-text-muted;
+                                row-accent: root.theme-accent-primary;
+                                toggled => { root.settings-toggle-word-wrap(); }
+                            }
+
+                            ToggleRow {
+                                title: root.ui-text.cursor-glide;
+                                detail: root.ui-text.cursor-glide-detail;
+                                checked: root.settings.enable-cursor-glide;
+                                row-background: root.theme-background;
+                                row-hover: root.theme-background-alt;
+                                row-border: root.theme-border;
+                                row-text: root.theme-text;
+                                row-text-muted: root.theme-text-muted;
+                                row-accent: root.theme-accent-primary;
+                                toggled => { root.settings-toggle-cursor-glide(); }
+                            }
+
+                            ToggleRow {
+                                title: root.ui-text.smooth-scroll;
+                                detail: root.ui-text.smooth-scroll-detail;
+                                checked: root.settings.enable-smooth-scroll;
+                                row-background: root.theme-background;
+                                row-hover: root.theme-background-alt;
+                                row-border: root.theme-border;
+                                row-text: root.theme-text;
+                                row-text-muted: root.theme-text-muted;
+                                row-accent: root.theme-accent-primary;
+                                toggled => { root.settings-toggle-smooth-scroll(); }
+                            }
+
+                            ToggleRow {
+                                title: root.ui-text.cursor-blink;
+                                detail: root.ui-text.cursor-blink-detail;
+                                checked: root.settings.enable-cursor-blink;
+                                row-background: root.theme-background;
+                                row-hover: root.theme-background-alt;
+                                row-border: root.theme-border;
+                                row-text: root.theme-text;
+                                row-text-muted: root.theme-text-muted;
+                                row-accent: root.theme-accent-primary;
+                                toggled => { root.settings-toggle-cursor-blink(); }
+                            }
+
+                            Text {
+                                text: root.ui-text.vim-section;
+                                color: root.theme-text;
+                                font-size: 15px;
+                                font-weight: 700;
+                            }
+
+                            ToggleRow {
+                                title: root.ui-text.sync-clipboard;
+                                detail: root.ui-text.sync-clipboard-detail;
+                                checked: root.settings.sync-clipboard;
+                                row-background: root.theme-background;
+                                row-hover: root.theme-background-alt;
+                                row-border: root.theme-border;
+                                row-text: root.theme-text;
+                                row-text-muted: root.theme-text-muted;
+                                row-accent: root.theme-accent-primary;
+                                toggled => { root.settings-toggle-sync-clipboard(); }
+                            }
+
+                            Text {
+                                text: root.ui-text.startup-section;
+                                color: root.theme-text;
+                                font-size: 15px;
+                                font-weight: 700;
+                            }
+
+                            ToggleRow {
+                                title: root.ui-text.restore-last-session;
+                                detail: root.ui-text.restore-last-session-detail;
+                                checked: root.settings.restore-last-session;
+                                row-background: root.theme-background;
+                                row-hover: root.theme-background-alt;
+                                row-border: root.theme-border;
+                                row-text: root.theme-text;
+                                row-text-muted: root.theme-text-muted;
+                                row-accent: root.theme-accent-primary;
+                                toggled => { root.settings-toggle-restore-last-session(); }
+                            }
+
+                            ToggleRow {
+                                title: root.ui-text.show-launcher-on-startup;
+                                detail: root.ui-text.show-launcher-on-startup-detail;
+                                checked: root.settings.show-launcher-on-startup;
+                                row-background: root.theme-background;
+                                row-hover: root.theme-background-alt;
+                                row-border: root.theme-border;
+                                row-text: root.theme-text;
+                                row-text-muted: root.theme-text-muted;
+                                row-accent: root.theme-accent-primary;
+                                toggled => { root.settings-toggle-show-launcher-on-startup(); }
+                            }
+
+                            Text {
+                                text: root.ui-text.window-section;
+                                color: root.theme-text;
+                                font-size: 15px;
+                                font-weight: 700;
+                            }
+
+                            ToggleRow {
+                                title: root.ui-text.remember-window-geometry;
+                                detail: root.ui-text.remember-window-geometry-detail;
+                                checked: root.settings.remember-window-geometry;
+                                row-background: root.theme-background;
+                                row-hover: root.theme-background-alt;
+                                row-border: root.theme-border;
+                                row-text: root.theme-text;
+                                row-text-muted: root.theme-text-muted;
+                                row-accent: root.theme-accent-primary;
+                                toggled => { root.settings-toggle-remember-window-geometry(); }
+                            }
+
+                            ToggleRow {
+                                title: root.ui-text.blur-behind;
+                                detail: root.ui-text.blur-behind-detail;
+                                checked: root.settings.blur-behind;
+                                row-background: root.theme-background;
+                                row-hover: root.theme-background-alt;
+                                row-border: root.theme-border;
+                                row-text: root.theme-text;
+                                row-text-muted: root.theme-text-muted;
+                                row-accent: root.theme-accent-primary;
+                                toggled => { root.settings-toggle-blur-behind(); }
+                            }
+
+                            NumericSettingRow {
+                                title: root.ui-text.window-opacity;
+                                value: root.settings.window-opacity-label;
+                                row-background: root.theme-background;
+                                row-hover: root.theme-border;
+                                row-border: root.theme-border;
+                                row-text: root.theme-text;
+                                row-text-muted: root.theme-text-muted;
+                                decrement => { root.settings-adjust-window-opacity(-5); }
+                                increment => { root.settings-adjust-window-opacity(5); }
+                            }
                         }
                     }
-                }
-
-                Text {
-                    text: root.ui-text.editor-section;
-                    color: root.theme-accent-primary;
-                    font-size: 11px;
-                    font-weight: 700;
-                    letter-spacing: 0.8px;
-                }
-
-                NumericSettingRow {
-                    title: root.ui-text.language;
-                    value: root.settings.language-label;
-                    row-background: root.theme-background;
-                    row-hover: root.theme-border;
-                    row-border: root.theme-border;
-                    row-text: root.theme-text;
-                    row-text-muted: root.theme-text-muted;
-                    decrement => { root.settings-cycle-language(-1); }
-                    increment => { root.settings-cycle-language(1); }
-                }
-
-                NumericSettingRow {
-                    title: root.ui-text.font-size;
-                    value: root.settings.font-size-label;
-                    row-background: root.theme-background;
-                    row-hover: root.theme-border;
-                    row-border: root.theme-border;
-                    row-text: root.theme-text;
-                    row-text-muted: root.theme-text-muted;
-                    decrement => { root.settings-adjust-font-size(-1); }
-                    increment => { root.settings-adjust-font-size(1); }
-                }
-
-                NumericSettingRow {
-                    title: root.ui-text.line-height;
-                    value: root.settings.line-height-label;
-                    row-background: root.theme-background;
-                    row-hover: root.theme-border;
-                    row-border: root.theme-border;
-                    row-text: root.theme-text;
-                    row-text-muted: root.theme-text-muted;
-                    decrement => { root.settings-adjust-line-height(-1); }
-                    increment => { root.settings-adjust-line-height(1); }
-                }
-
-                NumericSettingRow {
-                    title: root.ui-text.tab-size;
-                    value: root.settings.tab-size-label;
-                    row-background: root.theme-background;
-                    row-hover: root.theme-border;
-                    row-border: root.theme-border;
-                    row-text: root.theme-text;
-                    row-text-muted: root.theme-text-muted;
-                    decrement => { root.settings-adjust-tab-size(-1); }
-                    increment => { root.settings-adjust-tab-size(1); }
-                }
-
-                ToggleRow {
-                    title: root.ui-text.word-wrap;
-                    detail: root.ui-text.word-wrap-detail;
-                    checked: root.settings.word-wrap;
-                    row-background: root.theme-background;
-                    row-hover: root.theme-background-alt;
-                    row-border: root.theme-border;
-                    row-text: root.theme-text;
-                    row-text-muted: root.theme-text-muted;
-                    row-accent: root.theme-accent-primary;
-                    toggled => { root.settings-toggle-word-wrap(); }
-                }
-
-                ToggleRow {
-                    title: root.ui-text.cursor-glide;
-                    detail: root.ui-text.cursor-glide-detail;
-                    checked: root.settings.enable-cursor-glide;
-                    row-background: root.theme-background;
-                    row-hover: root.theme-background-alt;
-                    row-border: root.theme-border;
-                    row-text: root.theme-text;
-                    row-text-muted: root.theme-text-muted;
-                    row-accent: root.theme-accent-primary;
-                    toggled => { root.settings-toggle-cursor-glide(); }
-                }
-
-                ToggleRow {
-                    title: root.ui-text.smooth-scroll;
-                    detail: root.ui-text.smooth-scroll-detail;
-                    checked: root.settings.enable-smooth-scroll;
-                    row-background: root.theme-background;
-                    row-hover: root.theme-background-alt;
-                    row-border: root.theme-border;
-                    row-text: root.theme-text;
-                    row-text-muted: root.theme-text-muted;
-                    row-accent: root.theme-accent-primary;
-                    toggled => { root.settings-toggle-smooth-scroll(); }
-                }
-
-                ToggleRow {
-                    title: root.ui-text.cursor-blink;
-                    detail: root.ui-text.cursor-blink-detail;
-                    checked: root.settings.enable-cursor-blink;
-                    row-background: root.theme-background;
-                    row-hover: root.theme-background-alt;
-                    row-border: root.theme-border;
-                    row-text: root.theme-text;
-                    row-text-muted: root.theme-text-muted;
-                    row-accent: root.theme-accent-primary;
-                    toggled => { root.settings-toggle-cursor-blink(); }
-                }
-
-                Text {
-                    text: root.ui-text.vim-section;
-                    color: root.theme-accent-primary;
-                    font-size: 11px;
-                    font-weight: 700;
-                    letter-spacing: 0.8px;
-                }
-
-                ToggleRow {
-                    title: root.ui-text.sync-clipboard;
-                    detail: root.ui-text.sync-clipboard-detail;
-                    checked: root.settings.sync-clipboard;
-                    row-background: root.theme-background;
-                    row-hover: root.theme-background-alt;
-                    row-border: root.theme-border;
-                    row-text: root.theme-text;
-                    row-text-muted: root.theme-text-muted;
-                    row-accent: root.theme-accent-primary;
-                    toggled => { root.settings-toggle-sync-clipboard(); }
-                }
-
-                Text {
-                    text: root.ui-text.startup-section;
-                    color: root.theme-accent-primary;
-                    font-size: 11px;
-                    font-weight: 700;
-                    letter-spacing: 0.8px;
-                }
-
-                ToggleRow {
-                    title: root.ui-text.restore-last-session;
-                    detail: root.ui-text.restore-last-session-detail;
-                    checked: root.settings.restore-last-session;
-                    row-background: root.theme-background;
-                    row-hover: root.theme-background-alt;
-                    row-border: root.theme-border;
-                    row-text: root.theme-text;
-                    row-text-muted: root.theme-text-muted;
-                    row-accent: root.theme-accent-primary;
-                    toggled => { root.settings-toggle-restore-last-session(); }
-                }
-
-                ToggleRow {
-                    title: root.ui-text.show-launcher-on-startup;
-                    detail: root.ui-text.show-launcher-on-startup-detail;
-                    checked: root.settings.show-launcher-on-startup;
-                    row-background: root.theme-background;
-                    row-hover: root.theme-background-alt;
-                    row-border: root.theme-border;
-                    row-text: root.theme-text;
-                    row-text-muted: root.theme-text-muted;
-                    row-accent: root.theme-accent-primary;
-                    toggled => { root.settings-toggle-show-launcher-on-startup(); }
-                }
-
-                Text {
-                    text: root.ui-text.window-section;
-                    color: root.theme-accent-primary;
-                    font-size: 11px;
-                    font-weight: 700;
-                    letter-spacing: 0.8px;
-                }
-
-                ToggleRow {
-                    title: root.ui-text.remember-window-geometry;
-                    detail: root.ui-text.remember-window-geometry-detail;
-                    checked: root.settings.remember-window-geometry;
-                    row-background: root.theme-background;
-                    row-hover: root.theme-background-alt;
-                    row-border: root.theme-border;
-                    row-text: root.theme-text;
-                    row-text-muted: root.theme-text-muted;
-                    row-accent: root.theme-accent-primary;
-                    toggled => { root.settings-toggle-remember-window-geometry(); }
-                }
-
-                ToggleRow {
-                    title: root.ui-text.blur-behind;
-                    detail: root.ui-text.blur-behind-detail;
-                    checked: root.settings.blur-behind;
-                    row-background: root.theme-background;
-                    row-hover: root.theme-background-alt;
-                    row-border: root.theme-border;
-                    row-text: root.theme-text;
-                    row-text-muted: root.theme-text-muted;
-                    row-accent: root.theme-accent-primary;
-                    toggled => { root.settings-toggle-blur-behind(); }
-                }
-
-                NumericSettingRow {
-                    title: root.ui-text.window-opacity;
-                    value: root.settings.window-opacity-label;
-                    row-background: root.theme-background;
-                    row-hover: root.theme-border;
-                    row-border: root.theme-border;
-                    row-text: root.theme-text;
-                    row-text-muted: root.theme-text-muted;
-                    decrement => { root.settings-adjust-window-opacity(-5); }
-                    increment => { root.settings-adjust-window-opacity(5); }
-                }
-                }
                 }
             }
         }

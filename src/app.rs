@@ -1790,7 +1790,7 @@ fn line_for_flat(lines: &[String], mut offset: usize) -> usize {
     lines.len().saturating_sub(1)
 }
 
-const SELECTION_LINE_END_OVERSHOOT_CELLS: f32 = 0.30;
+const SELECTION_LINE_END_OVERSHOOT_CELLS: f32 = 0.50;
 const SELECTION_RADIUS_X_CELLS: f32 = 0.35;
 const SELECTION_RADIUS_Y_LINES: f32 = 0.28;
 
