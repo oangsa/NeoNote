@@ -1027,6 +1027,20 @@ export component AppWindow inherits Window {
 
                                 Path {
                                     visible: tab.is-active;
+                                    x: -root.tab-join-curve;
+                                    y: parent.height - root.tab-join-curve - 1px;
+                                    width: root.tab-join-curve + 1px;
+                                    height: root.tab-join-curve + 1px;
+                                    viewbox-width: 5;
+                                    viewbox-height: 5;
+                                    commands: "M 5 0 Q 5 5 0 5";
+                                    fill: transparent;
+                                    stroke: root.chrome-border;
+                                    stroke-width: 1px;
+                                }
+
+                                Path {
+                                    visible: tab.is-active;
                                     x: parent.width - 1px;
                                     y: parent.height - root.tab-join-curve - 1px;
                                     width: root.tab-join-curve + 1px;
@@ -1035,6 +1049,20 @@ export component AppWindow inherits Window {
                                     viewbox-height: 5;
                                     commands: "M 0 0 Q 0 5 5 5 L 0 5 Z";
                                     fill: root.chrome-selected;
+                                }
+
+                                Path {
+                                    visible: tab.is-active;
+                                    x: parent.width - 1px;
+                                    y: parent.height - root.tab-join-curve - 1px;
+                                    width: root.tab-join-curve + 1px;
+                                    height: root.tab-join-curve + 1px;
+                                    viewbox-width: 5;
+                                    viewbox-height: 5;
+                                    commands: "M 0 0 Q 0 5 5 5";
+                                    fill: transparent;
+                                    stroke: root.chrome-border;
+                                    stroke-width: 1px;
                                 }
 
                                 HorizontalLayout {
