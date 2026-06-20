@@ -31,7 +31,7 @@ component CommandButton inherits Rectangle {
         y: 1px;
         width: parent.width - 2px;
         height: 1px;
-        background: #ffffff.with_alpha(touch.has-hover ? 0.08 : 0.04);
+        background: root.text-color.with_alpha(touch.has-hover ? 0.04 : 0.02);
         border-radius: parent.border-radius;
         animate background {
             duration: 167ms;
@@ -545,18 +545,18 @@ export component AppWindow inherits Window {
     property <length> status-mode-pill-height: 24px;
     property <length> status-mode-pill-min-width: 76px;
 
-    property <brush> chrome-background: #f6f7f8;
-    property <brush> chrome-surface: #ffffff;
-    property <brush> chrome-surface-hover: #f1f2f4;
-    property <brush> chrome-selected: #ffffff;
-    property <brush> chrome-border: #d9dce1;
-    property <brush> chrome-border-soft: #e7e9ed;
-    property <brush> chrome-text: #181a20;
-    property <brush> chrome-muted: #5f6671;
-    property <brush> chrome-muted-soft: #8a919d;
-    property <brush> chrome-editor-line: #f4f6f8;
-    property <brush> chrome-mode-fill: #e9ebef;
-    property <brush> chrome-cursor: #8b929d;
+    property <brush> chrome-background: root.theme-background-alt;
+    property <brush> chrome-surface: root.theme-background;
+    property <brush> chrome-surface-hover: root.theme-surface;
+    property <brush> chrome-selected: root.theme-background;
+    property <brush> chrome-border: root.theme-border;
+    property <brush> chrome-border-soft: root.theme-border.with_alpha(0.62);
+    property <brush> chrome-text: root.theme-text;
+    property <brush> chrome-muted: root.theme-text-muted;
+    property <brush> chrome-muted-soft: root.theme-text-muted.with_alpha(0.72);
+    property <brush> chrome-editor-line: root.theme-surface.with_alpha(0.28);
+    property <brush> chrome-mode-fill: root.theme-surface;
+    property <brush> chrome-cursor: root.theme-cursor;
 
     // Editor metrics contract
     in property <length> editor-left-padding: root.target-editor-padding-x;
@@ -1023,7 +1023,7 @@ export component AppWindow inherits Window {
                                             width: 18px;
                                             height: 18px;
                                             border-radius: 4px;
-                                            background: close-touch.has-hover ? #eef0f3 : transparent;
+                                            background: close-touch.has-hover ? root.theme-error.with_alpha(0.12) : transparent;
                                             opacity: 1;
                                             animate background {
                                                 duration: 83ms;
@@ -1178,7 +1178,7 @@ export component AppWindow inherits Window {
                         y: 0px;
                         width: root.gutter-width;
                         height: 100%;
-                        background: #f8f9fb;
+                        background: root.theme-background-alt;
                         animate background {
                             duration: root.anim-duration-normal * 1ms;
                             easing: ease-out;
@@ -1241,7 +1241,7 @@ export component AppWindow inherits Window {
                             for line in root.editor-lines: Rectangle {
                                 height: root.line-height-px;
                                 width: 100%;
-                                background: line.is-search-match ? #ffe7a8.with_alpha(0.55) : (line.is-cursor-line ? root.chrome-editor-line : transparent);
+                                background: line.is-search-match ? root.theme-warning.with_alpha(0.18) : (line.is-cursor-line ? root.chrome-editor-line : transparent);
                             }
                         }
 
@@ -1256,7 +1256,7 @@ export component AppWindow inherits Window {
                             viewbox-height: max(shape.height-lines, 1);
                             fit: fill;
                             commands: shape.path-data;
-                            fill: #5d86c8.with_alpha(0.18);
+                            fill: root.theme-accent-primary.with_alpha(0.18);
                         }
 
                         VerticalLayout {
@@ -1506,7 +1506,7 @@ export component AppWindow inherits Window {
 
                 Text {
                     text: root.search-match-label;
-                    color: #335f9f;
+                    color: root.theme-accent-primary;
                     font-size: 12px;
                     font-weight: 600;
                     vertical-alignment: center;
