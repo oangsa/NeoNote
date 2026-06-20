@@ -1140,49 +1140,55 @@ export component AppWindow inherits Window {
                             }
                         }
 
-                    }
-                }
+                        Rectangle {
+                            width: 32px;
+                            height: root.tab-strip-height;
+                            background: transparent;
 
-                VerticalLayout {
-                    alignment: center;
+                            VerticalLayout {
+                                alignment: center;
 
-                    add-tab-btn := Rectangle {
-                        width: 28px;
-                        height: 28px;
-                        border-radius: 4px;
-                        background: add-tab-touch.has-hover ? root.chrome-surface-hover : transparent;
-                        animate background {
-                            duration: 83ms;
-                            easing: ease-out;
-                        }
+                                add-tab-btn := Rectangle {
+                                    width: 28px;
+                                    height: 28px;
+                                    border-radius: 4px;
+                                    background: add-tab-touch.has-hover ? root.chrome-surface-hover : transparent;
+                                    animate background {
+                                        duration: 83ms;
+                                        easing: ease-out;
+                                    }
 
-                        Text {
-                            text: "+";
-                            color: add-tab-touch.has-hover ? root.chrome-text : root.chrome-muted;
-                            font-size: 16px;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                            animate color {
-                                duration: 83ms;
-                                easing: ease-out;
-                            }
-                        }
+                                    Text {
+                                        text: "+";
+                                        color: add-tab-touch.has-hover ? root.chrome-text : root.chrome-muted;
+                                        font-size: 16px;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        animate color {
+                                            duration: 83ms;
+                                            easing: ease-out;
+                                        }
+                                    }
 
-                        add-tab-touch := TouchArea {
-                            clicked => {
-                                root.new-file();
-                            }
-                            scroll-event(event) => {
-                                if (event.delta-y != 0) {
-                                    tab-scroll.viewport-x = max(
-                                        -max(0px, tab-scroll.viewport-width - tab-scroll.visible-width),
-                                        min(0px, tab-scroll.viewport-x + event.delta-y)
-                                    );
-                                    return accept;
+                                    add-tab-touch := TouchArea {
+                                        clicked => {
+                                            root.new-file();
+                                        }
+                                        scroll-event(event) => {
+                                            if (event.delta-y != 0) {
+                                                tab-scroll.viewport-x = max(
+                                                    -max(0px, tab-scroll.viewport-width - tab-scroll.visible-width),
+                                                    min(0px, tab-scroll.viewport-x + event.delta-y)
+                                                );
+                                                return accept;
+                                            }
+                                            return reject;
+                                        }
+                                    }
                                 }
-                                return reject;
                             }
                         }
+
                     }
                 }
 
@@ -1190,7 +1196,7 @@ export component AppWindow inherits Window {
                     alignment: center;
 
                     gear-btn := Rectangle {
-                        width: 58px;
+                        width: 32px;
                         height: 28px;
                         border-radius: 6px;
                         border-width: 1px;
@@ -1205,17 +1211,69 @@ export component AppWindow inherits Window {
                             easing: ease-out;
                         }
 
-                        Text {
-                            text: "Settings";
-                            font-size: 10px;
-                            color: gear-touch.has-hover
-                                ? root.chrome-text
-                                : root.chrome-muted;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                            animate color {
-                                duration: 83ms;
-                                easing: ease-out;
+                        Rectangle {
+                            x: (parent.width - 14px) / 2;
+                            y: (parent.height - 14px) / 2;
+                            width: 14px;
+                            height: 14px;
+                            background: transparent;
+
+                            Rectangle {
+                                x: 6px;
+                                y: 0px;
+                                width: 2px;
+                                height: 3px;
+                                border-radius: 1px;
+                                background: gear-touch.has-hover ? root.chrome-text : root.chrome-muted;
+                            }
+
+                            Rectangle {
+                                x: 6px;
+                                y: 11px;
+                                width: 2px;
+                                height: 3px;
+                                border-radius: 1px;
+                                background: gear-touch.has-hover ? root.chrome-text : root.chrome-muted;
+                            }
+
+                            Rectangle {
+                                x: 0px;
+                                y: 6px;
+                                width: 3px;
+                                height: 2px;
+                                border-radius: 1px;
+                                background: gear-touch.has-hover ? root.chrome-text : root.chrome-muted;
+                            }
+
+                            Rectangle {
+                                x: 11px;
+                                y: 6px;
+                                width: 3px;
+                                height: 2px;
+                                border-radius: 1px;
+                                background: gear-touch.has-hover ? root.chrome-text : root.chrome-muted;
+                            }
+
+                            Rectangle {
+                                x: 2px;
+                                y: 2px;
+                                width: 10px;
+                                height: 10px;
+                                border-radius: 5px;
+                                border-width: 1px;
+                                border-color: gear-touch.has-hover ? root.chrome-text : root.chrome-muted;
+                                background: transparent;
+                            }
+
+                            Rectangle {
+                                x: 5px;
+                                y: 5px;
+                                width: 4px;
+                                height: 4px;
+                                border-radius: 2px;
+                                border-width: 1px;
+                                border-color: gear-touch.has-hover ? root.chrome-text : root.chrome-muted;
+                                background: transparent;
                             }
                         }
 
