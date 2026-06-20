@@ -87,6 +87,10 @@ pub struct AppSnapshot {
     pub document_tabs: Vec<DocumentTabSnapshot>,
     pub status_text: String,
     pub status_right: String,
+    pub status_ln_col: String,
+    pub status_lines: String,
+    pub status_words: String,
+    pub status_encoding: String,
     pub mode_text: String,
     pub mode_color: String,
     pub cursor_line: i32,
@@ -1019,6 +1023,26 @@ impl AppController {
                 )
             } else {
                 language.ready_status_right().to_string()
+            },
+            status_ln_col: if note.is_open(self.active_buffer()) {
+                language.status_ln_col(note.cursor_line(buffer) + 1, note.display_cursor_col(buffer) + 1)
+            } else {
+                String::new()
+            },
+            status_lines: if note.is_open(self.active_buffer()) {
+                language.status_lines_count(stats.line_count)
+            } else {
+                String::new()
+            },
+            status_words: if note.is_open(self.active_buffer()) {
+                language.status_words_count(stats.word_count)
+            } else {
+                String::new()
+            },
+            status_encoding: if note.is_open(self.active_buffer()) {
+                language.status_encoding_label().to_string()
+            } else {
+                String::new()
             },
             mode_color: self.mode_color(&mode_text),
             cursor_line: note.cursor_line(buffer) as i32,

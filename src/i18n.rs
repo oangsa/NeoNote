@@ -223,6 +223,38 @@ impl AppLanguage {
         }
     }
 
+    pub fn status_ln_col(self, line: usize, column: usize) -> String {
+        match self {
+            AppLanguage::English => format!("Ln {line}, Col {column}"),
+            AppLanguage::Spanish => format!("Lín {line}, Col {column}"),
+            AppLanguage::Japanese => format!("行 {line}, 列 {column}"),
+        }
+    }
+
+    pub fn status_lines_count(self, count: usize) -> String {
+        match self {
+            AppLanguage::English => format!("{count} lines"),
+            AppLanguage::Spanish => format!("{count} líneas"),
+            AppLanguage::Japanese => format!("{count} 行"),
+        }
+    }
+
+    pub fn status_words_count(self, count: usize) -> String {
+        match self {
+            AppLanguage::English => format!("{count} words"),
+            AppLanguage::Spanish => format!("{count} palabras"),
+            AppLanguage::Japanese => format!("{count} 語"),
+        }
+    }
+
+    pub fn status_encoding_label(self) -> &'static str {
+        match self {
+            AppLanguage::English => "UTF-8",
+            AppLanguage::Spanish => "UTF-8",
+            AppLanguage::Japanese => "UTF-8",
+        }
+    }
+
     pub fn status_right(
         self,
         _document_index: usize,

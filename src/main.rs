@@ -42,15 +42,7 @@ fn main() -> Result<(), slint::PlatformError> {
 
     controller.borrow_mut().run_startup_flow(startup_args);
 
-    #[cfg(target_os = "windows")]
-    {
-        let enable_mica = controller.borrow().config.enable_mica;
-        if enable_mica {
-            if let Some(hwnd) = platform::window_effects::find_main_window_hwnd() {
-                let _ = platform::window_effects::apply_mica_for_hwnd(hwnd, true);
-            }
-        }
-    }
+    sync_window_effects(&window, &controller.borrow().snapshot());
 
     let last_editor_activity = Rc::new(RefCell::new(Instant::now()));
     let blink_state = Rc::new(RefCell::new(true));
@@ -341,7 +333,9 @@ fn install_callbacks(
             .borrow_mut()
             .adjust_window_opacity(delta);
         if let Some(window) = weak_window.upgrade() {
-            apply_snapshot(&window, &controller_for_opacity.borrow().snapshot());
+            let snapshot = controller_for_opacity.borrow().snapshot();
+            apply_snapshot(&window, &snapshot);
+            sync_window_effects(&window, &snapshot);
         }
     });
 
@@ -403,7 +397,9 @@ fn install_callbacks(
     window.on_settings_toggle_blur_behind(move || {
         controller_for_blur.borrow_mut().toggle_blur_behind();
         if let Some(window) = weak_window.upgrade() {
-            apply_snapshot(&window, &controller_for_blur.borrow().snapshot());
+            let snapshot = controller_for_blur.borrow().snapshot();
+            apply_snapshot(&window, &snapshot);
+            sync_window_effects(&window, &snapshot);
         }
     });
 
@@ -412,7 +408,9 @@ fn install_callbacks(
     window.on_settings_toggle_mica(move || {
         controller_for_mica.borrow_mut().toggle_mica();
         if let Some(window) = weak_window.upgrade() {
-            apply_snapshot(&window, &controller_for_mica.borrow().snapshot());
+            let snapshot = controller_for_mica.borrow().snapshot();
+            apply_snapshot(&window, &snapshot);
+            sync_window_effects(&window, &snapshot);
         }
     });
 
@@ -532,6 +530,19 @@ fn install_callbacks(
             window.invoke_focus_editor();
         }
     });
+}
+
+fn sync_window_effects(window: &AppWindow, snapshot: &AppSnapshot) {
+    #[cfg(target_os = "windows")]
+    if let Some(hwnd) = platform::get_hwnd_from_slint(window.window()) {
+        platform::effects::set_mica_backdrop(hwnd, snapshot.settings.enable_mica);
+        platform::effects::set_dark_mode_titlebar(hwnd);
+        platform::effects::set_rounded_corners(hwnd);
+        platform::effects::set_window_opacity(hwnd, snapshot.settings.window_opacity as u8);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    let _ = (window, snapshot);
 }
 
 fn apply_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
@@ -739,7 +750,12 @@ fn apply_editor_snapshot(window: &AppWindow, snapshot: &AppSnapshot) {
     );
     window.set_status_text(SharedString::from(snapshot.status_text.as_str()));
     window.set_status_right(SharedString::from(snapshot.status_right.as_str()));
+    window.set_status_ln_col(SharedString::from(snapshot.status_ln_col.as_str()));
+    window.set_status_lines(SharedString::from(snapshot.status_lines.as_str()));
+    window.set_status_words(SharedString::from(snapshot.status_words.as_str()));
+    window.set_status_encoding(SharedString::from(snapshot.status_encoding.as_str()));
     window.set_mode_text(SharedString::from(snapshot.mode_text.as_str()));
+    window.set_mica_enabled(snapshot.settings.enable_mica);
     window.set_cursor_line(snapshot.cursor_line);
     window.set_cursor_column(snapshot.cursor_column);
     window.set_previous_cursor_line(snapshot.previous_cursor_line);

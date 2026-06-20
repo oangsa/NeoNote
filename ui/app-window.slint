@@ -18,12 +18,25 @@ component CommandButton inherits Rectangle {
     border-color: root.command-border-color;
     background: touch.has-hover ? root.hover-color : root.background-color;
     animate background {
-        duration: 140ms;
+        duration: 167ms;
         easing: ease-out;
     }
     animate border-color {
-        duration: 140ms;
+        duration: 167ms;
         easing: ease-out;
+    }
+
+    Rectangle {
+        x: 1px;
+        y: 1px;
+        width: parent.width - 2px;
+        height: 1px;
+        background: #ffffff.with_alpha(touch.has-hover ? 0.08 : 0.04);
+        border-radius: parent.border-radius;
+        animate background {
+            duration: 167ms;
+            easing: ease-out;
+        }
     }
 
     HorizontalLayout {
@@ -509,13 +522,13 @@ export component AppWindow inherits Window {
     in property <string> cursor-suffix: "";
     in property <string> previous-cursor-prefix: "";
     in property <bool> cursor-block: true;
-    in property <length> editor-left-padding: 22px;
+    in property <length> editor-left-padding: 12px;
     in property <float> editor-line-height: 17;
     in property <float> editor-font-size: 14;
     in property <string> editor-font-family: "Consolas";
 
     // Editor metrics contract
-    property <length> gutter-width: 86px;
+    property <length> gutter-width: 56px;
     property <length> content-padding-x: root.editor-left-padding;
     property <length> content-padding-y: 0px;
     property <length> editor-content-x: root.gutter-width + root.content-padding-x;
@@ -567,6 +580,23 @@ export component AppWindow inherits Window {
     in property <brush> theme-error: #f7768e;
     in property <brush> theme-cursor: #c0caf5;
     in property <brush> mode-color: #7aa2f7;
+
+    // Fluent Design tokens
+    in property <bool> mica-enabled: false;
+    in property <brush> fluent-fill-control: #ffffff.with_alpha(0.07);
+    in property <brush> fluent-fill-control-secondary: #ffffff.with_alpha(0.03);
+    in property <brush> fluent-fill-control-hover: #ffffff.with_alpha(0.10);
+    in property <brush> fluent-stroke-control: #ffffff.with_alpha(0.08);
+    in property <brush> fluent-stroke-surface: #ffffff.with_alpha(0.04);
+    in property <brush> fluent-shadow-flyout: #000000.with_alpha(0.26);
+    in property <brush> fluent-acrylic-base: root.theme-background.with_alpha(0.72);
+
+    // Status bar segmented fields
+    in property <string> status-ln-col: "";
+    in property <string> status-lines: "";
+    in property <string> status-words: "";
+    in property <string> status-encoding: "";
+
     in property <bool> enable-animations: true;
     in property <bool> enable-cursor-glide: true;
     in property <bool> enable-smooth-scroll: true;
@@ -574,9 +604,9 @@ export component AppWindow inherits Window {
     in property <bool> enable-cursor-smear: false;
     in property <bool> cursor-blink-visible: true;
     in property <bool> cursor-insert-mode: false;
-    in property <int> anim-duration-short: 80;
-    in property <int> anim-duration-normal: 120;
-    in property <int> anim-duration-long: 180;
+    in property <int> anim-duration-short: 83;
+    in property <int> anim-duration-normal: 167;
+    in property <int> anim-duration-long: 250;
     in property <int> anim-duration-insert: 50;
     in property <int> viewport-top-line: 0;
     in property <int> cursor-animation-kind: 0;
@@ -674,7 +704,9 @@ export component AppWindow inherits Window {
         }
     }
 
-    background: root.theme-background;
+    background: root.mica-enabled
+        ? root.theme-background.with_alpha(0.45)
+        : root.theme-background;
     animate background {
         duration: root.anim-duration-normal * 1ms;
         easing: ease-out;
@@ -700,8 +732,8 @@ export component AppWindow inherits Window {
                     alignment: center;
 
                     Image {
-                        width: 25px;
-                        height: 25px;
+                        width: 45px;
+                        height: 45px;
                         source: @image-url("../assets/icons/neonote.png");
                         image-fit: contain;
                     }
@@ -770,13 +802,13 @@ export component AppWindow inherits Window {
                             width: 180px;
 
                             Rectangle {
-                                background: root.theme-background;
-                                border-color: root.theme-border;
+                                background: root.fluent-acrylic-base;
+                                border-color: root.fluent-stroke-control;
                                 border-width: 1px;
-                                border-radius: 6px;
-                                drop-shadow-color: #000000.with_alpha(0.22);
-                                drop-shadow-blur: 12px;
-                                drop-shadow-offset-y: 4px;
+                                border-radius: 8px;
+                                drop-shadow-color: root.fluent-shadow-flyout;
+                                drop-shadow-blur: 20px;
+                                drop-shadow-offset-y: 8px;
 
                                 VerticalLayout {
                                     padding: 4px;
@@ -844,121 +876,108 @@ export component AppWindow inherits Window {
         }
 
         Rectangle {
-            height: 58px;
-            background: root.theme-background.with_alpha(0.84);
+            height: 42px;
+            background: root.mica-enabled
+                ? root.theme-background.with_alpha(0.55)
+                : root.theme-background.with_alpha(0.92);
+
+            // Bottom border
+            Rectangle {
+                x: 0px;
+                y: parent.height - 1px;
+                width: 100%;
+                height: 1px;
+                background: root.fluent-stroke-surface;
+            }
 
             HorizontalLayout {
-                padding-left: 20px;
-                padding-right: 20px;
-                spacing: 12px;
+                padding-left: 16px;
+                padding-right: 12px;
+                spacing: 10px;
 
                 ScrollView {
                     horizontal-stretch: 1;
-                    height: 58px;
-                    
+                    height: 42px;
+
                     HorizontalLayout {
-                        spacing: 6px;
-                        
+                        spacing: 4px;
+
                         for tab in root.document-tabs: Rectangle {
-                            width: 252px;
-                            height: 58px;
+                            width: 200px;
+                            height: 42px;
                             background: transparent;
-                            
+
                             tab-card := Rectangle {
                                 width: parent.width;
-                                height: 46px;
-                                y: 12px;
-                                x: tab-touch.pressed ? min(max(tab-touch.mouse-x - self.width / 2, -18px), 18px) : 0px;
+                                height: 34px;
+                                y: 4px;
+                                x: tab-touch.pressed ? min(max(tab-touch.mouse-x - self.width / 2, -12px), 12px) : 0px;
+                                border-radius: 6px;
+                                border-width: 1px;
                                 background: tab-touch.pressed
-                                    ? root.theme-border
-                                    : (tab.is-active ? root.theme-background : (tab-touch.has-hover ? root.theme-background-alt.with_alpha(0.72) : transparent));
-                                border-top-left-radius: 7px;
-                                border-top-right-radius: 7px;
-                                border-bottom-left-radius: tab.is-active ? 0px : 7px;
-                                border-bottom-right-radius: tab.is-active ? 0px : 7px;
-                                border-width: tab.is-active || tab-touch.has-hover ? 1px : 0px;
-                                border-color: root.theme-border.with_alpha(tab.is-active ? 0.62 : 0.32);
-                                opacity: tab-touch.pressed ? 0.98 : 1;
+                                    ? root.fluent-fill-control-secondary
+                                    : (tab.is-active
+                                        ? root.fluent-fill-control-hover
+                                        : (tab-touch.has-hover
+                                            ? root.fluent-fill-control
+                                            : transparent));
+                                border-color: tab.is-active
+                                    ? root.fluent-stroke-control.with_alpha(0.12)
+                                    : root.fluent-stroke-control.with_alpha(0.06);
                                 animate x {
-                                    duration: 120ms;
+                                    duration: 83ms;
                                     easing: ease-out;
                                 }
                                 animate background {
-                                    duration: 140ms;
+                                    duration: 83ms;
                                     easing: ease-out;
                                 }
-                                animate opacity {
-                                    duration: 140ms;
+                                animate border-color {
+                                    duration: 83ms;
                                     easing: ease-out;
-                                }
-
-                                // Active tab accent line
-                                Rectangle {
-                                    x: 0px;
-                                    y: parent.height - 1px;
-                                    width: parent.width;
-                                    height: 1px;
-                                    background: tab.is-active ? root.theme-background : transparent;
-                                    animate background {
-                                        duration: 140ms;
-                                        easing: ease-out;
-                                    }
                                 }
 
                                 HorizontalLayout {
-                                    padding-left: 18px;
-                                    padding-right: 14px;
-                                    spacing: 10px;
-                                    
-                                    Text {
-                                        text: "";
-                                        color: root.theme-text-muted;
-                                        font-size: 1px;
-                                        width: 20px;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
-                                    }
+                                    padding-left: 12px;
+                                    padding-right: 8px;
+                                    spacing: 8px;
 
                                     Text {
                                         horizontal-stretch: 1;
                                         text: tab.title + (tab.is-modified ? " *" : "");
                                         color: tab.is-active ? root.theme-text : root.theme-text-muted;
-                                        font-size: 14px;
-                                        font-weight: tab.is-active ? 700 : 500;
+                                        font-size: 12px;
+                                        font-weight: tab.is-active ? 600 : 400;
                                         vertical-alignment: center;
                                         overflow: elide;
                                         animate color {
-                                            duration: 140ms;
+                                            duration: 83ms;
                                             easing: ease-out;
                                         }
                                     }
 
-                        VerticalLayout {
+                                    VerticalLayout {
                                         alignment: center;
-                                        
+
                                         close-btn := Rectangle {
-                                            width: 20px;
-                                            height: 20px;
+                                            width: 16px;
+                                            height: 16px;
                                             border-radius: 4px;
-                                            background: close-touch.has-hover ? root.theme-error.with_alpha(0.22) : transparent;
-                                            opacity: tab.is-active || tab-touch.has-hover ? 1 : 0;
+                                            background: close-touch.has-hover ? root.theme-error.with_alpha(0.15) : transparent;
+                                            opacity: 1;
                                             animate background {
-                                                duration: 120ms;
-                                                easing: ease-out;
-                                            }
-                                            animate opacity {
-                                                duration: 140ms;
+                                                duration: 83ms;
                                                 easing: ease-out;
                                             }
 
                                             Text {
                                                 text: "x";
-                                                font-size: 13px;
-                                                color: close-touch.has-hover ? root.theme-error : root.theme-text-muted;
+                                                font-size: 11px;
+                                                color: close-touch.has-hover ? root.theme-error : root.theme-text-muted.with_alpha(0.55);
                                                 horizontal-alignment: center;
                                                 vertical-alignment: center;
                                                 animate color {
-                                                    duration: 120ms;
+                                                    duration: 83ms;
                                                     easing: ease-out;
                                                 }
                                             }
@@ -972,7 +991,7 @@ export component AppWindow inherits Window {
                                     }
                                 }
                             }
-                            
+
                             tab-touch := TouchArea {
                                 width: parent.width - 24px;
                                 clicked => {
@@ -993,19 +1012,19 @@ export component AppWindow inherits Window {
                         }
 
                         Rectangle {
-                            width: 48px;
-                            height: 58px;
+                        width: 48px;
+                        height: 42px;
                             background: transparent;
 
                             VerticalLayout {
                                 alignment: center;
 
                                 CommandButton {
-                                    width: 38px;
-                                    height: 38px;
+                                    width: 32px;
+                                    height: 30px;
                                     text: "+";
                                     background-color: transparent;
-                                    hover-color: root.theme-background-alt.with_alpha(0.74);
+                                    hover-color: root.fluent-fill-control-hover;
                                     command-border-color: transparent;
                                     text-color: root.theme-text-muted;
                                     clicked => { root.new-file(); }
@@ -1018,17 +1037,37 @@ export component AppWindow inherits Window {
                 VerticalLayout {
                     alignment: center;
 
-                    CommandButton {
-                        width: 76px;
-                        height: 40px;
-                        text: "Settings";
-                        background-color: root.theme-background.with_alpha(0.72);
-                        hover-color: root.theme-background-alt.with_alpha(0.92);
-                        command-border-color: root.theme-border.with_alpha(0.52);
-                        text-color: root.theme-text-muted;
-                        clicked => {
-                            root.settings-section = 0;
-                            root.open-settings-panel();
+                    gear-btn := Rectangle {
+                        width: 30px;
+                        height: 30px;
+                        border-radius: 6px;
+                        background: gear-touch.has-hover
+                            ? root.fluent-fill-control-hover
+                            : transparent;
+                        animate background {
+                            duration: 83ms;
+                            easing: ease-out;
+                        }
+
+                        Text {
+                            text: "...";
+                            font-size: 14px;
+                            color: gear-touch.has-hover
+                                ? root.theme-text
+                                : root.theme-text-muted;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            animate color {
+                                duration: 83ms;
+                                easing: ease-out;
+                            }
+                        }
+
+                        gear-touch := TouchArea {
+                            clicked => {
+                                root.settings-section = 0;
+                                root.open-settings-panel();
+                            }
                         }
                     }
                 }
@@ -1093,19 +1132,12 @@ export component AppWindow inherits Window {
                         y: 0px;
                         width: root.gutter-width;
                         height: 100%;
-                        background: root.theme-background-alt.with_alpha(0.54);
+                        background: root.mica-enabled
+                            ? root.fluent-fill-control.with_alpha(0.04)
+                            : root.theme-background-alt.with_alpha(0.38);
                         animate background {
                             duration: root.anim-duration-normal * 1ms;
                             easing: ease-out;
-                        }
-
-                        // Gutter right border
-                        Rectangle {
-                            x: parent.width - 1px;
-                            y: 0px;
-                            width: 1px;
-                            height: 100%;
-                            background: root.theme-border.with_alpha(0.34);
                         }
                     }
 
@@ -1114,7 +1146,9 @@ export component AppWindow inherits Window {
                         y: 0px;
                         width: parent.width - root.gutter-width;
                         height: 100%;
-                        background: root.theme-background;
+                        background: root.mica-enabled
+                            ? root.theme-background.with_alpha(0.35)
+                            : root.theme-background;
                         animate background {
                             duration: root.anim-duration-normal * 1ms;
                             easing: ease-out;
@@ -1165,12 +1199,12 @@ export component AppWindow inherits Window {
                             for line in root.editor-lines: Rectangle {
                                 height: root.line-height-px;
                                 width: 100%;
-                                background: line.is-search-match ? root.theme-warning.with_alpha(0.14) : (line.is-cursor-line ? root.theme-background-alt.with_alpha(0.52) : transparent);
+                                background: line.is-search-match ? root.theme-warning.with_alpha(0.14) : (line.is-cursor-line ? root.fluent-fill-control.with_alpha(0.06) : transparent);
 
                                 Text {
                                     x: 0px;
                                     y: 0px;
-                                    width: root.gutter-width - 22px;
+                                    width: root.gutter-width - 10px;
                                     height: root.line-height-px;
                                     text: line.number;
                                     color: line.is-cursor-line ? root.theme-text : root.theme-text-muted.with_alpha(0.88);
@@ -1341,27 +1375,29 @@ export component AppWindow inherits Window {
         }
 
         Rectangle {
-            height: 48px;
-            background: root.theme-background.with_alpha(0.92);
+            height: 42px;
+            background: root.mica-enabled
+                ? root.theme-background.with_alpha(0.60)
+                : root.theme-background.with_alpha(0.96);
             animate background {
                 duration: root.anim-duration-normal * 1ms;
                 easing: ease-out;
             }
 
             HorizontalLayout {
-                padding-left: 22px;
-                padding-right: 22px;
+                padding-left: 14px;
+                padding-right: 14px;
                 padding-top: 8px;
                 padding-bottom: 8px;
-                spacing: 20px;
+                spacing: 10px;
 
                 Rectangle {
-                    width: 122px;
-                    height: 32px;
-                    border-radius: 16px;
-                    background: root.theme-background-alt.with_alpha(0.72);
+                    min-width: 72px;
+                    height: 26px;
+                    border-radius: 13px;
                     border-width: 1px;
-                    border-color: root.theme-border.with_alpha(0.22);
+                    border-color: root.fluent-stroke-control;
+                    background: root.fluent-fill-control;
                     animate background {
                         duration: root.anim-duration-normal * 1ms;
                         easing: ease-out;
@@ -1371,14 +1407,19 @@ export component AppWindow inherits Window {
                         easing: ease-out;
                     }
 
-                    Text {
-                        text: root.mode-text;
-                        color: root.theme-text;
-                        font-size: 13px;
-                        font-weight: 700;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        letter-spacing: 0px;
+                    HorizontalLayout {
+                        padding-left: 14px;
+                        padding-right: 14px;
+
+                        Text {
+                            text: root.mode-text;
+                            color: root.theme-text;
+                            font-size: 11px;
+                            font-weight: 700;
+                            letter-spacing: 0.5px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
                     }
                 }
 
@@ -1406,10 +1447,45 @@ export component AppWindow inherits Window {
                 }
 
                 Text {
-                    text: root.status-right;
+                    text: root.status-ln-col;
                     color: root.theme-text-muted;
-                    font-size: 13px;
-                    font-weight: 500;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: root.status-ln-col == "" ? "" : "|";
+                    color: root.fluent-stroke-control.with_alpha(0.5);
+                    font-size: 10px;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: root.status-lines;
+                    color: root.theme-text-muted;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: root.status-lines == "" ? "" : "|";
+                    color: root.fluent-stroke-control.with_alpha(0.5);
+                    font-size: 10px;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: root.status-words;
+                    color: root.theme-text-muted;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: root.status-words == "" ? "" : "|";
+                    color: root.fluent-stroke-control.with_alpha(0.5);
+                    font-size: 10px;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: root.status-encoding;
+                    color: root.theme-text-muted;
+                    font-size: 12px;
                     vertical-alignment: center;
                 }
             }
@@ -1446,11 +1522,11 @@ export component AppWindow inherits Window {
             opacity: root.show-theme-panel ? 1 : 0;
             border-width: 1px;
             border-color: root.theme-border.with_alpha(0.65);
-            border-radius: 8px;
-            background: root.theme-background;
-            drop-shadow-color: #000000.with_alpha(0.18);
-            drop-shadow-blur: 16px;
-            drop-shadow-offset-y: 6px;
+            border-radius: 10px;
+            background: root.fluent-acrylic-base;
+            drop-shadow-color: root.fluent-shadow-flyout;
+            drop-shadow-blur: 24px;
+            drop-shadow-offset-y: 10px;
             clip: true;
             animate y {
                 duration: 200ms;
@@ -1723,11 +1799,11 @@ export component AppWindow inherits Window {
             opacity: root.show-settings-panel ? 1 : 0;
             border-width: 1px;
             border-color: root.theme-border.with_alpha(0.65);
-            border-radius: 8px;
-            background: root.theme-background;
-            drop-shadow-color: #000000.with_alpha(0.18);
-            drop-shadow-blur: 16px;
-            drop-shadow-offset-y: 6px;
+            border-radius: 10px;
+            background: root.fluent-acrylic-base;
+            drop-shadow-color: root.fluent-shadow-flyout;
+            drop-shadow-blur: 24px;
+            drop-shadow-offset-y: 10px;
             clip: true;
             animate y {
                 duration: 200ms;
