@@ -100,7 +100,6 @@ Branch strategy:
 
 ## Rules
 
-- Read `docs/neonote-implementation-plan.md` before any task.
 - Migrate UI work toward Slint; do not add new egui/eframe surfaces.
 - Keep the editor path in-process and Rust-native.
 - Write new discoveries to `docs/skills/skill-{topic}.md` immediately.
@@ -108,3 +107,4 @@ Branch strategy:
 - Test before every push. Do not push broken builds to `dev`.
 - Commit messages must follow the format above. No freeform messages.
 - Do not revert unrelated user changes in a dirty worktree.
+- You can ignore `docs` if user tell you to do so.

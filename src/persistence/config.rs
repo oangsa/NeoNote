@@ -52,9 +52,9 @@ impl Default for AppConfig {
         Self {
             active_theme: Some("catppuccin-latte".to_string()),
             language: AppLanguage::English,
-            font_family: "JetBrains Mono".to_string(),
-            font_size: 14.0,
-            line_height: 1.4,
+            font_family: "Agave".to_string(),
+            font_size: 21.0,
+            line_height: 1.5,
             tab_size: 2,
             word_wrap: false,
             sync_clipboard: true,

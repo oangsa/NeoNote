@@ -3092,8 +3092,8 @@ mod tests {
         controller.toggle_sync_clipboard();
 
         let saved_config = AppConfig::load_or_default(&paths);
-        assert_eq!(saved_config.font_size, 17.0);
-        assert_eq!(saved_config.line_height, 1.6);
+        assert_eq!(saved_config.font_size, 24.0);
+        assert_eq!(saved_config.line_height, 1.7);
         assert_eq!(saved_config.tab_size, 4);
         assert!(!saved_config.restore_last_session);
         assert!(!saved_config.show_launcher_on_startup);
