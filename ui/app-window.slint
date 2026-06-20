@@ -1228,7 +1228,24 @@ export component AppWindow inherits Window {
                             easing: ease-out;
                         }
 
-                        // Connected selection highlight overlay (behind text)
+                        VerticalLayout {
+                            width: 100%;
+                            spacing: 0px;
+
+                            Rectangle {
+                                height: root.content-padding-y;
+                                width: 100%;
+                                background: transparent;
+                            }
+
+                            for line in root.editor-lines: Rectangle {
+                                height: root.line-height-px;
+                                width: 100%;
+                                background: line.is-search-match ? #ffe7a8.with_alpha(0.55) : (line.is-cursor-line ? root.chrome-editor-line : transparent);
+                            }
+                        }
+
+                        // Connected selection highlight overlay (above row tint, behind text)
                         for shape in root.selection-highlight-shapes: Path {
                             property <length> cell-width: char-width-measure.preferred-width;
                             x: root.editor-content-x + shape.left-column * cell-width;
@@ -1255,7 +1272,7 @@ export component AppWindow inherits Window {
                             for line in root.editor-lines: Rectangle {
                                 height: root.line-height-px;
                                 width: 100%;
-                                background: line.is-search-match ? #ffe7a8.with_alpha(0.55) : (line.is-cursor-line ? root.chrome-editor-line : transparent);
+                                background: transparent;
 
                                 Text {
                                     x: 0px;
